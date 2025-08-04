@@ -1,0 +1,19 @@
+# netlify.toml
+
+[build]
+  command = "# no build command"
+  publish = "."
+  functions = "netlify/functions"
+
+# 这是处理聊天请求的规则
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/proxy-api/:splat"
+  status = 200
+
+# 【【【【【新增内容在这里】】】】】
+# 这是我们为“测试连接”按钮新增的规则
+[[redirects]]
+  from = "/api-test/*"
+  to = "/.netlify/functions/test-connection/:splat"
+  status = 200

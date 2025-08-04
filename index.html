@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI聊天助手 - 支持上下文调节与群聊</title>
+    <!-- 从本地加载样式文件 -->
+    <link rel="stylesheet" href="style.css">
+    <!-- 关键改动：引入Capacitor的桥接文件 -->
+    <script src="capacitor.js"></script>
+</head>
+<body>
+    <!-- 页面主体内容保持不变 -->
+    <div class="main-container">
+        <div class="contact-list-page" id="contactListPage">
+            <div class="wechat-header">
+                <div class="header-title">Whale-LLT</div>
+                <div class="header-actions">
+                    <span class="header-icon" onclick="showApiSettingsModal()">⚙️</span>
+                    <span class="header-icon" id="musicIcon" onclick="showMusicModal()">🎵</span>
+                    <span class="header-icon" onclick="showAddContactModal()">➕</span>
+                    <span class="header-icon" onclick="showCreateGroupModal()">👥</span>
+                </div>
+            </div>
+            
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="搜索">
+            </div>
+            
+            <div id="contactList"></div>
+        </div>
+
+        <div class="chat-page" id="chatPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="closeChatPage()">
+                    <span>‹</span>
+                    <span>Whale-LLT</span>
+                </div>
+                <div class="chat-title" id="chatTitle">聊天</div>
+                <div class="chat-header-actions">
+                    <div class="memory-btn" onclick="toggleMemoryPanel()">
+                        <svg t="1689237694389" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4338" width="24" height="24"><path d="M896 96H128C110.4 96 96 110.4 96 128v768c0 17.6 14.4 32 32 32h768c17.6 0 32-14.4 32-32V128c0-17.6-14.4-32-32-32zM384 832H192v-64h192v64z m0-192H192v-64h192v64z m0-192H192v-64h192v64z m448 384H448v-64h384v64z m0-192H448v-64h384v64z m0-192H448v-64h384v64z" p-id="4339" fill="#515151"></path></svg>
+                    </div>
+                    <div class="chat-more" onclick="toggleSettingsMenu()">⋯</div>
+                </div>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages"></div>
+            
+            <div class="chat-input-area">
+                <div class="feature-hint" id="featureHint">按Enter发送消息，点"发送"按钮获取AI回复</div>
+                <div class="input-actions">
+                    <div class="action-btn" onclick="toggleEmojiPanel()">😊</div>
+                    <div class="action-btn" onclick="showRedPacketModal()">🧧</div>
+                </div>
+                <textarea class="chat-input" id="chatInput" placeholder="输入消息" rows="1"></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+                
+                <div class="emoji-panel" id="emojiPanel">
+                    <div class="emoji-grid" id="emojiGrid">
+                        <div class="add-emoji-btn" onclick="showAddEmojiModal()">+ 添加表情</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="context-indicator" id="contextIndicator">
+                <span>上下文: 10条</span>
+            </div>
+
+            <div class="memory-panel" id="memoryPanel">
+                <div class="memory-panel-header">
+                    <div class="memory-panel-title">记忆表格</div>
+                    <div class="memory-panel-actions">
+                         <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()">编辑</button>
+                         <button class="memory-panel-btn" onclick="toggleMemoryPanel()">关闭</button>
+                    </div>
+                </div>
+                <div class="memory-panel-content">
+                    <div id="memoryTableView" class="memory-table-view"></div>
+                    <textarea id="memoryTextarea" class="memory-textarea" style="display: none;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="moments-page" id="momentsPage">
+            <div class="moments-header">
+                <div class="back-btn" onclick="closeMomentsPage()">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">朋友圈</div>
+                <div class="chat-more" onclick="showPublishMomentModal()">➕</div>
+            </div>
+            
+            <div class="moments-content" id="momentsContent">
+                <div class="moments-empty" id="momentsEmpty">
+                    <div class="moments-empty-icon">📝</div>
+                    <div class="moments-empty-text">还没有朋友圈动态</div>
+                    <button class="moments-empty-btn" onclick="showPublishMomentModal()">发布第一条动态</button>
+                </div>
+                
+                <div class="moments-list" id="momentsList" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="profile-page" id="profilePage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="closeProfilePage()">
+                    <span>‹</span>
+                    <span>Whale-LLT</span>
+                </div>
+                <div class="chat-title">个人信息</div>
+                <div style="width: 24px;"></div>
+            </div>
+            
+            <div class="profile-header">
+                <div class="profile-avatar" id="userAvatar">我</div>
+                <div class="profile-name" id="userName">我的昵称</div>
+                <div class="profile-id">id号：AI_User_001</div>
+            </div>
+            
+            <div class="profile-section">
+                <div class="profile-item" onclick="showEditProfileModal()">
+                    <div class="profile-item-label">编辑个人信息</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="weibo-page" id="weiboPage">
+            <div class="weibo-header">
+                <div class="back-btn" onclick="closeWeiboPage()">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">论坛</div>
+                <div class="chat-more" onclick="generateWeiboPosts()">🔄</div>
+            </div>
+            <div class="weibo-container" id="weiboContainer"></div>
+        </div>
+
+        <div class="settings-menu" id="settingsMenu">
+            <div class="menu-item" onclick="showEditContactModal()">编辑联系人</div>
+            <div class="menu-item" onclick="showBackgroundModal()">设置背景</div>
+            <div class="menu-item" onclick="clearMessages()">清空聊天</div>
+            <!-- 新增删除聊天对象选项 -->
+            <div class="menu-item delete-item" onclick="deleteCurrentContact()">删除聊天对象</div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="showContactListPage()">
+            <div class="nav-icon">💬</div>
+            <div class="nav-text">Whale-LLT</div>
+        </div>
+        <div class="nav-item" onclick="generateWeiboPosts()">
+            <div class="nav-icon">
+                <svg t="1721063385731" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="10099" width="24" height="24"><path d="M822.4 438.4c-3.2-16-16-28.8-32-32-12.8-3.2-25.6-3.2-38.4-3.2-108.8 0-204.8 48-275.2 128-22.4 25.6-41.6 51.2-57.6 80-96-44.8-192-115.2-265.6-204.8-19.2-25.6-48-35.2-76.8-22.4-28.8 12.8-44.8 44.8-35.2 73.6 3.2 9.6 9.6 19.2 16 28.8 48 64 108.8 118.4 179.2 163.2-83.2 16-156.8 64-211.2 131.2-19.2 25.6-16 64 9.6 83.2 25.6 19.2 64 16 83.2-9.6 44.8-54.4 105.6-92.8 172.8-112-6.4 35.2-9.6 70.4-9.6 105.6 0 163.2 102.4 304 249.6 358.4 19.2 6.4 38.4 0 51.2-16 12.8-16 12.8-38.4 0-54.4-115.2-124.8-115.2-300.8 0-425.6 64-70.4 144-112 233.6-121.6 16 0 32-3.2 44.8-9.6 16-9.6 22.4-25.6 19.2-41.6z" fill="#999999" p-id="10100"></path></svg>
+            </div>
+            <div class="nav-text">论坛</div>
+        </div>
+        <div class="nav-item" onclick="openMomentsPage()">
+            <div class="nav-icon">🔍</div>
+            <div class="nav-text">发现</div>
+        </div>
+        <div class="nav-item" onclick="openProfilePage()">
+            <div class="nav-icon">👤</div>
+            <div class="nav-text">我</div>
+        </div>
+    </div>
+
+    <div class="publish-moment-modal" id="publishMomentModal">
+        <div class="publish-moment-content">
+            <div class="publish-moment-header">
+                <div class="publish-moment-title">生成朋友圈</div>
+                <div class="publish-moment-close" onclick="closePublishMomentModal()">取消</div>
+            </div>
+            <div class="publish-moment-body">
+                <div class="generate-moment-section">
+                    <button class="generate-moment-btn" onclick="generateMomentContent()">生成朋友圈</button>
+                    <div class="generate-moment-hint">
+                        点击上方按钮，AI将根据当前角色的人设和聊天记录自动生成朋友圈内容
+                    </div>
+                </div>
+                
+                <div class="moment-preview" id="momentPreview">
+                    <div class="moment-preview-title">预览</div>
+                    <div class="moment-preview-content" id="momentPreviewContent"></div>
+                    <img class="moment-preview-image" id="momentPreviewImage" style="display: none;">
+                </div>
+                
+                <div class="unsplash-key-section">
+                    <label class="unsplash-key-label">Unsplash API Key</label>
+                    <input type="text" class="unsplash-key-input" id="unsplashApiKey" placeholder="请输入你的Unsplash API Key">
+                </div>
+                
+                <button class="publish-moment-submit" id="publishMomentBtn" onclick="publishMoment()" disabled>发布</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addContactModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="contactModalTitle">添加AI助手</div>
+                <div class="modal-close" onclick="closeModal('addContactModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveContact(event)">
+                    <div class="form-group">
+                        <label class="form-label">助手名称</label>
+                        <input type="text" class="form-input" id="contactName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">头像（可选）</label>
+                        <input type="url" class="form-input" id="contactAvatar" placeholder="可直接粘贴URL或上传本地图片">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('avatarUploadInput', 'contactAvatar', 'avatarUploadStatus')">
+                            <span id="avatarUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">人设描述</label>
+                        <textarea class="form-textarea" id="contactPersonality" required placeholder="描述AI的性格、背景、说话风格等"></textarea>
+                    </div>
+                    
+                    <div class="prompt-section">
+                        <div class="prompt-header">
+                            <div class="prompt-title">自定义提示词（可选）</div>
+                            <div class="prompt-actions">
+                                <button type="button" class="prompt-btn" onclick="document.getElementById('promptFile').click()">导入JSON</button>
+                                <input type="file" id="promptFile" class="file-input" accept=".json" onchange="importPrompts(event)">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <textarea class="form-textarea" id="customPrompts" placeholder="输入自定义提示词，或导入JSON文件"></textarea>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="form-submit">确定</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="createGroupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">创建群聊</div>
+                <div class="modal-close" onclick="closeModal('createGroupModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="createGroup(event)">
+                    <div class="form-group">
+                        <label class="form-label">群聊名称</label>
+                        <input type="text" class="form-input" id="groupName" required>
+                    </div>
+                    
+                    <div class="create-group-section">
+                        <label class="form-label">选择群成员</label>
+                        <div class="group-member-list" id="groupMemberList"></div>
+                    </div>
+                    
+                    <button type="submit" class="form-submit">创建群聊</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editProfileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">编辑个人信息</div>
+                <div class="modal-close" onclick="closeModal('editProfileModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveProfile(event)">
+                    <div class="form-group">
+                        <label class="form-label">昵称</label>
+                        <input type="text" class="form-input" id="profileNameInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">头像（可选）</label>
+                        <input type="url" class="form-input" id="profileAvatarInput" placeholder="可直接粘贴URL或上传本地图片">
+                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="profileUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('profileUploadInput', 'profileAvatarInput', 'profileUploadStatus')">
+                            <span id="profileUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">我的人设描述</label>
+                        <textarea class="form-textarea" id="profilePersonality" placeholder="描述你的性格、背景、说话风格等，让AI更好地与你互动"></textarea>
+                    </div>
+                    <button type="submit" class="form-submit">保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="apiSettingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">API设置</div>
+                <div class="modal-close" onclick="closeModal('apiSettingsModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveApiSettings(event)">
+                    <div class="form-group">
+                        <label class="form-label">API URL</label>
+                        <input type="url" class="form-input" id="apiUrl" required placeholder="例如: https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Key</label>
+                        <input type="password" class="form-input" id="apiKey" required>
+                    </div>
+                    
+                    <div class="context-control">
+                        <div class="context-header">
+                            <div class="context-title">上下文长度</div>
+                            <div class="context-value" id="contextValue">10条</div>
+                        </div>
+                        <input 
+                            type="range" 
+                            class="context-slider" 
+                            id="contextSlider" 
+                            min="1" 
+                            max="50" 
+                            value="10"
+                            oninput="updateContextValue(this.value)"
+                        >
+                        <div class="context-info">
+                            控制AI可见的历史消息数量，较长的上下文有助于保持对话连贯性，但可能会增加API成本。
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;">测试连接</button>
+                    <div class="form-group">
+                        <label class="form-label">选择模型</label>
+                        <div class="model-list" id="modelList">
+                            <div class="loading-text">请先测试连接</div>
+                        </div>
+                    </div>
+                    <button type="submit" class="form-submit">保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="backgroundModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">设置聊天背景</div>
+                <div class="modal-close" onclick="closeModal('backgroundModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="setBackground(event)">
+                    <div class="form-group">
+                        <label class="form-label">背景图片</label>
+                        <input type="url" class="form-input" id="backgroundUrl" placeholder="可直接粘贴URL或上传本地图片">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('bgUploadInput', 'backgroundUrl', 'bgUploadStatus')">
+                            <span id="bgUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <button type="submit" class="form-submit">确定</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addEmojiModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">添加表情包</div>
+                <div class="modal-close" onclick="closeModal('addEmojiModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="addEmoji(event)">
+                    <div class="form-group">
+                        <label class="form-label">表情图片</label>
+                        <input type="url" class="form-input" id="emojiUrl" placeholder="可直接粘贴URL或上传本地图片" required>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('emojiUploadInput', 'emojiUrl', 'emojiUploadStatus')">
+                            <span id="emojiUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">表情含义（用于AI理解和调用）</label>
+                        <input type="text" class="form-input" id="emojiMeaning" required placeholder="例如：开心、大笑、哭泣等">
+                    </div>
+                    <button type="submit" class="form-submit">添加</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="redPacketModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发红包</div>
+                <div class="modal-close" onclick="closeModal('redPacketModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="sendRedPacket(event)">
+                    <div class="form-group">
+                        <label class="form-label">金额</label>
+                        <input type="number" class="form-input" id="redPacketAmount" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">留言（可选）</label>
+                        <input type="text" class="form-input" id="redPacketMessage" placeholder="恭喜发财，大吉大利！">
+                    </div>
+                    <button type="submit" class="form-submit">塞钱进红包</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="musicModal" class="music-modal">
+        <div class="music-modal-content">
+            <span class="close-btn" id="closeMusicModal">&times;</span>
+            <h2>🎵 音乐播放器</h2>
+            
+            <div id="currentSongInfo" style="display: none;">
+                <h3>正在播放: <span id="currentSongName"></span></h3>
+                <div class="player-controls">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="time-display">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px;">
+                        <button class="form-submit" onclick="togglePlay()">
+                            <span id="playPauseBtn">▶️ 播放</span>
+                        </button>
+                        <button class="form-submit" style="background-color: #888;" onclick="stopMusic()">⏹️ 停止</button>
+                    </div>
+                </div>
+            </div>
+
+            <h3>我的歌单</h3>
+            <div class="playlist-container" id="playlistContainer">
+                <p style="text-align: center; color: #999;">暂无歌曲</p>
+            </div>
+
+            <h3>添加新歌曲</h3>
+            <div id="addSongForm">
+                <div class="form-group">
+                    <label class="form-label">歌曲名称 (可选):</label>
+                    <input type="text" class="form-input" id="songName" placeholder="留空则使用文件名">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">选择音乐文件:</label>
+                    <input type="file" class="form-input" id="musicFileUpload" accept="audio/*">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LRC歌词文件 (可选):</label>
+                    <input type="file" class="form-input" id="lrcFile" accept=".lrc">
+                    <small style="color: #666;">请选择.lrc格式的歌词文件</small>
+                </div>
+                <button class="form-submit" onclick="saveSong()">保存歌曲</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <label>
+                    <input type="checkbox" id="showLyrics" onchange="toggleLyricsDisplay()">
+                    显示浮动歌词
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div id="floatingLyrics" class="floating-lyrics" style="display: none;">
+        <span id="currentLyric">等待歌词...</span>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    
+    <div class="top-notification" id="topNotification"></div>
+
+    <!-- 
+      【【【【【核心修改在这里】】】】】
+      我们不再从本地加载 marked.min.js，而是从一个可靠的公共 CDN 加载。
+      这可以确保文件本身是好的，避免了文件损坏或版本错误的问题。
+    -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
