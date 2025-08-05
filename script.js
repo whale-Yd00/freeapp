@@ -812,53 +812,18 @@ function showReplyBox(postHtmlId) {
 }
 
 async function getAIReply(postData, userReply, contactId) {
-    const contact = contacts.find(c => c.id === contactId);
-    const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
-
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
         throw new Error('API未配置');
     }
 
-    const systemPrompt = `你是一个论坛评论员。你的名字是 ${postAuthorContact.name}，你的人设是：${postAuthorContact.personality}。
-    现在，你需要根据你的身份，对一个用户在你的帖子下的评论进行回复。
-
-    # 你的帖子内容
-    ${postData.post_content}
-
-    # 用户的评论
-    ${userReply}
-
-    # 你的任务
-    - 以 ${postAuthorContact.name} 的身份进行回复。
-    - 你的回复必须完全符合你的人设。
-    - 回复要自然、口语化，就像一个真实的人在网上冲浪。
-    - 只需输出回复内容，不要包含任何额外信息或格式。`;
-
-    const payload = {
-        model: apiSettings.model,
-        messages: [{ role: 'user', content: systemPrompt }],
-        temperature: 0.7,
-        max_tokens: 2000
-    };
-
-    const apiUrl = `${apiSettings.url}/chat/completions`;
-
-    // This is the direct API call, like in `callAPI`
-    const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiSettings.key}`
-        },
-        body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API请求失败: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
+    const systemPrompt = window.promptBuilder.buildReplyPrompt(postData, userReply, contactId, contacts, userProfile);
+    const data = await window.apiService.callOpenAIAPI(
+        apiSettings.url,
+        apiSettings.key,
+        apiSettings.model,
+        [{ role: 'user', content: systemPrompt }],
+        { temperature: 0.7, max_tokens: 2000 }
+    );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
         throw new Error('AI未返回有效回复');
@@ -866,6 +831,7 @@ async function getAIReply(postData, userReply, contactId) {
     
     return data.choices[0].message.content.trim();
 }
+
 
 
 
@@ -1002,54 +968,15 @@ async function generateMomentContent() {
     generateBtn.textContent = '生成中...';
 
     try {
-        let systemPrompt = `你是${currentContact.name}，${currentContact.personality}
-现在需要你以${currentContact.name}的身份发一条朋友圈。
+        const systemPrompt = window.promptBuilder.buildMomentContentPrompt(currentContact, userProfile, apiSettings, contacts);
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            { temperature: 0.8 }
+        );
 
-要求：
-1. 根据你的人设和最近的聊天记录，生成一条符合你性格的朋友圈文案
-2. 文案要自然、真实，体现你的个性特点
-3. 直接输出文案内容，不要任何解释或说明
-4. 文案长度控制在50字以内
-5. 可以包含适当的表情符号
-6. 文案应该适合配图，描述具体的场景、情感或活动`;
-
-        if (currentContact.messages && currentContact.messages.length > 0) {
-            const recentMessages = currentContact.messages.slice(-apiSettings.contextMessageCount);
-            const chatContext = recentMessages.map(msg => {
-                if (msg.role === 'user') {
-                    return `用户: ${msg.content}`;
-                } else {
-                    const sender = contacts.find(c => c.id === msg.senderId);
-                    const senderName = sender ? sender.name : currentContact.name;
-                    return `${senderName}: ${msg.content}`;
-                }
-            }).join('\n');
-            
-            systemPrompt += `\n\n最近的聊天记录：\n${chatContext}`;
-        }
-        
-        const payload = {
-            model: apiSettings.model,
-            messages: [{ role: 'user', content: systemPrompt }],
-            temperature: 0.8
-        };
-
-        const apiUrl = `${apiSettings.url}/chat/completions`;
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiSettings.key}`
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            throw new Error(`API请求失败: ${response.status} - ${await response.text()}`);
-        }
-
-        const data = await response.json();
         const momentContent = data.choices[0].message.content.trim() || '';
 
         let imageUrl = null;
@@ -1072,7 +999,7 @@ async function generateMomentContent() {
         };
 
         moments.unshift(moment);
-        await saveDataToDB(); // 使用IndexedDB保存
+        await saveDataToDB();
         renderMomentsList();
         closePublishMomentModal();
         showToast('朋友圈发布成功');
@@ -1118,32 +1045,14 @@ async function fetchMatchingImageForPublish(content, apiKey) {
 async function generateImageSearchQuery(content) {
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) return null;
     try {
-        const systemPrompt = `你是一个图片搜索关键词生成器。根据朋友圈文案内容，生成最适合的英文搜索关键词用于图片搜索。
-要求：
-1. 分析文案的情感、场景、活动类型
-2. 生成3-5个英文关键词，用空格分隔
-3. 关键词要具体、形象，适合搜索到相关图片
-4. 避免人像关键词，优先选择风景、物品、场景类关键词
-5. 只输出关键词，不要其他解释
-文案内容：${content}`;
-        
-        const payload = {
-            model: apiSettings.model,
-            messages: [{ role: 'user', content: systemPrompt }],
-            temperature: 0.5
-        };
-
-        const apiUrl = `${apiSettings.url}/chat/completions`;
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiSettings.key}`
-            },
-            body: JSON.stringify(payload)
-        });
-        if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
-        const data = await response.json();
+        const systemPrompt = window.promptBuilder.buildImageSearchPrompt(content);
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            { temperature: 0.5 }
+        );
         return data.choices[0].message.content.trim() || null;
     } catch (error) {
         console.error('AI关键词生成失败:', error);
@@ -1171,46 +1080,16 @@ async function generateAIComments(momentContent) {
         return [];
     }
     try {
-        const systemPrompt = `你是一个朋友圈评论生成器，需要根据朋友圈文案生成3-5条路人评论。
-要求：
-1. 根据文案内容生成3-5条相关评论
-2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
-3. 模仿网络语气，使用当代流行语。
-4. 评论要有不同观点和立场
-5. 每条评论至少15字
-6. 评论者名称使用：路人甲、小明、小红、隔壁老王、神秘网友、热心市民、吃瓜群众等
-7. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
-
-输出格式 (必须严格遵守此JSON结构):
-{
-  "comments": [
-    { "author": "路人甲", "content": "评论内容1..." },
-    { "author": "小明", "content": "评论内容2..." }
-  ]
-}
-
-朋友圈文案：${momentContent}`;
+        const systemPrompt = window.promptBuilder.buildCommentsPrompt(momentContent);
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            { response_format: { type: "json_object" }, temperature: 0.9 }
+        );
         
-        const payload = {
-            model: apiSettings.model,
-            messages: [{ role: 'user', content: systemPrompt }],
-            response_format: { type: "json_object" },
-            temperature: 0.9
-        };
-
-        const apiUrl = `${apiSettings.url}/chat/completions`;
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiSettings.key}`
-            },
-            body: JSON.stringify(payload)
-        });
-        if (!response.ok) throw new Error(`API请求失败: ${response.status}`);
-        const data = await response.json();
         const jsonText = data.choices[0].message.content;
-        
         if (!jsonText) {
             throw new Error("AI未返回有效的JSON格式");
         }
@@ -2208,193 +2087,115 @@ function hideTypingIndicator() {
  * @param {array} turnContext Additional messages for group chat context.
  * @returns {object} The API response containing replies and the new memory table.
  */
+/**
+ * 通过我们的 Netlify Function 代理来调用 API。
+ * @param {object} contact The contact object.
+ * @param {array} turnContext Additional messages for group chat context.
+ * @returns {object} The API response containing replies and the new memory table.
+ */
 async function callAPI(contact, turnContext = []) {
-    // 函数内部的 systemPrompt 和 messages 构建逻辑保持不变
-    // (从 `const memoryInfo` 到 `messages.push(...)` 的所有代码都和原来一样)
-    const memoryInfo = (currentContact.memoryTableContent || '').trim();
-    let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+    try {
+        // 1. 构建系统提示词
+        const systemPrompt = window.promptBuilder.buildChatPrompt(
+            contact, 
+            userProfile, 
+            currentContact, 
+            apiSettings, 
+            emojis, 
+            window, 
+            turnContext
+        );
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    const day = now.getDate().toString().padStart(2, '0');
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const currentTimeString = `${year}年${month}月${day}日 ${hours}:${minutes}`;
-    
-    systemPrompt += `[重要系统指令：当前的标准北京时间是“${currentTimeString}”。当用户询问时间时，你必须根据这个时间来回答。]\n\n`;
-    
-    const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
+        // 2. 构建消息数组
+        const messages = [{ role: 'system', content: systemPrompt }];
+        const messageHistory = window.promptBuilder.buildMessageHistory(
+            currentContact, 
+            apiSettings, 
+            userProfile, 
+            contacts, 
+            contact, 
+            emojis, 
+            turnContext
+        );
+        messages.push(...messageHistory);
 
-    if (currentContact.type === 'group') {
-        const memberNames = currentContact.members.map(id => contacts.find(c => c.id === id)?.name || '未知成员');
-        systemPrompt += `你是群成员之一：${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
-            `你现在在一个名为“${currentContact.name}”的群聊中。群成员有：${userProfile.name} (用户), ${memberNames.join(', ')}。\n` +
-            `你的任务是根据自己的人设、记忆表格和用户人设，对**本回合**中在你之前其他人的**完整发言**进行回应，然后发表你自己的**完整观点**，以推动群聊进行。可以赞同、反驳、开玩笑、或者提出新的话题。\n` +
-            `你的发言需要自然地融入对话，就像一个真正在参与群聊的人。`;
-    } else {
-        systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
-            `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。`;
-    }
+        // 3. 调用API
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            messages
+        );
 
-    if (contact.customPrompts) systemPrompt += '\n\n' + contact.customPrompts;
-    if (window.currentMusicInfo && window.currentMusicInfo.isPlaying) systemPrompt += `\n\n[系统提示：用户正在听歌，当前歌曲是《${window.currentMusicInfo.songName}》，正在播放的歌词是："${window.currentMusicInfo.lyric}"]`;
-    
-    systemPrompt += `\n\n--- 红包功能 ---\n`
-                 + `你可以给用户发红包来表达祝贺、感谢或作为奖励。\n`
-                 + `要发送红包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）：\n`
-                 + `[red_packet:{"amount":8.88, "message":"恭喜发财！"}]\n`
-                 + `其中 "amount" 是一个 1 到 1000000 之间的数字，"message" 是字符串。\n`
-                 + `例如: 太棒了！|||[red_packet:{"amount":6.66, "message":"奖励你的！"}]|||继续加油哦！\n`
-                 + `你必须自己决定何时发送红包以及红包的金额和留言。这个决定必须完全符合你的人设和当前的对话情景。例如，一个慷慨的角色可能会在用户取得成就时发送一个大红包，而一个节俭的角色可能会发送一个小红包并附上有趣的留言。`;
-
-    const availableEmojisString = emojis.map(e => `- [emoji:${e.meaning}] (含义: ${e.meaning})`).join('\n');
-    
-    systemPrompt += `\n\n--- 表情包使用规则 ---\n`
-                 + `你可以从下面的列表中选择表情包来丰富你的表达。\n`
-                 + `要发送表情包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）。你必须使用表情的“含义”作为占位符，而不是图片URL。\n`
-                 + `格式: [emoji:表情含义]\n`
-                 + `例如: 你好呀|||[emoji:开心]|||今天天气真不错\n`
-                 + `**重要提醒：** 你可能会在用户的消息历史中看到 "[发送了表情：...]" 这样的文字，这是系统为了让你理解对话而生成的提示，你绝对不能在你的回复中模仿或使用这种格式。你只能使用 [emoji:表情含义] 格式来发送表情。\n\n`
-                 + `可用表情列表:\n${availableEmojisString || '无可用表情'}`;
-
-    systemPrompt += `\n\n--- 至关重要的输出格式规则 ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用“|||”作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 <memory_table>...</memory_table> 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
-    
-    const messages = [{ role: 'system', content: systemPrompt }];
-    const recentMessages = currentContact.messages.slice(-apiSettings.contextMessageCount);
-    recentMessages.forEach(msg => {
-        const senderName = msg.role === 'user' ? userProfile.name : contacts.find(c => c.id === msg.senderId)?.name || contact.name;
-        let content = '';
-        if (msg.type === 'text') content = msg.content;
-        else if (msg.type === 'emoji') content = `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
-        else if (msg.type === 'red_packet') { 
-            try { 
-                const p = JSON.parse(msg.content); 
-                messages.push({ role: 'system', content: `[系统提示：${senderName}发送了一个金额为${p.amount}的红包，留言是：“${p.message}”。请对此作出回应。]` }); 
-            } catch(e){} 
-            return;
+        // 4. 处理响应
+        let fullResponseText = data.choices[0].message.content;
+        
+        const memoryTableRegex = /<memory_table>([\s\S]*?)<\/memory_table>/;
+        const memoryMatch = fullResponseText.match(memoryTableRegex);
+        let newMemoryTable = null;
+        if (memoryMatch && memoryMatch[1]) {
+            newMemoryTable = memoryMatch[1].trim();
+            fullResponseText = fullResponseText.replace(memoryTableRegex, '').trim();
+        } else {
+            console.warn("AI回复中未找到<memory_table>。");
         }
-        messages.push({ role: msg.role, content: currentContact.type === 'group' ? `${senderName}: ${content}` : content });
-    });
+        
+        let chatRepliesText = fullResponseText;
 
-    if (turnContext.length > 0) {
-        messages.push({role: 'system', content: '--- 以下是本回合刚刚发生的对话 ---'});
-        turnContext.forEach(msg => {
-             const senderName = contacts.find(c => c.id === msg.senderId)?.name || '未知成员';
-             let content = msg.type === 'text' ? msg.content : `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
-             messages.push({ role: msg.role, content: `${senderName}: ${content}` });
-        });
-         messages.push({role: 'system', content: '--- 请针对以上最新对话进行回应 ---'});
-    }
-
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second
-    
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            // 1. 准备发送给我们自己后端函数的数据
-            const requestBody = {
-                apiUrl: apiSettings.url,
-                apiKey: apiSettings.key,
-                model: apiSettings.model,
-                messages: messages
-            };
-            
-            // 2. 请求我们自己的后端函数，而不是外部 API
-            // 注意这里的 URL 是 '/api/'，这会根据 netlify.toml 的规则被转发
-            const response = await fetch('/api/', {
-                method: 'POST',
-                // 注意：这里不再需要 'Authorization' header，
-                // 因为 API Key 已经包含在请求体里，由后端函数去处理。
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-            
-            if (!response.ok) {
-                const errorBody = await response.json();
-                throw new Error(`代理请求失败: ${response.status} - ${errorBody.error}`);
+        if (!chatRepliesText.includes('|||')) {
+            const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
+            let tempReplies = [];
+            for (let i = 0; i < sentences.length; i += 2) {
+                let sentence = sentences[i];
+                let punctuation = sentences[i+1] || '';
+                tempReplies.push(sentence + punctuation);
             }
-            
-            const data = await response.json();
-            // 后续处理 data 的逻辑和原来一样
-            let fullResponseText = data.choices[0].message.content;
-            
-            const memoryTableRegex = /<memory_table>([\s\S]*?)<\/memory_table>/;
-            const memoryMatch = fullResponseText.match(memoryTableRegex);
-            let newMemoryTable = null;
-            if (memoryMatch && memoryMatch[1]) {
-                newMemoryTable = memoryMatch[1].trim();
-                fullResponseText = fullResponseText.replace(memoryTableRegex, '').trim();
-            } else {
-                console.warn("AI回复中未找到<memory_table>。");
-            }
-            
-            let chatRepliesText = fullResponseText;
+            chatRepliesText = tempReplies.join('|||');
+        }
+        
+        const replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
+        const processedReplies = [];
+        
+        const emojiNameRegex = /^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/;
+        const redPacketRegex = /^\[red_packet:({.*})\]$/;
 
-            if (!chatRepliesText.includes('|||')) {
-                const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
-                let tempReplies = [];
-                for (let i = 0; i < sentences.length; i += 2) {
-                    let sentence = sentences[i];
-                    let punctuation = sentences[i+1] || '';
-                    tempReplies.push(sentence + punctuation);
-                }
-                chatRepliesText = tempReplies.join('|||');
-            }
-            
-            const replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
-            const processedReplies = [];
-            
-            const emojiNameRegex = /^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/;
-            const redPacketRegex = /^\[red_packet:({.*})\]$/;
+        for (const reply of replies) {
+            const emojiMatch = reply.match(emojiNameRegex);
+            const redPacketMatch = reply.match(redPacketRegex);
 
-            for (const reply of replies) {
-                const emojiMatch = reply.match(emojiNameRegex);
-                const redPacketMatch = reply.match(redPacketRegex);
-
-                if (emojiMatch) {
-                    const emojiName = emojiMatch[1];
-                    const foundEmoji = emojis.find(e => e.meaning === emojiName);
-                    if (foundEmoji) {
-                        processedReplies.push({ type: 'emoji', content: foundEmoji.url });
-                    } else {
-                        processedReplies.push({ type: 'text', content: reply });
-                    }
-                } else if (redPacketMatch) {
-                    try {
-                        const packetData = JSON.parse(redPacketMatch[1]);
-                        if (typeof packetData.amount === 'number' && typeof packetData.message === 'string') {
-                             processedReplies.push({ type: 'red_packet', content: JSON.stringify(packetData) });
-                        } else {
-                             processedReplies.push({ type: 'text', content: reply });
-                        }
-                    } catch (e) {
-                        processedReplies.push({ type: 'text', content: reply });
-                    }
+            if (emojiMatch) {
+                const emojiName = emojiMatch[1];
+                const foundEmoji = emojis.find(e => e.meaning === emojiName);
+                if (foundEmoji) {
+                    processedReplies.push({ type: 'emoji', content: foundEmoji.url });
                 } else {
                     processedReplies.push({ type: 'text', content: reply });
                 }
-            }
-            
-            return { replies: processedReplies, newMemoryTable };
-
-        } catch (error) {
-            console.error("API Call Error:", error);
-            if (i < maxRetries - 1) {
-                const delay = baseDelay * Math.pow(2, i);
-                console.log(`Retrying in ${delay / 1000}s...`);
-                await new Promise(res => setTimeout(res, delay));
+            } else if (redPacketMatch) {
+                try {
+                    const packetData = JSON.parse(redPacketMatch[1]);
+                    if (typeof packetData.amount === 'number' && typeof packetData.message === 'string') {
+                         processedReplies.push({ type: 'red_packet', content: JSON.stringify(packetData) });
+                    } else {
+                         processedReplies.push({ type: 'text', content: reply });
+                    }
+                } catch (e) {
+                    processedReplies.push({ type: 'text', content: reply });
+                }
             } else {
-                showToast("API 调用失败: " + error.message);
-                throw error;
+                processedReplies.push({ type: 'text', content: reply });
             }
         }
+        
+        return { replies: processedReplies, newMemoryTable };
+
+    } catch (error) {
+        console.error("API Call Error:", error);
+        showToast("API 调用失败: " + error.message);
+        throw error;
     }
 }
 
-// 【【【【【核心修改在这里】】】】】
 async function testApiConnection() {
     const url = document.getElementById('apiUrl').value;
     const key = document.getElementById('apiKey').value;
@@ -2407,28 +2208,7 @@ async function testApiConnection() {
     modelList.innerHTML = '<div class="loading-text">连接中...</div>';
 
     try {
-        // 1. 准备发送给我们自己后端函数的数据
-        const requestBody = {
-            apiUrl: url,
-            apiKey: key,
-        };
-
-        // 2. 请求我们为测试连接专门创建的后端函数
-        // 注意 URL 是 '/api-test/'，这会根据 netlify.toml 的规则被转发
-        const response = await fetch('/api-test/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`连接失败: ${response.status} - ${errorData.error}`);
-        }
-
-        const data = await response.json();
+        const data = await window.apiService.testConnection(url, key);
         const models = data.data || (data.object === 'list' ? data.data : []);
 
         if (!models || models.length === 0) {

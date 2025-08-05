@@ -1,0 +1,269 @@
+class PromptBuilder {
+    constructor() {
+        this.defaultMemoryTable = `# 角色设定
+- 姓名：
+- 性格特点：
+- 性别：
+- 说话风格：
+- 职业：
+
+# 用户设定
+- 姓名：
+- 性别：
+- 与角色的关系：
+- 用户性格：
+
+# 背景设定
+- 时间地点：
+- 事件：
+---
+## 系统指令
+你需要在每次对话结束时，按以下格式生成记忆表格。每次都要：
+1. 完整复制上一次的表格内容
+2. 根据本次对话新增相关信息
+3. 将表格放在回复的最末尾
+
+### 表格格式要求：
+## 📋 记忆表格
+
+### 【现在】
+| 项目 | 内容 |
+|------|------|
+| 地点 | [当前所在的具体地点] |
+| 人物 | [当前在场的所有人物] |
+| 时间 | [精确的年月日和时间，格式：YYYY年MM月DD日 HH:MM] |
+
+### 【未来】
+| 约定事项 | 详细内容 |
+|----------|----------|
+| [事项1]   | [具体的约定内容、时间、地点] |
+| [事项2]   | [具体的约定内容、时间、地点] |
+
+### 【过去】
+| 人物 | 事件 | 地点 | 时间 |
+|------|------|------|------|
+| [相关人物] | [发生的重要事件] | [事件发生地点] | [具体年月日] |
+
+### 【重要物品】
+| 物品名称 | 物品描述 | 重要原因 |
+|----------|----------|----------|
+| [物品1]   | [详细的外观和特征描述] | [为什么这个物品重要] |
+| [物品2]   | [详细的外观和特征描述] | [为什么这个物品重要] |
+`;
+    }
+
+    /**
+     * 构建聊天对话的系统提示词
+     */
+    buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+        const memoryInfo = (currentContact.memoryTableContent || '').trim();
+        let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+
+        // 添加当前时间
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const currentTimeString = `${year}年${month}月${day}日 ${hours}:${minutes}`;
+        
+        systemPrompt += `[重要系统指令：当前的标准北京时间是"${currentTimeString}"。当用户询问时间时，你必须根据这个时间来回答。]\n\n`;
+        
+        const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
+
+        // 构建角色设定
+        if (currentContact.type === 'group') {
+            const memberNames = currentContact.members.map(id => contacts.find(c => c.id === id)?.name || '未知成员');
+            systemPrompt += `你是群成员之一：${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
+                `你现在在一个名为"${currentContact.name}"的群聊中。群成员有：${userProfile.name} (用户), ${memberNames.join(', ')}。\n` +
+                `你的任务是根据自己的人设、记忆表格和用户人设，对**本回合**中在你之前其他人的**完整发言**进行回应，然后发表你自己的**完整观点**，以推动群聊进行。可以赞同、反驳、开玩笑、或者提出新的话题。\n` +
+                `你的发言需要自然地融入对话，就像一个真正在参与群聊的人。`;
+        } else {
+            systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
+                `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。`;
+        }
+
+        // 添加自定义提示词
+        if (contact.customPrompts) systemPrompt += '\n\n' + contact.customPrompts;
+        
+        // 添加音乐信息
+        if (window.currentMusicInfo && window.currentMusicInfo.isPlaying) {
+            systemPrompt += `\n\n[系统提示：用户正在听歌，当前歌曲是《${window.currentMusicInfo.songName}》，正在播放的歌词是："${window.currentMusicInfo.lyric}"]`;
+        }
+        
+        // 添加红包功能说明
+        systemPrompt += this._buildRedPacketInstructions();
+        
+        // 添加表情包使用规则
+        systemPrompt += this._buildEmojiInstructions(emojis);
+        
+        // 添加输出格式规则
+        systemPrompt += this._buildOutputFormatInstructions();
+
+        return systemPrompt;
+    }
+
+    /**
+     * 构建消息历史
+     */
+    buildMessageHistory(currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext = []) {
+        const messages = [];
+        const recentMessages = currentContact.messages.slice(-apiSettings.contextMessageCount);
+        
+        recentMessages.forEach(msg => {
+            const senderName = msg.role === 'user' ? userProfile.name : contacts.find(c => c.id === msg.senderId)?.name || contact.name;
+            let content = '';
+            if (msg.type === 'text') content = msg.content;
+            else if (msg.type === 'emoji') content = `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
+            else if (msg.type === 'red_packet') { 
+                try { 
+                    const p = JSON.parse(msg.content); 
+                    messages.push({ role: 'system', content: `[系统提示：${senderName}发送了一个金额为${p.amount}的红包，留言是："${p.message}"。请对此作出回应。]` }); 
+                } catch(e){} 
+                return;
+            }
+            messages.push({ role: msg.role, content: currentContact.type === 'group' ? `${senderName}: ${content}` : content });
+        });
+
+        // 添加群聊上下文
+        if (turnContext.length > 0) {
+            messages.push({role: 'system', content: '--- 以下是本回合刚刚发生的对话 ---'});
+            turnContext.forEach(msg => {
+                 const senderName = contacts.find(c => c.id === msg.senderId)?.name || '未知成员';
+                 let content = msg.type === 'text' ? msg.content : `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
+                 messages.push({ role: msg.role, content: `${senderName}: ${content}` });
+            });
+             messages.push({role: 'system', content: '--- 请针对以上最新对话进行回应 ---'});
+        }
+
+        return messages;
+    }
+
+    /**
+     * 构建图片搜索关键词生成提示词
+     */
+    buildImageSearchPrompt(content) {
+        return `你是一个图片搜索关键词生成器。根据朋友圈文案内容，生成最适合的英文搜索关键词用于图片搜索。
+要求：
+1. 分析文案的情感、场景、活动类型
+2. 生成3-5个英文关键词，用空格分隔
+3. 关键词要具体、形象，适合搜索到相关图片
+4. 避免人像关键词，优先选择风景、物品、场景类关键词
+5. 只输出关键词，不要其他解释
+文案内容：${content}`;
+    }
+
+    /**
+     * 构建朋友圈评论生成提示词
+     */
+    buildCommentsPrompt(momentContent) {
+        return `你是一个朋友圈评论生成器，需要根据朋友圈文案生成3-5条路人评论。
+要求：
+1. 根据文案内容生成3-5条相关评论
+2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
+3. 模仿网络语气，使用当代流行语。
+4. 评论要有不同观点和立场
+5. 每条评论至少15字
+6. 评论者名称使用：路人甲、小明、小红、隔壁老王、神秘网友、热心市民、吃瓜群众等
+7. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+
+输出格式 (必须严格遵守此JSON结构):
+{
+  "comments": [
+    { "author": "路人甲", "content": "评论内容1..." },
+    { "author": "小明", "content": "评论内容2..." }
+  ]
+}
+
+朋友圈文案：${momentContent}`;
+    }
+
+    /**
+     * 构建微博回复生成提示词
+     */
+    buildReplyPrompt(postData, userReply, contactId, contacts, userProfile) {
+        const contact = contacts.find(c => c.id === contactId);
+        const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
+
+        return `你是一个论坛评论员。你的名字是 ${postAuthorContact.name}，你的人设是：${postAuthorContact.personality}。
+现在，你需要根据你的身份，对一个用户在你的帖子下的评论进行回复。
+
+# 你的帖子内容
+${postData.post_content}
+
+# 用户的评论
+${userReply}
+
+# 你的任务
+- 以 ${postAuthorContact.name} 的身份进行回复。
+- 你的回复必须完全符合你的人设。
+- 回复要自然、口语化，就像一个真实的人在网上冲浪。
+- 只需输出回复内容，不要包含任何额外信息或格式。`;
+    }
+
+    /**
+     * 构建朋友圈内容生成提示词
+     */
+    buildMomentContentPrompt(contact, userProfile, apiSettings, contacts) {
+        let systemPrompt = `你是${contact.name}，${contact.personality}
+现在需要你以${contact.name}的身份发一条朋友圈。
+
+要求：
+1. 根据你的人设和最近的聊天记录，生成一条符合你性格的朋友圈文案
+2. 文案要自然、真实，体现你的个性特点
+3. 直接输出文案内容，不要任何解释或说明
+4. 文案长度控制在50字以内
+5. 可以包含适当的表情符号
+6. 文案应该适合配图，描述具体的场景、情感或活动`;
+
+        if (contact.messages && contact.messages.length > 0) {
+            const recentMessages = contact.messages.slice(-apiSettings.contextMessageCount);
+            const chatContext = recentMessages.map(msg => {
+                if (msg.role === 'user') {
+                    return `用户: ${msg.content}`;
+                } else {
+                    const sender = contacts.find(c => c.id === msg.senderId);
+                    const senderName = sender ? sender.name : contact.name;
+                    return `${senderName}: ${msg.content}`;
+                }
+            }).join('\n');
+            
+            systemPrompt += `\n\n最近的聊天记录：\n${chatContext}`;
+        }
+
+        return systemPrompt;
+    }
+
+    // 私有方法：构建红包指令
+    _buildRedPacketInstructions() {
+        return `\n\n--- 红包功能 ---\n`
+             + `你可以给用户发红包来表达祝贺、感谢或作为奖励。\n`
+             + `要发送红包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）：\n`
+             + `[red_packet:{"amount":8.88, "message":"恭喜发财！"}]\n`
+             + `其中 "amount" 是一个 1 到 1000000 之间的数字，"message" 是字符串。\n`
+             + `例如: 太棒了！|||[red_packet:{"amount":6.66, "message":"奖励你的！"}]|||继续加油哦！\n`
+             + `你必须自己决定何时发送红包以及红包的金额和留言。这个决定必须完全符合你的人设和当前的对话情景。例如，一个慷慨的角色可能会在用户取得成就时发送一个大红包，而一个节俭的角色可能会发送一个小红包并附上有趣的留言。`;
+    }
+
+    // 私有方法：构建表情包指令
+    _buildEmojiInstructions(emojis) {
+        const availableEmojisString = emojis.map(e => `- [emoji:${e.meaning}] (含义: ${e.meaning})`).join('\n');
+        
+        return `\n\n--- 表情包使用规则 ---\n`
+             + `你可以从下面的列表中选择表情包来丰富你的表达。\n`
+             + `要发送表情包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）。你必须使用表情的"含义"作为占位符，而不是图片URL。\n`
+             + `格式: [emoji:表情含义]\n`
+             + `例如: 你好呀|||[emoji:开心]|||今天天气真不错\n`
+             + `**重要提醒：** 你可能会在用户的消息历史中看到 "[发送了表情：...]" 这样的文字，这是系统为了让你理解对话而生成的提示，你绝对不能在你的回复中模仿或使用这种格式。你只能使用 [emoji:表情含义] 格式来发送表情。\n\n`
+             + `可用表情列表:\n${availableEmojisString || '无可用表情'}`;
+    }
+
+    // 私有方法：构建输出格式指令
+    _buildOutputFormatInstructions() {
+        return `\n\n--- 至关重要的输出格式规则 ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 <memory_table>...</memory_table> 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
+    }
+}
+
+// 创建全局实例
+window.promptBuilder = new PromptBuilder();

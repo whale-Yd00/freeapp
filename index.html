@@ -506,12 +506,9 @@
     
     <div class="top-notification" id="topNotification"></div>
 
-    <!-- 
-      【【【【【核心修改在这里】】】】】
-      我们不再从本地加载 marked.min.js，而是从一个可靠的公共 CDN 加载。
-      这可以确保文件本身是好的，避免了文件损坏或版本错误的问题。
-    -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>
+    <script src="api/api.js"></script>
+    <script src="api/promptBuilder.js"></script>
 </body>
 </html>
