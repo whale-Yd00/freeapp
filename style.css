@@ -2000,6 +2000,42 @@ body {
     z-index: 4000;
 }
 
+/* Update Modal Specifics */
+#updateModalBody {
+    max-height: 60vh; /* Limit height for long content */
+    overflow-y: auto;
+    padding-bottom: 15px;
+}
+
+#updateModalBody h2 {
+    font-size: 1.2em;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    text-align: center;
+}
+
+#updateModalBody h3 {
+    font-size: 1.1em;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    color: #07c160;
+}
+
+#updateModalBody ul {
+    padding-left: 20px;
+    margin-bottom: 1em;
+}
+
+#updateModalBody li {
+    margin-bottom: 0.5em;
+    line-height: 1.6;
+}
+
+.modal-footer {
+    padding: 15px;
+    border-top: 0.5px solid #e5e5e5;
+}
+
 /* 新增：回复框样式 */
 .reply-box {
     margin-top: 12px;
