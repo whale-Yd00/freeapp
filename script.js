@@ -386,7 +386,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
     const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
     const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
     const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
-    const genericRolePromptPart = `评论区需要有2-4条路人评论。其中，必须包含以下 ${selectedRoles.length} 个特殊角色，他们的回复要严格符合人设：${genericRoleDescriptions}`;
+    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}`;
 
     // 随机选择1-3个用户创建的角色作为额外的评论者
     let userCharacterPromptPart = '';
@@ -400,7 +400,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
 
         if (selectedUserCharacters.length > 0) {
             const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
-            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。`;
+            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
         }
     }
 
@@ -606,7 +606,7 @@ function renderSingleWeiboPost(storedPost) {
                     <span class="action-icon">🔄</span>
                     <span>${Math.floor(Math.random() * 500)}</span>
                 </a>
-                <a href="#" class="action-btn-weibo">
+                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}')">
                     <span class="action-icon">💬</span>
                     <span>${post.comments ? post.comments.length : 0}</span>
                 </a>
@@ -615,13 +615,202 @@ function renderSingleWeiboPost(storedPost) {
                     <span>${Math.floor(Math.random() * 5000)}</span>
                 </a>
             </div>
-            <div class="comments-section">
+            <div class="comments-section" onclick="showReplyBox('${postHtmlId}')">
                 ${commentsHtml}
             </div>
         `;
         container.appendChild(postElement);
     });
 }
+
+function showReplyBox(postHtmlId) {
+    const postElement = document.getElementById(postHtmlId);
+    if (!postElement) return;
+
+    let replyBox = postElement.querySelector('.reply-box');
+    if (replyBox) {
+        replyBox.querySelector('textarea').focus();
+        return;
+    }
+
+    const commentsSection = postElement.querySelector('.comments-section');
+    
+    replyBox = document.createElement('div');
+    replyBox.className = 'reply-box';
+    replyBox.innerHTML = `
+        <textarea class="reply-input" placeholder="输入你的回复..."></textarea>
+        <button class="reply-button">回复</button>
+    `;
+    
+    commentsSection.appendChild(replyBox);
+    const replyInput = replyBox.querySelector('.reply-input');
+    const replyButton = replyBox.querySelector('.reply-button');
+
+    replyInput.focus();
+
+    replyButton.onclick = async () => {
+        const replyContent = replyInput.value.trim();
+        if (!replyContent) {
+            showToast('回复内容不能为空');
+            return;
+        }
+
+        // --- Find the target post ---
+        const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
+        const postIndex = parseInt(postHtmlId.split('-')[3], 10);
+        const storedPost = weiboPosts.find(p => p.id === storedPostId);
+        if (!storedPost) {
+            showToast('错误：找不到原始帖子');
+            return;
+        }
+        const postData = storedPost.data.posts[postIndex];
+        const postAuthorContact = contacts.find(c => c.id === storedPost.contactId);
+        if (!postAuthorContact) {
+            showToast('错误：找不到帖子作者信息');
+            return;
+        }
+        const postAuthorNickname = postData.author_type === 'User' ? userProfile.name : postAuthorContact.name;
+
+        // --- 如果是回复自己的帖子，只保存不调用AI ---
+        if (postAuthorNickname === userProfile.name) {
+            const userComment = {
+                commenter_name: userProfile.name,
+                commenter_type: '楼主',
+                comment_content: replyContent
+            };
+
+            if (!postData.comments) {
+                postData.comments = [];
+            }
+            postData.comments.push(userComment);
+
+            await updateWeiboPost(storedPost);
+            showToast('回复已保存');
+            renderAllWeiboPosts();
+            return;
+        }
+        
+
+        // Disable input and button
+        replyInput.disabled = true;
+        replyButton.disabled = true;
+        replyButton.textContent = '请稍后...';
+
+        // --- Create temporary UI elements for immediate feedback ---
+        const userCommentElement = document.createElement('div');
+        userCommentElement.className = 'comment';
+        userCommentElement.innerHTML = `
+            <span class="comment-user">${userProfile.name} (你):</span>
+            <span class="comment-content">${replyContent}</span>
+            <span class="comment-time">刚刚</span>
+        `;
+        commentsSection.insertBefore(userCommentElement, replyBox);
+
+        const aiPlaceholderElement = document.createElement('div');
+        aiPlaceholderElement.className = 'comment';
+        aiPlaceholderElement.innerHTML = `
+            <span class="comment-user">${postAuthorNickname}:</span>
+            <span class="comment-content">...</span>
+        `;
+        commentsSection.insertBefore(aiPlaceholderElement, replyBox);
+        
+        try {
+            // --- Get AI Reply ---
+            const aiReplyContent = await getAIReply(postData, replyContent, storedPost.contactId);
+            
+            // --- Create comment objects ---
+            const userComment = {
+                commenter_name: userProfile.name,
+                commenter_type: '你',
+                comment_content: replyContent
+            };
+            const aiComment = {
+                commenter_name: postAuthorNickname,
+                commenter_type: '楼主',
+                comment_content: aiReplyContent
+            };
+
+            // --- Update data structure ---
+            if (!postData.comments) {
+                postData.comments = [];
+            }
+            postData.comments.push(userComment);
+            postData.comments.push(aiComment);
+
+            // --- Save to DB ---
+            await updateWeiboPost(storedPost);
+
+            // --- Re-render the entire post for consistency ---
+            showToast('回复成功！');
+            renderAllWeiboPosts(); // This will redraw everything correctly from the source of truth
+
+        } catch (error) {
+            // --- Handle failure ---
+            showToast(`生成失败: ${error.message}`);
+            console.error('AI回复生成失败:', error);
+            // Re-render to remove temporary elements
+            renderAllWeiboPosts();
+        }
+    };
+}
+
+async function getAIReply(postData, userReply, contactId) {
+    const contact = contacts.find(c => c.id === contactId);
+    const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
+
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        throw new Error('API未配置');
+    }
+
+    const systemPrompt = `你是一个论坛评论员。你的名字是 ${postAuthorContact.name}，你的人设是：${postAuthorContact.personality}。
+    现在，你需要根据你的身份，对一个用户在你的帖子下的评论进行回复。
+
+    # 你的帖子内容
+    ${postData.post_content}
+
+    # 用户的评论
+    ${userReply}
+
+    # 你的任务
+    - 以 ${postAuthorContact.name} 的身份进行回复。
+    - 你的回复必须完全符合你的人设。
+    - 回复要自然、口语化，就像一个真实的人在网上冲浪。
+    - 只需输出回复内容，不要包含任何额外信息或格式。`;
+
+    const payload = {
+        model: apiSettings.model,
+        messages: [{ role: 'user', content: systemPrompt }],
+        temperature: 0.7,
+        max_tokens: 2000
+    };
+
+    const apiUrl = `${apiSettings.url}/chat/completions`;
+
+    // This is the direct API call, like in `callAPI`
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiSettings.key}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API请求失败: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
+        throw new Error('AI未返回有效回复');
+    }
+    
+    return data.choices[0].message.content.trim();
+}
+
+
 
 function toggleWeiboMenu(event, storedPostId, postIndex) {
     event.stopPropagation();
@@ -682,24 +871,30 @@ async function deleteWeiboPost(storedPostId, postIndex) {
             }
         } else {
             // Otherwise, just update the modified group in IndexedDB
-            if (isIndexedDBReady) {
-                try {
-                    const transaction = db.transaction(['weiboPosts'], 'readwrite');
-                    const store = transaction.objectStore('weiboPosts');
-                    await promisifyRequest(store.put(postGroup));
-                    await promisifyTransaction(transaction);
-                } catch (error) {
-                    console.error('Failed to update Weibo post group in DB:', error);
-                    showToast('更新数据库中的帖子失败');
-                    return;
-                }
-            }
+            await updateWeiboPost(postGroup);
         }
     }
 
     // Re-render the UI
     renderAllWeiboPosts();
     showToast('帖子已删除');
+}
+
+async function updateWeiboPost(postToUpdate) {
+    if (!isIndexedDBReady) {
+        console.error('IndexedDB not ready, cannot update post.');
+        showToast('数据库错误，无法更新帖子');
+        return;
+    }
+    try {
+        const transaction = db.transaction(['weiboPosts'], 'readwrite');
+        const store = transaction.objectStore('weiboPosts');
+        await promisifyRequest(store.put(postToUpdate));
+        await promisifyTransaction(transaction);
+    } catch (error) {
+        console.error('Failed to update Weibo post in DB:', error);
+        showToast('更新帖子失败');
+    }
 }
 
 
@@ -923,7 +1118,7 @@ async function generateAIComments(momentContent) {
 要求：
 1. 根据文案内容生成3-5条相关评论
 2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
-3. 使用当代网络流行语：YYDS、绝绝子、谐音梗、林黛玉文学等
+3. 模仿网络语气，使用当代流行语。
 4. 评论要有不同观点和立场
 5. 每条评论至少15字
 6. 评论者名称使用：路人甲、小明、小红、隔壁老王、神秘网友、热心市民、吃瓜群众等

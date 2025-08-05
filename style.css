@@ -2000,6 +2000,50 @@ body {
     z-index: 4000;
 }
 
+/* 新增：回复框样式 */
+.reply-box {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+    display: flex;
+    gap: 8px;
+}
+
+.reply-input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #e1e8ed;
+    border-radius: 18px;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.reply-input:focus {
+    border-color: #4a90e2;
+}
+
+.reply-button {
+    padding: 8px 16px;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 18px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.reply-button:hover {
+    background-color: #357bd8;
+}
+
+.reply-button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
 .confirm-dialog {
     background-color: white;
     padding: 20px;
