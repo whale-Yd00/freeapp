@@ -357,6 +357,39 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, count = 1) {
+    const forumRoles = [
+        { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
+        { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
+        { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
+        { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
+    ];
+
+    // 随机选择1-3个路人角色
+    const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
+    const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
+    const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
+    const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
+    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
+
+    // 随机选择1-3个用户创建的角色作为额外的评论者
+    let userCharacterPromptPart = '';
+    const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
+    if (potentialCommenters.length > 0) {
+        const maxUserCharacters = Math.min(potentialCommenters.length, 3);
+        const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
+        
+        const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
+        const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
+
+        if (selectedUserCharacters.length > 0) {
+            const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
+            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
+        }
+    }
+
+    // 组合成最终的评论生成指令
+    const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
+
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) {
         showToast('未找到指定的聊天对象');
@@ -366,7 +399,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         showToast('请先在设置中配置API');
         return;
     }
-
+    
     const container = document.getElementById('weiboContainer');
     const loadingIndicator = document.createElement('div');
     loadingIndicator.className = 'loading-text';
@@ -851,7 +884,7 @@ async function generateMomentContent() {
     generateBtn.textContent = '生成中...';
 
     try {
-        const systemPrompt = window.promptBuilder.buildMomentContentPrompt(currentContact, apiSettings, contacts);
+        const systemPrompt = window.promptBuilder.buildMomentContentPrompt(currentContact, userProfile, apiSettings, contacts);
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
@@ -1978,18 +2011,22 @@ async function callAPI(contact, turnContext = []) {
             contact, 
             userProfile, 
             currentContact, 
+            apiSettings, 
             emojis, 
-            window
+            window, 
+            turnContext
         );
 
         // 2. 构建消息数组
         const messages = [{ role: 'system', content: systemPrompt }];
         const messageHistory = window.promptBuilder.buildMessageHistory(
             currentContact, 
+            apiSettings, 
             userProfile, 
             contacts, 
             contact, 
-            emojis
+            emojis, 
+            turnContext
         );
         messages.push(...messageHistory);
 

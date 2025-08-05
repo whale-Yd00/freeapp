@@ -56,7 +56,7 @@ class PromptBuilder {
     /**
      * 构建聊天对话的系统提示词
      */
-    buildChatPrompt(contact, userProfile, currentContact, emojis, window = []) {
+    buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
         const memoryInfo = (currentContact.memoryTableContent || '').trim();
         let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
 
@@ -285,9 +285,9 @@ ${userReply}
     /**
      * 构建朋友圈内容生成提示词
      */
-    buildMomentContentPrompt(contact, apiSettings, contacts) {
-        let systemPrompt = `你要扮演 ${contact.name}，人设为：${contact.personality}
-现在需要你以 ${contact.name} 的身份发一条朋友圈。
+    buildMomentContentPrompt(contact, userProfile, apiSettings, contacts) {
+        let systemPrompt = `你是${contact.name}，${contact.personality}
+现在需要你以${contact.name}的身份发一条朋友圈。
 
 要求：
 1. 根据你的人设和最近的聊天记录，生成一条符合你性格的朋友圈文案
