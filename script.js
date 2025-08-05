@@ -308,6 +308,40 @@ function promisifyTransaction(transaction) {
 }
 
 // --- 论坛功能 ---
+
+function formatTime(timestamp) {
+    if (!timestamp) return '';
+
+    const now = new Date();
+    const postTime = new Date(timestamp);
+    const diff = now.getTime() - postTime.getTime();
+
+    const diffMinutes = Math.floor(diff / (1000 * 60));
+    const diffHours = Math.floor(diff / (1000 * 60 * 60));
+    const diffDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 1) {
+        if (diffHours < 1) {
+            return `${Math.max(1, diffMinutes)}分钟前`;
+        }
+        return `${diffHours}小时前`;
+    } else if (diffDays < 2) {
+        return '1天前';
+    } else {
+        const isSameYear = now.getFullYear() === postTime.getFullYear();
+        const month = (postTime.getMonth() + 1).toString().padStart(2, '0');
+        const day = postTime.getDate().toString().padStart(2, '0');
+        
+        if (isSameYear) {
+            const hours = postTime.getHours().toString().padStart(2, '0');
+            const minutes = postTime.getMinutes().toString().padStart(2, '0');
+            return `${month}-${day} ${hours}:${minutes}`;
+        } else {
+            return `${postTime.getFullYear()}-${month}-${day}`;
+        }
+    }
+}
+
 function showContactListPage() {
     document.getElementById('contactListPage').style.display = 'block';
     document.getElementById('weiboPage').classList.remove('active');
@@ -386,7 +420,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
     const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
     const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
     const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
-    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}`;
+    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
 
     // 随机选择1-3个用户创建的角色作为额外的评论者
     let userCharacterPromptPart = '';
@@ -400,7 +434,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
 
         if (selectedUserCharacters.length > 0) {
             const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
-            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
+            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
         }
     }
 
@@ -442,14 +476,15 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
     # 要求
     1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
     2. ${finalCommentPrompt}
-    3. 模仿网络语气，使用当代流行语。
+    3. 模仿网络语气，适当使用流行语，要有网感。
     4. 评论可以有不同观点和立场。
     5. 为每篇帖子提供一个简短的图片内容描述文字。
     6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
 
     # 输出格式 (必须严格遵守此JSON结构)
     {
-      "cp_name": "${contact.name}X${userProfile.name}",
+      "relation_tag": "${contact.name}X${userProfile.name}",
       "posts": [
         {
           "author_type": "User" or "Char",
@@ -464,7 +499,6 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
     }
     `;
       
-
 
     try {
         const payload = {
@@ -497,19 +531,38 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         }
         
         const weiboData = JSON.parse(jsonText);
+
+        // --- 时间戳注入 ---
+        const now = Date.now();
+        // 主楼时间设为2-5分钟前
+        const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
+        let lastCommentTime = postCreatedAt.getTime();
+
+        weiboData.posts.forEach(post => {
+            post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
+            if (post.comments && Array.isArray(post.comments)) {
+                post.comments.forEach(comment => {
+                    // 回复时间在主楼和现在之间，且比上一条晚一点
+                    const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
+                    lastCommentTime = newCommentTimestamp;
+                    comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
+                });
+            }
+        });
+        // --- 时间戳注入结束 ---
         
         const newPost = {
             id: Date.now(),
             contactId: contactId,
             relations: relations,
             data: weiboData,
-            createdAt: new Date().toISOString()
+            createdAt: postCreatedAt.toISOString() // 使用生成的时间
         };
 
         await saveWeiboPost(newPost);
         weiboPosts.push(newPost); // Update in-memory array
         renderAllWeiboPosts(); // Re-render all posts
-        showToast('帖子生成并保存成功！');
+        showToast('帖子已刷新！');
 
     } catch (error) {
         console.error('生成论坛失败:', error);
@@ -551,7 +604,7 @@ function renderSingleWeiboPost(storedPost) {
         const postAuthorContact = post.author_type === 'User' ? userProfile : contact;
         const postAuthorNickname = post.author_type === 'User' ? userProfile.name : contact.name;
         const postAuthorAvatar = postAuthorContact.avatar;
-        const cpName = data.cp_name || `${contact.name}X${userProfile.name}`;
+        const cpName = data.relation_tag || `${contact.name}X${userProfile.name}`;
         const otherPartyName = post.author_type === 'User' ? contact.name : userProfile.name;
 
         const postElement = document.createElement('div');
@@ -563,11 +616,12 @@ function renderSingleWeiboPost(storedPost) {
         let commentsHtml = '';
         if (post.comments && Array.isArray(post.comments)) {
             post.comments.forEach(comment => {
+                const commenterType = comment.commenter_type ? ` (${comment.commenter_type})` : '';
                 commentsHtml += `
                     <div class="comment">
-                        <span class="comment-user">${comment.commenter_name} (${comment.commenter_type}):</span>
+                        <span class="comment-user">${comment.commenter_name}${commenterType}:</span>
                         <span class="comment-content">${comment.comment_content}</span>
-                        <span class="comment-time">${Math.floor(Math.random() * 59) + 1}分钟前</span>
+                        <span class="comment-time">${formatTime(comment.timestamp)}</span>
                     </div>
                 `;
             });
@@ -583,7 +637,7 @@ function renderSingleWeiboPost(storedPost) {
                         ${postAuthorNickname}
                         <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
                     </div>
-                    <div class="post-time">${formatContactListTime(storedPost.createdAt)}</div>
+                    <div class="post-time">${formatTime(post.timestamp)}</div>
                     <div class="post-source">来自 ${storedPost.relations} 研究所</div>
                 </div>
                 <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
@@ -676,7 +730,8 @@ function showReplyBox(postHtmlId) {
             const userComment = {
                 commenter_name: userProfile.name,
                 commenter_type: '楼主',
-                comment_content: replyContent
+                comment_content: replyContent,
+                timestamp: new Date().toISOString()
             };
 
             if (!postData.comments) {
@@ -685,7 +740,7 @@ function showReplyBox(postHtmlId) {
             postData.comments.push(userComment);
 
             await updateWeiboPost(storedPost);
-            showToast('回复已保存');
+            showToast('已回复');
             renderAllWeiboPosts();
             return;
         }
@@ -722,12 +777,14 @@ function showReplyBox(postHtmlId) {
             const userComment = {
                 commenter_name: userProfile.name,
                 commenter_type: '你',
-                comment_content: replyContent
+                comment_content: replyContent,
+                timestamp: new Date().toISOString()
             };
             const aiComment = {
                 commenter_name: postAuthorNickname,
                 commenter_type: '楼主',
-                comment_content: aiReplyContent
+                comment_content: aiReplyContent,
+                timestamp: new Date().toISOString()
             };
 
             // --- Update data structure ---
@@ -1553,6 +1610,38 @@ function formatMusicTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatTime(timestamp) {
+    if (!timestamp) return '';
+    const now = new Date();
+    const postTime = new Date(timestamp);
+    const diffInSeconds = (now - postTime) / 1000;
+    const diffInMinutes = diffInSeconds / 60;
+    const diffInHours = diffInMinutes / 60;
+
+    const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfPostTime = new Date(postTime.getFullYear(), postTime.getMonth(), postTime.getDate());
+    const diffInDays = (startOfNow - startOfPostTime) / (1000 * 60 * 60 * 24);
+
+    if (diffInDays < 1) { // Today
+        if (diffInMinutes < 1) return "刚刚";
+        if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)}分钟前`;
+        return `${Math.floor(diffInHours)}小时前`;
+    } else if (diffInDays < 2) { // Yesterday
+        return "1天前";
+    } else { // 2 days ago or more
+        const isThisYear = now.getFullYear() === postTime.getFullYear();
+        const month = (postTime.getMonth() + 1).toString().padStart(2, '0');
+        const day = postTime.getDate().toString().padStart(2, '0');
+        if (isThisYear) {
+            const hours = postTime.getHours().toString().padStart(2, '0');
+            const minutes = postTime.getMinutes().toString().padStart(2, '0');
+            return `${month}-${day} ${hours}:${minutes}`;
+        } else {
+            return `${postTime.getFullYear()}-${month}-${day}`;
+        }
+    }
 }
 
 // --- UI 更新 & 交互 ---
