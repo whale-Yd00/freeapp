@@ -202,7 +202,7 @@ class PromptBuilder {
 
     # 输出格式 (必须严格遵守此JSON结构)
     {
-    "relation_tag": "${contact.name}X${userProfile.name}",
+    "relation_tag": "${contact.name} X ${userProfile.name}",
     "posts": [
         {
         "author_type": "User" or "Char",
@@ -260,14 +260,17 @@ class PromptBuilder {
     }
 
     /**
-     * 构建微博回复生成提示词
+     * 构建论坛回复生成提示词
      */
     buildReplyPrompt(postData, userReply, contactId, contacts, userProfile) {
         const contact = contacts.find(c => c.id === contactId);
         const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
+        const userPersona = userProfile.personality ? `用户人设为：${userProfile.personality}` : '';
 
-        return `你是一个论坛评论员。你的名字是 ${postAuthorContact.name}，你的人设是：${postAuthorContact.personality}。
-现在，你需要根据你的身份，对一个用户在你的帖子下的评论进行回复。
+        return `# 任务 请严格遵守以下要求完成生成 ${userProfile.name} 和 ${postAuthorContact.name} 之间的日常帖子的回复。
+# 设定
+你现在要扮演 “${postAuthorContact.name}”，你的人设是：“${postAuthorContact.personality}”。
+用户名为 ${userProfile.name} 的用户与你的关系是：${postData.relations}。${userPersona}
 
 # 你的帖子内容
 ${postData.post_content}
@@ -278,7 +281,7 @@ ${userReply}
 # 你的任务
 - 以 ${postAuthorContact.name} 的身份进行回复。
 - 你的回复必须完全符合你的人设。
-- 回复要自然、口语化，就像一个真实的人在网上冲浪。
+- 回复要自然、口语化，模仿 ${postAuthorContact.name} 的人设，就像一个真实的人在网上冲浪。
 - 只需输出回复内容，不要包含任何额外信息或格式。`;
     }
 
