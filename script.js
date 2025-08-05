@@ -51,6 +51,7 @@ let userProfile = {
     personality: '' 
 };
 let moments = [];
+let weiboPosts = [];
 
 let audio = null;
 let db = null; // IndexedDB 实例 
@@ -152,7 +153,7 @@ async function init() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 2); // 数据库名和版本号
+        const request = indexedDB.open('WhaleLLTDB', 3); // 数据库名和版本号
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -179,6 +180,9 @@ function openDB() {
             if (!db.objectStoreNames.contains('moments')) {
                 db.createObjectStore('moments', { keyPath: 'id' });
             }
+            if (!db.objectStoreNames.contains('weiboPosts')) {
+                db.createObjectStore('weiboPosts', { keyPath: 'id', autoIncrement: true });
+            }
         };
 
         request.onsuccess = event => {
@@ -201,7 +205,7 @@ async function loadDataFromDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments'], 'readonly');
+        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts'], 'readonly');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -209,6 +213,7 @@ async function loadDataFromDB() {
         const backgroundsStore = transaction.objectStore('backgrounds');
         const userProfileStore = transaction.objectStore('userProfile');
         const momentsStore = transaction.objectStore('moments');
+        const weiboPostsStore = transaction.objectStore('weiboPosts');
 
         contacts = (await promisifyRequest(contactsStore.getAll())) || [];
         // 迁移旧数据格式或添加默认值
@@ -235,6 +240,7 @@ async function loadDataFromDB() {
             userProfile.personality = '';
         }
         moments = (await promisifyRequest(momentsStore.getAll())) || [];
+        weiboPosts = (await promisifyRequest(weiboPostsStore.getAll())) || [];
 
     } catch (error) {
         console.error('从IndexedDB加载数据失败:', error);
@@ -313,6 +319,7 @@ function showContactListPage() {
 function openWeiboPage() {
     document.getElementById('weiboPage').classList.add('active');
     document.getElementById('contactListPage').style.display = 'none';
+    renderAllWeiboPosts();
 }
 
 function closeWeiboPage() {
@@ -320,13 +327,89 @@ function closeWeiboPage() {
     showContactListPage();
 }
 
-/**
- * @description 根据聊天记录和角色信息生成论坛帖子
- * @changes **MODIFIED**: Changed API request to be compatible with OpenAI format.
- */
-async function generateWeiboPosts() {
-    if (!currentContact) {
-        showToast('请先选择一个聊天对象来生成CP论坛');
+function showGeneratePostModal() {
+    const select = document.getElementById('postGenCharacterSelect');
+    select.innerHTML = '<option value="">请选择...</option>'; // Reset
+    contacts.forEach(contact => {
+        if (contact.type === 'private') {
+            const option = document.createElement('option');
+            option.value = contact.id;
+            option.textContent = contact.name;
+            select.appendChild(option);
+        }
+    });
+    showModal('generatePostModal');
+}
+
+async function handleGeneratePost(event) {
+    event.preventDefault();
+    const contactId = document.getElementById('postGenCharacterSelect').value;
+    const relations = document.getElementById('postGenrelations').value;
+    const count = document.getElementById('postGenCount').value;
+
+    if (!contactId || !relations) {
+        showToast('请选择角色并填写关系类型');
+        return;
+    }
+
+    closeModal('generatePostModal');
+    await generateWeiboPosts(contactId, relations, count);
+}
+
+async function saveWeiboPost(postData) {
+    if (!isIndexedDBReady) {
+        console.error('IndexedDB not ready, cannot save post.');
+        showToast('数据库错误，无法保存帖子');
+        return;
+    }
+    try {
+        const transaction = db.transaction(['weiboPosts'], 'readwrite');
+        const store = transaction.objectStore('weiboPosts');
+        await promisifyRequest(store.add(postData));
+        await promisifyTransaction(transaction);
+    } catch (error) {
+        console.error('Failed to save Weibo post to DB:', error);
+        showToast('保存帖子失败');
+    }
+}
+
+async function generateWeiboPosts(contactId, relations, count = 1) {
+    const forumRoles = [
+        { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
+        { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
+        { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
+        { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
+    ];
+
+    // 随机选择1-3个路人角色
+    const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
+    const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
+    const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
+    const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
+    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}`;
+
+    // 随机选择1-3个用户创建的角色作为额外的评论者
+    let userCharacterPromptPart = '';
+    const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
+    if (potentialCommenters.length > 0) {
+        const maxUserCharacters = Math.min(potentialCommenters.length, 3);
+        const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
+        
+        const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
+        const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
+
+        if (selectedUserCharacters.length > 0) {
+            const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
+            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
+        }
+    }
+
+    // 组合成最终的评论生成指令
+    const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
+
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) {
+        showToast('未找到指定的聊天对象');
         return;
     }
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
@@ -334,37 +417,39 @@ async function generateWeiboPosts() {
         return;
     }
     
-    openWeiboPage();
     const container = document.getElementById('weiboContainer');
-    container.innerHTML = '<div class="loading-text">正在生成论坛内容...</div>';
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'loading-text';
+    loadingIndicator.textContent = '正在生成论坛内容...';
+    container.prepend(loadingIndicator);
 
     const userRole = `人设：${userProfile.name}, ${userProfile.personality || '用户'}`;
-    const charRole = `人设：${currentContact.name}, ${currentContact.personality}`;
-    const recentMessages = currentContact.messages.slice(-10);
+    const charRole = `人设：${contact.name}, ${contact.personality}`;
+    const recentMessages = contact.messages.slice(-10);
     const background = recentMessages.map(msg => {
-        const sender = msg.role === 'user' ? userProfile.name : currentContact.name;
+        const sender = msg.role === 'user' ? userProfile.name : contact.name;
         return `${sender}: ${msg.content}`;
     }).join('\n');
 
-    const systemPrompt = `你现在是一个论坛帖子CP内容生成器。请严格按照以下要求操作：
-    **角色设定：**
+    const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
+    # 设定
     - User: ${userRole}
     - Char: ${charRole}
+    - 他们的关系是: ${relations}
     - 背景设定: (根据以下最近的十条聊天记录)
     ${background}
 
-    **生成要求：**
-    1. 根据最近的对话内容和角色性格，生成1-2篇论坛帖子。
-    2. 每篇帖子下生成3-5条路人评论。
-    3. 路人角色类型必须包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等。
-    4. 必须使用当代网络流行语，例如：YYDS、绝绝子、谐音梗、林黛玉文学等。
-    5. 评论要有不同观点和立场。
-    6. 为每篇帖子提供一个简短的图片内容描述文字。
-    7. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    # 要求
+    1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
+    2. ${finalCommentPrompt}
+    3. 模仿网络语气，使用当代流行语。
+    4. 评论可以有不同观点和立场。
+    5. 为每篇帖子提供一个简短的图片内容描述文字。
+    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
 
-    **输出格式 (必须严格遵守此JSON结构):**
+    # 输出格式 (必须严格遵守此JSON结构)
     {
-      "cp_name": "${currentContact.name}X${userProfile.name}",
+      "cp_name": "${contact.name}X${userProfile.name}",
       "posts": [
         {
           "author_type": "User" or "Char",
@@ -378,12 +463,14 @@ async function generateWeiboPosts() {
       ]
     }
     `;
+      
+
 
     try {
         const payload = {
             model: apiSettings.model,
             messages: [{ role: 'user', content: systemPrompt }],
-            response_format: { type: "json_object" }, // Request JSON output
+            response_format: { type: "json_object" },
             temperature: 0.7
         };
 
@@ -410,34 +497,68 @@ async function generateWeiboPosts() {
         }
         
         const weiboData = JSON.parse(jsonText);
-        renderWeiboPage(weiboData);
+        
+        const newPost = {
+            id: Date.now(),
+            contactId: contactId,
+            relations: relations,
+            data: weiboData,
+            createdAt: new Date().toISOString()
+        };
+
+        await saveWeiboPost(newPost);
+        weiboPosts.push(newPost); // Update in-memory array
+        renderAllWeiboPosts(); // Re-render all posts
+        showToast('帖子生成并保存成功！');
 
     } catch (error) {
         console.error('生成论坛失败:', error);
-        container.innerHTML = `<div class="loading-text" style="color: red;">生成失败: ${error.message}</div>`;
         showToast('生成论坛失败: ' + error.message);
+    } finally {
+        loadingIndicator.remove();
     }
 }
 
-
-function renderWeiboPage(data) {
+function renderAllWeiboPosts() {
     const container = document.getElementById('weiboContainer');
-    container.innerHTML = ''; 
+    container.innerHTML = '';
 
-    // 添加安全检查
-    if (!data || !data.posts || !Array.isArray(data.posts) || data.posts.length === 0) {
-        container.innerHTML = '<div class="loading-text">未能生成论坛内容，请重试。</div>';
+    if (!weiboPosts || weiboPosts.length === 0) {
+        container.innerHTML = '<div class="loading-text">还没有任何帖子，点击右上角“+”来生成吧！</div>';
         return;
     }
 
-    data.posts.forEach(post => {
-        const postAuthor = post.author_type === 'User' ? userProfile : currentContact;
-        const postAuthorNickname = post.author_type === 'User' ? userProfile.name : currentContact.name;
-        const postAuthorAvatar = postAuthor.avatar;
-        const cpName = data.cp_name || `${currentContact.name}X${userProfile.name}`;
+    // Sort posts by creation date, newest first
+    const sortedPosts = weiboPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    sortedPosts.forEach(storedPost => {
+        renderSingleWeiboPost(storedPost);
+    });
+}
+
+function renderSingleWeiboPost(storedPost) {
+    const container = document.getElementById('weiboContainer');
+    const contact = contacts.find(c => c.id === storedPost.contactId);
+    if (!contact) return; // Don't render if contact is deleted
+
+    const data = storedPost.data;
+
+    if (!data || !data.posts || !Array.isArray(data.posts)) {
+        return;
+    }
+
+    data.posts.forEach((post, index) => {
+        const postAuthorContact = post.author_type === 'User' ? userProfile : contact;
+        const postAuthorNickname = post.author_type === 'User' ? userProfile.name : contact.name;
+        const postAuthorAvatar = postAuthorContact.avatar;
+        const cpName = data.cp_name || `${contact.name}X${userProfile.name}`;
+        const otherPartyName = post.author_type === 'User' ? contact.name : userProfile.name;
 
         const postElement = document.createElement('div');
         postElement.className = 'post';
+        // Use a composite key of storedPost.id and the index to uniquely identify each post
+        const postHtmlId = `weibo-post-${storedPost.id}-${index}`;
+        postElement.id = postHtmlId;
 
         let commentsHtml = '';
         if (post.comments && Array.isArray(post.comments)) {
@@ -452,7 +573,6 @@ function renderWeiboPage(data) {
             });
         }
         
-
         postElement.innerHTML = `
             <div class="post-header">
                 <div class="avatar">
@@ -463,14 +583,20 @@ function renderWeiboPage(data) {
                         ${postAuthorNickname}
                         <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
                     </div>
-                    <div class="post-time">${new Date().toLocaleString('sv-SE').slice(5, 16).replace('T', ' ')}</div>
-                    <div class="post-source">来自 whale社区</div>
+                    <div class="post-time">${formatContactListTime(storedPost.createdAt)}</div>
+                    <div class="post-source">来自 ${storedPost.relations} 研究所</div>
+                </div>
+                <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
+                    ...
+                    <div class="post-menu-dropdown" id="weibo-menu-${storedPost.id}-${index}">
+                        <div class="menu-item" onclick="deleteWeiboPost('${storedPost.id}', ${index})">删除</div>
+                    </div>
                 </div>
             </div>
             <div class="post-content">
-                <a href="#" class="hashtag">#${cpName}社区#</a>
+                <a href="#" class="hashtag">#${cpName}#</a>
                 ${post.post_content}
-                <a href="#" class="mention">@${post.author_type === 'User' ? currentContact.name : userProfile.name}</a>
+                <a href="#" class="mention">@${otherPartyName}</a>
             </div>
             <div class="post-image-desc">
                 ${post.image_description}
@@ -480,22 +606,297 @@ function renderWeiboPage(data) {
                     <span class="action-icon">🔄</span>
                     <span>${Math.floor(Math.random() * 500)}</span>
                 </a>
-                <a href="#" class="action-btn-weibo">
+                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}')">
                     <span class="action-icon">💬</span>
-                    <span>${post.comments.length}</span>
+                    <span>${post.comments ? post.comments.length : 0}</span>
                 </a>
                 <a href="#" class="action-btn-weibo">
                     <span class="action-icon">👍</span>
                     <span>${Math.floor(Math.random() * 5000)}</span>
                 </a>
             </div>
-            <div class="comments-section">
+            <div class="comments-section" onclick="showReplyBox('${postHtmlId}')">
                 ${commentsHtml}
             </div>
         `;
         container.appendChild(postElement);
     });
 }
+
+function showReplyBox(postHtmlId) {
+    const postElement = document.getElementById(postHtmlId);
+    if (!postElement) return;
+
+    let replyBox = postElement.querySelector('.reply-box');
+    if (replyBox) {
+        replyBox.querySelector('textarea').focus();
+        return;
+    }
+
+    const commentsSection = postElement.querySelector('.comments-section');
+    
+    replyBox = document.createElement('div');
+    replyBox.className = 'reply-box';
+    replyBox.innerHTML = `
+        <textarea class="reply-input" placeholder="输入你的回复..."></textarea>
+        <button class="reply-button">回复</button>
+    `;
+    
+    commentsSection.appendChild(replyBox);
+    const replyInput = replyBox.querySelector('.reply-input');
+    const replyButton = replyBox.querySelector('.reply-button');
+
+    replyInput.focus();
+
+    replyButton.onclick = async () => {
+        const replyContent = replyInput.value.trim();
+        if (!replyContent) {
+            showToast('回复内容不能为空');
+            return;
+        }
+
+        // --- Find the target post ---
+        const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
+        const postIndex = parseInt(postHtmlId.split('-')[3], 10);
+        const storedPost = weiboPosts.find(p => p.id === storedPostId);
+        if (!storedPost) {
+            showToast('错误：找不到原始帖子');
+            return;
+        }
+        const postData = storedPost.data.posts[postIndex];
+        const postAuthorContact = contacts.find(c => c.id === storedPost.contactId);
+        if (!postAuthorContact) {
+            showToast('错误：找不到帖子作者信息');
+            return;
+        }
+        const postAuthorNickname = postData.author_type === 'User' ? userProfile.name : postAuthorContact.name;
+
+        // --- 如果是回复自己的帖子，只保存不调用AI ---
+        if (postAuthorNickname === userProfile.name) {
+            const userComment = {
+                commenter_name: userProfile.name,
+                commenter_type: '楼主',
+                comment_content: replyContent
+            };
+
+            if (!postData.comments) {
+                postData.comments = [];
+            }
+            postData.comments.push(userComment);
+
+            await updateWeiboPost(storedPost);
+            showToast('回复已保存');
+            renderAllWeiboPosts();
+            return;
+        }
+        
+
+        // Disable input and button
+        replyInput.disabled = true;
+        replyButton.disabled = true;
+        replyButton.textContent = '请稍后...';
+
+        // --- Create temporary UI elements for immediate feedback ---
+        const userCommentElement = document.createElement('div');
+        userCommentElement.className = 'comment';
+        userCommentElement.innerHTML = `
+            <span class="comment-user">${userProfile.name} (你):</span>
+            <span class="comment-content">${replyContent}</span>
+            <span class="comment-time">刚刚</span>
+        `;
+        commentsSection.insertBefore(userCommentElement, replyBox);
+
+        const aiPlaceholderElement = document.createElement('div');
+        aiPlaceholderElement.className = 'comment';
+        aiPlaceholderElement.innerHTML = `
+            <span class="comment-user">${postAuthorNickname}:</span>
+            <span class="comment-content">...</span>
+        `;
+        commentsSection.insertBefore(aiPlaceholderElement, replyBox);
+        
+        try {
+            // --- Get AI Reply ---
+            const aiReplyContent = await getAIReply(postData, replyContent, storedPost.contactId);
+            
+            // --- Create comment objects ---
+            const userComment = {
+                commenter_name: userProfile.name,
+                commenter_type: '你',
+                comment_content: replyContent
+            };
+            const aiComment = {
+                commenter_name: postAuthorNickname,
+                commenter_type: '楼主',
+                comment_content: aiReplyContent
+            };
+
+            // --- Update data structure ---
+            if (!postData.comments) {
+                postData.comments = [];
+            }
+            postData.comments.push(userComment);
+            postData.comments.push(aiComment);
+
+            // --- Save to DB ---
+            await updateWeiboPost(storedPost);
+
+            // --- Re-render the entire post for consistency ---
+            showToast('回复成功！');
+            renderAllWeiboPosts(); // This will redraw everything correctly from the source of truth
+
+        } catch (error) {
+            // --- Handle failure ---
+            showToast(`生成失败: ${error.message}`);
+            console.error('AI回复生成失败:', error);
+            // Re-render to remove temporary elements
+            renderAllWeiboPosts();
+        }
+    };
+}
+
+async function getAIReply(postData, userReply, contactId) {
+    const contact = contacts.find(c => c.id === contactId);
+    const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
+
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        throw new Error('API未配置');
+    }
+
+    const systemPrompt = `你是一个论坛评论员。你的名字是 ${postAuthorContact.name}，你的人设是：${postAuthorContact.personality}。
+    现在，你需要根据你的身份，对一个用户在你的帖子下的评论进行回复。
+
+    # 你的帖子内容
+    ${postData.post_content}
+
+    # 用户的评论
+    ${userReply}
+
+    # 你的任务
+    - 以 ${postAuthorContact.name} 的身份进行回复。
+    - 你的回复必须完全符合你的人设。
+    - 回复要自然、口语化，就像一个真实的人在网上冲浪。
+    - 只需输出回复内容，不要包含任何额外信息或格式。`;
+
+    const payload = {
+        model: apiSettings.model,
+        messages: [{ role: 'user', content: systemPrompt }],
+        temperature: 0.7,
+        max_tokens: 2000
+    };
+
+    const apiUrl = `${apiSettings.url}/chat/completions`;
+
+    // This is the direct API call, like in `callAPI`
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiSettings.key}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API请求失败: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
+        throw new Error('AI未返回有效回复');
+    }
+    
+    return data.choices[0].message.content.trim();
+}
+
+
+
+function toggleWeiboMenu(event, storedPostId, postIndex) {
+    event.stopPropagation();
+    const menu = document.getElementById(`weibo-menu-${storedPostId}-${postIndex}`);
+    
+    // Close all other menus
+    document.querySelectorAll('.post-menu-dropdown').forEach(m => {
+        if (m.id !== menu.id) {
+            m.style.display = 'none';
+        }
+    });
+
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
+// Close dropdown when clicking anywhere else
+window.addEventListener('click', (event) => {
+    if (!event.target.matches('.post-menu')) {
+        document.querySelectorAll('.post-menu-dropdown').forEach(m => {
+            m.style.display = 'none';
+        });
+    }
+});
+
+
+async function deleteWeiboPost(storedPostId, postIndex) {
+    // Convert storedPostId to the correct type if necessary, assuming it's a number from the template
+    const numericStoredPostId = parseInt(storedPostId, 10);
+
+    // Find the specific post group in the in-memory weiboPosts array
+    const postGroupIndex = weiboPosts.findIndex(p => p.id === numericStoredPostId);
+    
+    if (postGroupIndex > -1) {
+        // The specific post to be deleted
+        const postGroup = weiboPosts[postGroupIndex];
+        
+        // Remove the specific post from the 'posts' array within the group
+        if (postGroup.data && postGroup.data.posts && postGroup.data.posts.length > postIndex) {
+            postGroup.data.posts.splice(postIndex, 1);
+        }
+
+        // If this was the last post in the group, remove the entire group
+        if (postGroup.data.posts.length === 0) {
+            weiboPosts.splice(postGroupIndex, 1);
+            // Also delete the entire entry from IndexedDB
+            if (isIndexedDBReady) {
+                try {
+                    const transaction = db.transaction(['weiboPosts'], 'readwrite');
+                    const store = transaction.objectStore('weiboPosts');
+                    await promisifyRequest(store.delete(numericStoredPostId));
+                    await promisifyTransaction(transaction);
+                } catch (error) {
+                    console.error('Failed to delete Weibo post group from DB:', error);
+                    showToast('从数据库删除帖子失败');
+                    // Optional: Add back the data to memory to maintain consistency
+                    return;
+                }
+            }
+        } else {
+            // Otherwise, just update the modified group in IndexedDB
+            await updateWeiboPost(postGroup);
+        }
+    }
+
+    // Re-render the UI
+    renderAllWeiboPosts();
+    showToast('帖子已删除');
+}
+
+async function updateWeiboPost(postToUpdate) {
+    if (!isIndexedDBReady) {
+        console.error('IndexedDB not ready, cannot update post.');
+        showToast('数据库错误，无法更新帖子');
+        return;
+    }
+    try {
+        const transaction = db.transaction(['weiboPosts'], 'readwrite');
+        const store = transaction.objectStore('weiboPosts');
+        await promisifyRequest(store.put(postToUpdate));
+        await promisifyTransaction(transaction);
+    } catch (error) {
+        console.error('Failed to update Weibo post in DB:', error);
+        showToast('更新帖子失败');
+    }
+}
+
 
 
 // --- 朋友圈功能 ---
@@ -717,7 +1118,7 @@ async function generateAIComments(momentContent) {
 要求：
 1. 根据文案内容生成3-5条相关评论
 2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
-3. 使用当代网络流行语：YYDS、绝绝子、谐音梗、林黛玉文学等
+3. 模仿网络语气，使用当代流行语。
 4. 评论要有不同观点和立场
 5. 每条评论至少15字
 6. 评论者名称使用：路人甲、小明、小红、隔壁老王、神秘网友、热心市民、吃瓜群众等
