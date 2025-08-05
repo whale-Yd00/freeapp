@@ -344,15 +344,16 @@ function showGeneratePostModal() {
 async function handleGeneratePost(event) {
     event.preventDefault();
     const contactId = document.getElementById('postGenCharacterSelect').value;
-    const relationType = document.getElementById('postGenRelationType').value;
+    const relations = document.getElementById('postGenrelations').value;
+    const count = document.getElementById('postGenCount').value;
 
-    if (!contactId || !relationType) {
+    if (!contactId || !relations) {
         showToast('请选择角色并填写关系类型');
         return;
     }
 
     closeModal('generatePostModal');
-    await generateWeiboPosts(contactId, relationType);
+    await generateWeiboPosts(contactId, relations, count);
 }
 
 async function saveWeiboPost(postData) {
@@ -372,7 +373,7 @@ async function saveWeiboPost(postData) {
     }
 }
 
-async function generateWeiboPosts(contactId, relationType) {
+async function generateWeiboPosts(contactId, relations, count = 1) {
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) {
         showToast('未找到指定的聊天对象');
@@ -397,17 +398,17 @@ async function generateWeiboPosts(contactId, relationType) {
         return `${sender}: ${msg.content}`;
     }).join('\n');
 
-    const systemPrompt = `你是一个论坛帖子生成器。请严格遵守要求完成生成：
+    const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
     # 设定
     - User: ${userRole}
     - Char: ${charRole}
-    - 他们的关系是: ${relationType}
+    - 他们的关系是: ${relations}
     - 背景设定: (根据以下最近的十条聊天记录)
     ${background}
 
     # 要求
-    1. 根据最近的对话内容、角色性格和他们的关系，生成1-2篇论坛帖子。
-    2. 每篇帖子下生成3-5条路人评论。
+    1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
+    2. 每篇帖子下生成3-5条评论。
     3. 路人角色类型可选择以下，或自创合适的：CP头子、乐子人、搅混水的、理性分析党、颜狗等。
     4. 模仿网络语气，使用当代流行语。
     5. 评论可以有不同观点和立场。
@@ -430,6 +431,7 @@ async function generateWeiboPosts(contactId, relationType) {
       ]
     }
     `;
+
 
     try {
         const payload = {
@@ -466,7 +468,7 @@ async function generateWeiboPosts(contactId, relationType) {
         const newPost = {
             id: Date.now(),
             contactId: contactId,
-            relationType: relationType,
+            relations: relations,
             data: weiboData,
             createdAt: new Date().toISOString()
         };
@@ -549,7 +551,7 @@ function renderSingleWeiboPost(storedPost) {
                         <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
                     </div>
                     <div class="post-time">${formatContactListTime(storedPost.createdAt)}</div>
-                    <div class="post-source">来自 ${storedPost.relationType} 研究所</div>
+                    <div class="post-source">来自 ${storedPost.relations} 研究所</div>
                 </div>
                 <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
                     ...

@@ -185,7 +185,11 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">关系类型</label>
-                        <input type="text" class="form-input" id="postGenRelationType" required placeholder="例如：CP, CB, 宿敌, 挚友等">
+                        <input type="text" class="form-input" id="postGenrelations" required placeholder="例如：CP、CB、宿敌、挚友等，或详细描述">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">生成数量</label>
+                        <input type="number" class="form-input" id="postGenCount" value="1" min="1" max="5" required>
                     </div>
                     <button type="submit" class="form-submit">开始生成</button>
                 </form>
