@@ -1,6 +1,7 @@
 class PromptBuilder {
     constructor() {
-        this.defaultMemoryTable = `# 角色设定
+        this.defaultMemoryTable = 
+`# 角色设定
 - 姓名：
 - 性格特点：
 - 性别：
@@ -55,7 +56,7 @@ class PromptBuilder {
     /**
      * 构建聊天对话的系统提示词
      */
-    buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+    buildChatPrompt(contact, userProfile, currentContact, emojis, window = []) {
         const memoryInfo = (currentContact.memoryTableContent || '').trim();
         let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
 
@@ -140,6 +141,85 @@ class PromptBuilder {
         return messages;
     }
 
+    buildWeiboPrompt(contactId, relations, count, contact, userProfile, contacts) {
+        const forumRoles = [
+            { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
+            { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
+            { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
+            { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
+        ];
+
+        // 随机选择1-3个路人角色
+        const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
+        const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
+        const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
+        const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
+        const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
+
+        // 随机选择1-3个用户创建的角色作为额外的评论者
+        let userCharacterPromptPart = '';
+        const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
+        if (potentialCommenters.length > 0) {
+            const maxUserCharacters = Math.min(potentialCommenters.length, 3);
+            const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
+            
+            const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
+            const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
+
+            if (selectedUserCharacters.length > 0) {
+                const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
+                userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 "@好友名 评论内容"。`;
+            }
+        }
+
+        // 组合成最终的评论生成指令
+        const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
+
+        const userRole = `人设：${userProfile.name}, ${userProfile.personality || '用户'}`;
+        const charRole = `人设：${contact.name}, ${contact.personality}`;
+        const recentMessages = contact.messages.slice(-10);
+        const background = recentMessages.map(msg => {
+            const sender = msg.role === 'user' ? userProfile.name : contact.name;
+            return `${sender}: ${msg.content}`;
+        }).join('\n');
+
+        const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
+    # 设定
+    - User: ${userRole}
+    - Char: ${charRole}
+    - 他们的关系是: ${relations}
+    - 背景设定: (根据以下最近的十条聊天记录)
+    ${background}
+
+    # 要求
+    1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
+    2. ${finalCommentPrompt}
+    3. 模仿自然网络语气，适当使用流行语，要有网感。
+    4. 评论可以有不同观点和立场。
+    5. 为每篇帖子提供一个简短的图片内容描述文字。
+    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
+
+    # 输出格式 (必须严格遵守此JSON结构)
+    {
+    "relation_tag": "${contact.name}X${userProfile.name}",
+    "posts": [
+        {
+        "author_type": "User" or "Char",
+        "post_content": "帖子的内容...",
+        "image_description": "图片的描述文字...",
+        "comments": [
+            { "commenter_name": "路人昵称1", "commenter_type": "CP头子", "comment_content": "评论内容1..." },
+            { "commenter_name": "路人昵称2", "commenter_type": "乐子人", "comment_content": "评论内容2..." }
+        ]
+        }
+    ]
+    }
+    `;
+
+        return systemPrompt;
+    }
+
     /**
      * 构建图片搜索关键词生成提示词
      */
@@ -205,9 +285,9 @@ ${userReply}
     /**
      * 构建朋友圈内容生成提示词
      */
-    buildMomentContentPrompt(contact, userProfile, apiSettings, contacts) {
-        let systemPrompt = `你是${contact.name}，${contact.personality}
-现在需要你以${contact.name}的身份发一条朋友圈。
+    buildMomentContentPrompt(contact, apiSettings, contacts) {
+        let systemPrompt = `你要扮演 ${contact.name}，人设为：${contact.personality}
+现在需要你以 ${contact.name} 的身份发一条朋友圈。
 
 要求：
 1. 根据你的人设和最近的聊天记录，生成一条符合你性格的朋友圈文案

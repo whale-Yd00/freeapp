@@ -71,57 +71,6 @@ let currentlyDisplayedMessageCount = 0;
 let isLoadingMoreMessages = false;
 
 
-const defaultMemoryTable = `# 角色设定
-- 姓名：
-- 性格特点：
-- 性别：
-- 说话风格：
-- 职业：
-
-# 用户设定
-- 姓名：
-- 性别：
-- 与角色的关系：
-- 用户性格：
-
-# 背景设定
-- 时间地点：
-- 事件：
----
-## 系统指令
-你需要在每次对话结束时，按以下格式生成记忆表格。每次都要：
-1. 完整复制上一次的表格内容
-2. 根据本次对话新增相关信息
-3. 将表格放在回复的最末尾
-
-### 表格格式要求：
-## 📋 记忆表格
-
-### 【现在】
-| 项目 | 内容 |
-|------|------|
-| 地点 | [当前所在的具体地点] |
-| 人物 | [当前在场的所有人物] |
-| 时间 | [精确的年月日和时间，格式：YYYY年MM月DD日 HH:MM] |
-
-### 【未来】
-| 约定事项 | 详细内容 |
-|----------|----------|
-| [事项1]   | [具体的约定内容、时间、地点] |
-| [事项2]   | [具体的约定内容、时间、地点] |
-
-### 【过去】
-| 人物 | 事件 | 地点 | 时间 |
-|------|------|------|------|
-| [相关人物] | [发生的重要事件] | [事件发生地点] | [具体年月日] |
-
-### 【重要物品】
-| 物品名称 | 物品描述 | 重要原因 |
-|----------|----------|----------|
-| [物品1]   | [详细的外观和特征描述] | [为什么这个物品重要] |
-| [物品2]   | [详细的外观和特征描述] | [为什么这个物品重要] |
-`;
-
 // --- 初始化 ---
 async function init() {
     // 启动时只做最核心的事情
@@ -219,7 +168,7 @@ async function loadDataFromDB() {
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
-            if (contact.memoryTableContent === undefined) contact.memoryTableContent = defaultMemoryTable;
+            window.memoryTableManager.initContactMemoryTable(contact);
             if (contact.messages) {
                 contact.messages.forEach(msg => {
                     if (msg.role === 'user' && msg.senderId === undefined) msg.senderId = 'user';
@@ -408,39 +357,6 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, count = 1) {
-    const forumRoles = [
-        { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
-        { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
-        { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
-        { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
-    ];
-
-    // 随机选择1-3个路人角色
-    const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
-    const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
-    const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
-    const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
-    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
-
-    // 随机选择1-3个用户创建的角色作为额外的评论者
-    let userCharacterPromptPart = '';
-    const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
-    if (potentialCommenters.length > 0) {
-        const maxUserCharacters = Math.min(potentialCommenters.length, 3);
-        const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
-        
-        const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
-        const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
-
-        if (selectedUserCharacters.length > 0) {
-            const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
-            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
-        }
-    }
-
-    // 组合成最终的评论生成指令
-    const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
-
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) {
         showToast('未找到指定的聊天对象');
@@ -450,55 +366,21 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         showToast('请先在设置中配置API');
         return;
     }
-    
+
     const container = document.getElementById('weiboContainer');
     const loadingIndicator = document.createElement('div');
     loadingIndicator.className = 'loading-text';
     loadingIndicator.textContent = '正在生成论坛内容...';
     container.prepend(loadingIndicator);
 
-    const userRole = `人设：${userProfile.name}, ${userProfile.personality || '用户'}`;
-    const charRole = `人设：${contact.name}, ${contact.personality}`;
-    const recentMessages = contact.messages.slice(-10);
-    const background = recentMessages.map(msg => {
-        const sender = msg.role === 'user' ? userProfile.name : contact.name;
-        return `${sender}: ${msg.content}`;
-    }).join('\n');
-
-    const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
-    # 设定
-    - User: ${userRole}
-    - Char: ${charRole}
-    - 他们的关系是: ${relations}
-    - 背景设定: (根据以下最近的十条聊天记录)
-    ${background}
-
-    # 要求
-    1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
-    2. ${finalCommentPrompt}
-    3. 模仿网络语气，适当使用流行语，要有网感。
-    4. 评论可以有不同观点和立场。
-    5. 为每篇帖子提供一个简短的图片内容描述文字。
-    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
-    7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
-
-    # 输出格式 (必须严格遵守此JSON结构)
-    {
-      "relation_tag": "${contact.name}X${userProfile.name}",
-      "posts": [
-        {
-          "author_type": "User" or "Char",
-          "post_content": "帖子的内容...",
-          "image_description": "图片的描述文字...",
-          "comments": [
-            { "commenter_name": "路人昵称1", "commenter_type": "CP头子", "comment_content": "评论内容1..." },
-            { "commenter_name": "路人昵称2", "commenter_type": "乐子人", "comment_content": "评论内容2..." }
-          ]
-        }
-      ]
-    }
-    `;
-      
+    const systemPrompt = window.promptBuilder.buildWeiboPrompt(
+        contactId, 
+        relations, 
+        count, 
+        contact, 
+        userProfile, 
+        contacts
+    );
 
     try {
         const payload = {
@@ -571,6 +453,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         loadingIndicator.remove();
     }
 }
+
 
 function renderAllWeiboPosts() {
     const container = document.getElementById('weiboContainer');
@@ -968,7 +851,7 @@ async function generateMomentContent() {
     generateBtn.textContent = '生成中...';
 
     try {
-        const systemPrompt = window.promptBuilder.buildMomentContentPrompt(currentContact, userProfile, apiSettings, contacts);
+        const systemPrompt = window.promptBuilder.buildMomentContentPrompt(currentContact, apiSettings, contacts);
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
@@ -1776,6 +1659,7 @@ function getGroupAvatarContent(group) {
 // --- 聊天核心逻辑 ---
 function openChat(contact) {
     currentContact = contact;
+    window.memoryTableManager.setCurrentContact(contact);
     document.getElementById('chatTitle').textContent = contact.name;
     document.getElementById('chatPage').classList.add('active');
     document.getElementById('contactListPage').style.display = 'none';
@@ -2034,7 +1918,7 @@ async function sendGroupMessage() {
             const { replies, newMemoryTable } = await callAPI(member, turnContext);
             hideTypingIndicator();
             if (newMemoryTable) {
-                currentContact.memoryTableContent = newMemoryTable;
+                window.memoryTableManager.updateContactMemoryTable(currentContact, newMemoryTable);
                 await saveDataToDB();
             }
             if (!replies || replies.length === 0) continue;
@@ -2087,12 +1971,6 @@ function hideTypingIndicator() {
  * @param {array} turnContext Additional messages for group chat context.
  * @returns {object} The API response containing replies and the new memory table.
  */
-/**
- * 通过我们的 Netlify Function 代理来调用 API。
- * @param {object} contact The contact object.
- * @param {array} turnContext Additional messages for group chat context.
- * @returns {object} The API response containing replies and the new memory table.
- */
 async function callAPI(contact, turnContext = []) {
     try {
         // 1. 构建系统提示词
@@ -2100,22 +1978,18 @@ async function callAPI(contact, turnContext = []) {
             contact, 
             userProfile, 
             currentContact, 
-            apiSettings, 
             emojis, 
-            window, 
-            turnContext
+            window
         );
 
         // 2. 构建消息数组
         const messages = [{ role: 'system', content: systemPrompt }];
         const messageHistory = window.promptBuilder.buildMessageHistory(
             currentContact, 
-            apiSettings, 
             userProfile, 
             contacts, 
             contact, 
-            emojis, 
-            turnContext
+            emojis
         );
         messages.push(...messageHistory);
 
@@ -2130,18 +2004,15 @@ async function callAPI(contact, turnContext = []) {
         // 4. 处理响应
         let fullResponseText = data.choices[0].message.content;
         
-        const memoryTableRegex = /<memory_table>([\s\S]*?)<\/memory_table>/;
-        const memoryMatch = fullResponseText.match(memoryTableRegex);
-        let newMemoryTable = null;
-        if (memoryMatch && memoryMatch[1]) {
-            newMemoryTable = memoryMatch[1].trim();
-            fullResponseText = fullResponseText.replace(memoryTableRegex, '').trim();
-        } else {
+        const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
+        
+        if (!newMemoryTable) {
             console.warn("AI回复中未找到<memory_table>。");
         }
         
-        let chatRepliesText = fullResponseText;
+        let chatRepliesText = cleanedResponse;
 
+        // 处理回复分割
         if (!chatRepliesText.includes('|||')) {
             const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
             let tempReplies = [];
@@ -2156,6 +2027,7 @@ async function callAPI(contact, turnContext = []) {
         const replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
         const processedReplies = [];
         
+        // 处理特殊消息类型（表情、红包等）
         const emojiNameRegex = /^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/;
         const redPacketRegex = /^\[red_packet:({.*})\]$/;
 
@@ -2195,6 +2067,7 @@ async function callAPI(contact, turnContext = []) {
         throw error;
     }
 }
+
 
 async function testApiConnection() {
     const url = document.getElementById('apiUrl').value;
@@ -2347,7 +2220,7 @@ async function sendEmoji(emoji) {
         const { replies, newMemoryTable } = await callAPI(currentContact);
         hideTypingIndicator();
         if (newMemoryTable) {
-            currentContact.memoryTableContent = newMemoryTable;
+            window.memoryTableManager.updateContactMemoryTable(currentContact, newMemoryTable);
             await saveDataToDB();
         }
         if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
@@ -2391,60 +2264,6 @@ function toggleSettingsMenu(forceClose = false) {
     menu.style.display = forceClose ? 'none' : (menu.style.display === 'block' ? 'none' : 'block');
 }
 
-async function toggleMemoryPanel(forceClose = false) {
-    const panel = document.getElementById('memoryPanel');
-    const isActive = panel.classList.contains('active');
-    if (forceClose) { panel.classList.remove('active'); return; }
-    if (isActive) {
-        panel.classList.remove('active');
-    } else {
-        if (currentContact) {
-            const memoryTextarea = document.getElementById('memoryTextarea');
-            memoryTextarea.value = currentContact.memoryTableContent || defaultMemoryTable;
-            renderMemoryTable(memoryTextarea.value);
-            document.getElementById('memoryTableView').style.display = 'block';
-            memoryTextarea.style.display = 'none';
-            document.getElementById('memoryEditBtn').textContent = '编辑';
-            panel.classList.add('active');
-        } else {
-            showToast('请先选择一个聊天');
-        }
-    }
-}
-
-async function toggleMemoryEditMode() {
-    const editBtn = document.getElementById('memoryEditBtn');
-    const viewDiv = document.getElementById('memoryTableView');
-    const editArea = document.getElementById('memoryTextarea');
-    if (editBtn.textContent === '编辑') {
-        viewDiv.style.display = 'none';
-        editArea.style.display = 'block';
-        editArea.value = currentContact.memoryTableContent || defaultMemoryTable;
-        editArea.focus();
-        editBtn.textContent = '保存';
-    } else {
-        currentContact.memoryTableContent = editArea.value;
-        await saveDataToDB(); // 使用IndexedDB保存
-        renderMemoryTable(currentContact.memoryTableContent);
-        viewDiv.style.display = 'block';
-        editArea.style.display = 'none';
-        editBtn.textContent = '编辑';
-        showToast('记忆已保存');
-    }
-}
-
-function renderMemoryTable(markdown) {
-    const viewDiv = document.getElementById('memoryTableView');
-    // 确保 marked 库已加载
-    if (typeof marked !== 'undefined') {
-        viewDiv.innerHTML = markdown 
-            ? marked.parse(markdown) 
-            : '<div style="text-align: center; padding: 40px;"><p style="font-size: 16px; color: #888;">记忆是空的。</p><p style="font-size: 14px; color: #aaa;">点击“编辑”按钮，开始记录你们的故事吧。</p></div>';
-    } else {
-        // Fallback if marked is not loaded
-        viewDiv.textContent = markdown; 
-    }
-}
 
 async function clearMessages() {
     if (!currentContact) {
