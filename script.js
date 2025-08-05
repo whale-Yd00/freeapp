@@ -374,6 +374,39 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, count = 1) {
+    const forumRoles = [
+        { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
+        { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
+        { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
+        { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
+    ];
+
+    // 随机选择1-3个路人角色
+    const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
+    const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
+    const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
+    const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
+    const genericRolePromptPart = `评论区需要有2-4条路人评论。其中，必须包含以下 ${selectedRoles.length} 个特殊角色，他们的回复要严格符合人设：${genericRoleDescriptions}`;
+
+    // 随机选择1-3个用户创建的角色作为额外的评论者
+    let userCharacterPromptPart = '';
+    const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
+    if (potentialCommenters.length > 0) {
+        const maxUserCharacters = Math.min(potentialCommenters.length, 3);
+        const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
+        
+        const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
+        const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
+
+        if (selectedUserCharacters.length > 0) {
+            const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
+            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。`;
+        }
+    }
+
+    // 组合成最终的评论生成指令
+    const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
+
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) {
         showToast('未找到指定的聊天对象');
@@ -408,12 +441,11 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
 
     # 要求
     1. 根据最近的对话内容、角色性格和他们的关系，生成${count}篇论坛帖子。
-    2. 每篇帖子下生成3-5条评论。
-    3. 路人角色类型可选择以下，或自创合适的：CP头子、乐子人、搅混水的、理性分析党、颜狗等。
-    4. 模仿网络语气，使用当代流行语。
-    5. 评论可以有不同观点和立场。
-    6. 为每篇帖子提供一个简短的图片内容描述文字。
-    7. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    2. ${finalCommentPrompt}
+    3. 模仿网络语气，使用当代流行语。
+    4. 评论可以有不同观点和立场。
+    5. 为每篇帖子提供一个简短的图片内容描述文字。
+    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
 
     # 输出格式 (必须严格遵守此JSON结构)
     {
@@ -431,6 +463,7 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
       ]
     }
     `;
+      
 
 
     try {
