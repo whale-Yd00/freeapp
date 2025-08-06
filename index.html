@@ -361,10 +361,18 @@
                     
                     <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;">测试连接</button>
                     <div class="form-group">
-                        <label class="form-label">选择模型</label>
-                        <div class="model-list" id="modelList">
-                            <div class="loading-text">请先测试连接</div>
-                        </div>
+                        <label class="form-label">主要模型</label>
+                        <select class="form-input" id="primaryModelSelect">
+                            <option value="">请先测试连接</option>
+                        </select>
+                        <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">次要模型</label>
+                        <select class="form-input" id="secondaryModelSelect">
+                            <option value="sync_with_primary">与主模型保持一致</option>
+                        </select>
+                        <div class="context-info" style="margin-top: 4px;">用于总结、填写记忆表格等，建议选择便宜的模型，以节约成本。若不介意成本，可选择与主要模型保持一致。</div>
                     </div>
                     <button type="submit" class="form-submit">保存</button>
                 </form>

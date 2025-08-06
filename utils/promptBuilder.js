@@ -273,7 +273,10 @@ class PromptBuilder {
 用户名为 ${userProfile.name} 的用户与你的关系是：${postData.relations}。${userPersona}
 
 # 你的帖子内容
-${postData.post_content}
+${postData.post_content}‘
+
+# 已有的评论
+
 
 # 用户的评论
 ${userReply}

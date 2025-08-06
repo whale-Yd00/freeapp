@@ -41,6 +41,7 @@ let apiSettings = {
     url: '',
     key: '',
     model: '',
+    secondaryModel: 'sync_with_primary', // 新增：次要模型
     contextMessageCount: 10
 };
 let emojis = [];
@@ -1529,6 +1530,31 @@ function showEditContactModal() {
 function showApiSettingsModal() {
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
+
+    const primarySelect = document.getElementById('primaryModelSelect');
+    const secondarySelect = document.getElementById('secondaryModelSelect');
+
+    // 重置并填充
+    primarySelect.innerHTML = '<option value="">请先测试连接</option>';
+    secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+    
+    // 如果已有设置，则自动尝试获取模型列表
+    if (apiSettings.url && apiSettings.key) {
+        // 临时显示已保存的选项
+        if (apiSettings.model) {
+            primarySelect.innerHTML = `<option value="${apiSettings.model}">${apiSettings.model}</option>`;
+        }
+        if (apiSettings.secondaryModel && apiSettings.secondaryModel !== 'sync_with_primary') {
+             secondarySelect.innerHTML = `
+                <option value="sync_with_primary">与主模型保持一致</option>
+                <option value="${apiSettings.secondaryModel}">${apiSettings.secondaryModel}</option>`;
+        }
+        testApiConnection(); // 自动测试连接并填充列表
+    }
+    
+    // 确保在显示模态框时绑定事件
+    primarySelect.onchange = handlePrimaryModelChange;
+
     showModal('apiSettingsModal');
 }
 
@@ -2153,47 +2179,75 @@ async function testApiConnection() {
         return;
     }
 
-    const modelList = document.getElementById('modelList');
-    modelList.innerHTML = '<div class="loading-text">连接中...</div>';
+    const primarySelect = document.getElementById('primaryModelSelect');
+    const secondarySelect = document.getElementById('secondaryModelSelect');
+    
+    primarySelect.innerHTML = '<option>连接中...</option>';
+    secondarySelect.innerHTML = '<option>连接中...</option>';
+    primarySelect.disabled = true;
+    secondarySelect.disabled = true;
 
     try {
         const data = await window.apiService.testConnection(url, key);
-        const models = data.data || (data.object === 'list' ? data.data : []);
+        const models = data.data ? data.data.map(m => m.id).sort() : [];
 
-        if (!models || models.length === 0) {
-            modelList.innerHTML = '<div class="loading-text">连接成功，但未找到可用模型。</div>';
-            showToast('连接成功，但未找到模型');
+        if (models.length === 0) {
+            showToast('连接成功，但未找到可用模型');
+            primarySelect.innerHTML = '<option>无可用模型</option>';
+            secondarySelect.innerHTML = '<option>无可用模型</option>';
             return;
         }
 
-        modelList.innerHTML = '';
-        models.forEach(model => {
-            const item = document.createElement('div');
-            item.className = 'model-item';
-            if (model.id === apiSettings.model) item.classList.add('selected');
-            item.textContent = model.id;
-            item.onclick = () => {
-                document.querySelectorAll('.model-item').forEach(i => i.classList.remove('selected'));
-                item.classList.add('selected');
-                apiSettings.model = model.id;
-            };
-            modelList.appendChild(item);
+        // 填充主要模型
+        primarySelect.innerHTML = '';
+        models.forEach(modelId => {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = modelId;
+            primarySelect.appendChild(option);
         });
+        primarySelect.value = apiSettings.model;
 
+        // 填充次要模型
+        secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+        models.forEach(modelId => {
+            const option = document.createElement('option');
+            option.value = modelId;
+            option.textContent = modelId;
+            secondarySelect.appendChild(option);
+        });
+        secondarySelect.value = apiSettings.secondaryModel || 'sync_with_primary';
+        
+        primarySelect.disabled = false;
+        secondarySelect.disabled = false;
         showToast('连接成功');
+
     } catch (error) {
-        modelList.innerHTML = '<div class="loading-text">连接失败，请检查URL和Key</div>';
+        primarySelect.innerHTML = '<option>连接失败</option>';
+        secondarySelect.innerHTML = '<option>连接失败</option>';
         showToast(error.message);
     }
 }
 
+function handlePrimaryModelChange() {
+    const primaryModel = document.getElementById('primaryModelSelect').value;
+    const secondarySelect = document.getElementById('secondaryModelSelect');
+    
+    // 如果次要模型设置为“同步”，则在数据层面更新它
+    if (apiSettings.secondaryModel === 'sync_with_primary') {
+        // 不需要直接修改UI，保存时会处理
+    }
+}
 
 async function saveApiSettings(event) {
     event.preventDefault();
     apiSettings.url = document.getElementById('apiUrl').value;
     apiSettings.key = document.getElementById('apiKey').value;
+    apiSettings.model = document.getElementById('primaryModelSelect').value;
+    apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
-    await saveDataToDB(); // 使用IndexedDB保存
+    
+    await saveDataToDB();
     closeModal('apiSettingsModal');
     updateContextIndicator();
     showToast('设置已保存');
