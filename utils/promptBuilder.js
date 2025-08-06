@@ -154,21 +154,21 @@ class PromptBuilder {
         return messages;
     }
 
-    buildWeiboPrompt(contactId, relations, count, contact, userProfile, contacts, emojis) {
+    buildWeiboPrompt(contactId, relations, relationDescription, hashtag, count, contact, userProfile, contacts, emojis) {
         const forumRoles = [
             { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
             { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
             { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
             { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
         ];
-
+    
         // 随机选择1-3个路人角色
         const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
         const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
         const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
         const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
         const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
-
+    
         // 随机选择1-3个用户创建的角色作为额外的评论者
         let userCharacterPromptPart = '';
         const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
@@ -178,16 +178,16 @@ class PromptBuilder {
             
             const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
             const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
-
+    
             if (selectedUserCharacters.length > 0) {
                 const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
                 userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 "@好友名 评论内容"。`;
             }
         }
-
+    
         // 组合成最终的评论生成指令
         const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
-
+    
         const userRole = `人设：${userProfile.name}, ${userProfile.personality || '用户'}`;
         const charRole = `人设：${contact.name}, ${contact.personality}`;
         const recentMessages = contact.messages.slice(-10);
@@ -211,12 +211,12 @@ class PromptBuilder {
             
             return `${sender}: ${content}`;
         }).join('\n');
-
+    
         const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
     # 设定
     - User: ${userRole}
     - Char: ${charRole}
-    - 他们的关系是: ${relations}
+    - 他们的关系是: ${relations}（${relationDescription}）
     - 背景设定: (根据以下最近的十条聊天记录)
     ${background}
 
@@ -231,7 +231,7 @@ class PromptBuilder {
 
     # 输出格式 (必须严格遵守此JSON结构)
     {
-    "relation_tag": "${contact.name} X ${userProfile.name}",
+    "relation_tag": "${hashtag}",
     "posts": [
         {
         "author_type": "User" or "Char",
@@ -245,7 +245,6 @@ class PromptBuilder {
     ]
     }
     `;
-
         return systemPrompt;
     }
 
