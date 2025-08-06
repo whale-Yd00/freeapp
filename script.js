@@ -461,7 +461,8 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         count, 
         contact, 
         userProfile, 
-        contacts
+        contacts,
+        emojis
     );
 
     try {
