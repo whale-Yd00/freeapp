@@ -54,6 +54,15 @@ let userProfile = {
 let moments = [];
 let weiboPosts = [];
 
+const RELATION_PRESETS = {
+    'CP': 'CP（两者互为情侣）',
+    'CB': 'CB（友情、亲情等非恋爱的亲密关系）', 
+    '好友': '好友',
+    '宿敌': '宿敌（两者互为能持续永恒的较量，长期的敌人，天生的对手，命中注定的竞争者）'
+};
+
+let hashtagCache = {};
+
 let audio = null;
 let db = null; // IndexedDB 实例 
 let playlist = [];
@@ -74,7 +83,6 @@ let isLoadingMoreMessages = false;
 
 // --- 初始化 ---
 async function init() {
-    // 启动时只做最核心的事情
     await openDB(); // 确保IndexedDB先打开
     await loadDataFromDB(); // 从IndexedDB加载数据
 
@@ -128,7 +136,7 @@ function showUpdateModal() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 3); // 数据库名和版本号
+        const request = indexedDB.open('WhaleLLTDB', 4);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -158,6 +166,9 @@ function openDB() {
             if (!db.objectStoreNames.contains('weiboPosts')) {
                 db.createObjectStore('weiboPosts', { keyPath: 'id', autoIncrement: true });
             }
+            if (!db.objectStoreNames.contains('hashtagCache')) {
+                db.createObjectStore('hashtagCache', { keyPath: 'id' });
+            }
         };
 
         request.onsuccess = event => {
@@ -180,7 +191,7 @@ async function loadDataFromDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts'], 'readonly');
+        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache'], 'readonly');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -189,7 +200,7 @@ async function loadDataFromDB() {
         const userProfileStore = transaction.objectStore('userProfile');
         const momentsStore = transaction.objectStore('moments');
         const weiboPostsStore = transaction.objectStore('weiboPosts');
-
+        
         contacts = (await promisifyRequest(contactsStore.getAll())) || [];
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
@@ -217,6 +228,11 @@ async function loadDataFromDB() {
         moments = (await promisifyRequest(momentsStore.getAll())) || [];
         weiboPosts = (await promisifyRequest(weiboPostsStore.getAll())) || [];
 
+        // 加载hashtag缓存
+        const hashtagCacheStore = transaction.objectStore('hashtagCache');
+        const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'))) || {};
+        hashtagCache = savedHashtagCache;
+
     } catch (error) {
         console.error('从IndexedDB加载数据失败:', error);
         showToast('加载数据失败');
@@ -229,7 +245,7 @@ async function saveDataToDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments'], 'readwrite');
+        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'hashtagCache'], 'readwrite');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -237,7 +253,7 @@ async function saveDataToDB() {
         const backgroundsStore = transaction.objectStore('backgrounds');
         const userProfileStore = transaction.objectStore('userProfile');
         const momentsStore = transaction.objectStore('moments');
-
+        
         // 清空contacts，然后重新添加，确保数据最新
         await promisifyRequest(contactsStore.clear());
         for (const contact of contacts) {
@@ -258,6 +274,10 @@ async function saveDataToDB() {
         for (const moment of moments) {
             await promisifyRequest(momentsStore.put(moment));
         }
+
+        // 保存hashtag缓存
+        const hashtagCacheStore = transaction.objectStore('hashtagCache');
+        await promisifyRequest(hashtagCacheStore.put({ id: 'cache', ...hashtagCache }));
 
         await promisifyTransaction(transaction); // 等待所有操作完成
     } catch (error) {
@@ -370,22 +390,90 @@ function showGeneratePostModal() {
             select.appendChild(option);
         }
     });
+    
+    // 重置关系选择
+    const relationSelect = document.getElementById('postGenRelations');
+    relationSelect.value = '';
+    handleRelationChange();
+    
     showModal('generatePostModal');
+}
+
+// 新增：处理关系选择变化
+function handleRelationChange() {
+    const relationSelect = document.getElementById('postGenRelations');
+    const customRelationInput = document.getElementById('postGenCustomRelation');
+    
+    if (relationSelect.value === 'custom') {
+        customRelationInput.style.display = 'block';
+        customRelationInput.required = true;
+    } else {
+        customRelationInput.style.display = 'none';
+        customRelationInput.required = false;
+        customRelationInput.value = '';
+    }
+}
+
+// 新增：处理角色选择变化，加载hashtag缓存
+function handleCharacterChange() {
+    const contactId = document.getElementById('postGenCharacterSelect').value;
+    const hashtagInput = document.getElementById('postGenHashtag');
+    
+    if (contactId && hashtagCache[contactId]) {
+        hashtagInput.value = hashtagCache[contactId];
+    } else {
+        const contact = contacts.find(c => c.id === contactId);
+        if (contact) {
+            // 默认hashtag为角色名+用户名
+            hashtagInput.value = `${contact.name}X${userProfile.name}`;
+        }
+    }
 }
 
 async function handleGeneratePost(event) {
     event.preventDefault();
     const contactId = document.getElementById('postGenCharacterSelect').value;
-    const relations = document.getElementById('postGenrelations').value;
+    const relationSelect = document.getElementById('postGenRelations');
+    const customRelationInput = document.getElementById('postGenCustomRelation');
+    const hashtagInput = document.getElementById('postGenHashtag');
     const count = document.getElementById('postGenCount').value;
 
-    if (!contactId || !relations) {
-        showToast('请选择角色并填写关系类型');
+    if (!contactId) {
+        showToast('请选择角色');
         return;
     }
 
+    let relations;
+    let relationDescription;
+    
+    if (relationSelect.value === 'custom') {
+        if (!customRelationInput.value.trim()) {
+            showToast('请填写自定义关系');
+            return;
+        }
+        relations = customRelationInput.value.trim();
+        relationDescription = relations; // 自定义关系直接使用用户输入
+    } else {
+        if (!relationSelect.value) {
+            showToast('请选择关系类型');
+            return;
+        }
+        relations = relationSelect.value;
+        relationDescription = RELATION_PRESETS[relations];
+    }
+
+    const hashtag = hashtagInput.value.trim();
+    if (!hashtag) {
+        showToast('请填写话题标签');
+        return;
+    }
+
+    // 缓存hashtag
+    hashtagCache[contactId] = hashtag;
+    await saveDataToDB();
+
     closeModal('generatePostModal');
-    await generateWeiboPosts(contactId, relations, count);
+    await generateWeiboPosts(contactId, relations, relationDescription, hashtag, count);
 }
 
 async function saveWeiboPost(postData) {
@@ -405,40 +493,7 @@ async function saveWeiboPost(postData) {
     }
 }
 
-async function generateWeiboPosts(contactId, relations, count = 1) {
-    const forumRoles = [
-        { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
-        { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
-        { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
-        { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' }
-    ];
-
-    // 随机选择1-3个路人角色
-    const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
-    const rolesToSelectCount = Math.floor(Math.random() * 3) + 1;
-    const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
-    const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
-    const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如："CP头子"）。`;
-
-    // 随机选择1-3个用户创建的角色作为额外的评论者
-    let userCharacterPromptPart = '';
-    const potentialCommenters = contacts.filter(c => c.id !== contactId && c.type === 'private');
-    if (potentialCommenters.length > 0) {
-        const maxUserCharacters = Math.min(potentialCommenters.length, 3);
-        const userCharactersToSelectCount = Math.floor(Math.random() * maxUserCharacters) + 1; // 保底 1 个
-        
-        const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
-        const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
-
-        if (selectedUserCharacters.length > 0) {
-            const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
-            userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也必须出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。发帖的人可以回复用户好友的评论，格式与普通评论相同，但格式为 “@好友名 评论内容”。`;
-        }
-    }
-
-    // 组合成最终的评论生成指令
-    const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
-
+async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1) {
     const contact = contacts.find(c => c.id === contactId);
     if (!contact) {
         showToast('未找到指定的聊天对象');
@@ -458,6 +513,8 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
     const systemPrompt = window.promptBuilder.buildWeiboPrompt(
         contactId, 
         relations, 
+        relationDescription,
+        hashtag,
         count, 
         contact, 
         userProfile, 
@@ -520,13 +577,15 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
             id: Date.now(),
             contactId: contactId,
             relations: relations,
+            relationDescription: relationDescription,
+            hashtag: hashtag,
             data: weiboData,
-            createdAt: postCreatedAt.toISOString() // 使用生成的时间
+            createdAt: postCreatedAt.toISOString()
         };
 
         await saveWeiboPost(newPost);
         weiboPosts.push(newPost); // Update in-memory array
-        renderAllWeiboPosts(); // Re-render all posts
+        renderAllWeiboPosts();
         showToast('帖子已刷新！');
 
     } catch (error) {
@@ -570,7 +629,6 @@ function renderSingleWeiboPost(storedPost) {
         const postAuthorContact = post.author_type === 'User' ? userProfile : contact;
         const postAuthorNickname = post.author_type === 'User' ? userProfile.name : contact.name;
         const postAuthorAvatar = postAuthorContact.avatar;
-        const cpName = data.relation_tag || `${contact.name}X${userProfile.name}`;
         const otherPartyName = post.author_type === 'User' ? contact.name : userProfile.name;
 
         const postElement = document.createElement('div');
@@ -604,7 +662,7 @@ function renderSingleWeiboPost(storedPost) {
                         <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
                     </div>
                     <div class="post-time">${formatTime(post.timestamp)}</div>
-                    <div class="post-source">来自 ${storedPost.relations} 研究所</div>
+                    <div class="post-source">来自 ${storedPost.relationDescription || storedPost.relations} 研究所</div>
                 </div>
                 <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
                     ...
@@ -614,7 +672,7 @@ function renderSingleWeiboPost(storedPost) {
                 </div>
             </div>
             <div class="post-content">
-                <a href="#" class="hashtag">#${cpName}#</a>
+                <a href="#" class="hashtag">#${storedPost.hashtag || data.relation_tag}#</a>
                 ${post.post_content}
                 <a href="#" class="mention">@${otherPartyName}</a>
             </div>
@@ -788,7 +846,7 @@ async function getAIReply(postData, userReply, contactId) {
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.7, max_tokens: 2000 }
+        { temperature: 0.7 }
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -2085,7 +2143,7 @@ async function callAPI(contact, turnContext = []) {
             messages
         );
 
-        // 4. 处理响应
+        // 4. 处理响应 - 只增加最小的错误检查
         if (!data) {
             console.error('API返回数据为空:', data);
             throw new Error('API返回数据为空');
@@ -2105,8 +2163,18 @@ async function callAPI(contact, turnContext = []) {
             // 另一种可能的格式
             fullResponseText = data.message;
         } else {
+            // 检查是否是因为没有生成内容
+            if (data.usage && data.usage.completion_tokens === 0) {
+                console.warn('API没有生成任何内容，可能被过滤或模型限制');
+                throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
+            }
             console.error('无法从API响应中提取内容:', data);
             throw new Error('API响应格式不支持，无法提取回复内容');
+        }
+
+        // 检查内容是否有效
+        if (!fullResponseText || fullResponseText.trim() === '') {
+            throw new Error('AI回复内容为空，请稍后重试');
         }
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);

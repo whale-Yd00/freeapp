@@ -177,13 +177,28 @@
                 <form onsubmit="handleGeneratePost(event)">
                     <div class="form-group">
                         <label class="form-label">选择角色</label>
-                        <select class="form-input" id="postGenCharacterSelect" required>
+                        <select class="form-input" id="postGenCharacterSelect" onchange="handleCharacterChange()" required>
                             <option value="">请选择...</option>
                         </select>
                     </div>
                     <div class="form-group">
                         <label class="form-label">关系类型</label>
-                        <input type="text" class="form-input" id="postGenrelations" required placeholder="例如：CP、CB、宿敌、挚友等，或详细描述">
+                        <select class="form-input" id="postGenRelations" onchange="handleRelationChange()" required>
+                            <option value="">请选择...</option>
+                            <option value="CP">CP</option>
+                            <option value="CB">CB</option>
+                            <option value="好友">好友</option>
+                            <option value="宿敌">宿敌</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="display: none;">
+                        <label class="form-label">自定义关系</label>
+                        <input type="text" class="form-input" id="postGenCustomRelation" placeholder="请描述你们的关系">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">话题</label>
+                        <input type="text" class="form-input" id="postGenHashtag" placeholder="例如：AB、BA、A & B、AB的日记 等" required>
                     </div>
                     <div class="form-group">
                         <label class="form-label">生成数量</label>

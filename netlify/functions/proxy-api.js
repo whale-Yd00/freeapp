@@ -3,10 +3,10 @@
 // Netlify Functions 使用的语法是 Node.js 的。
 // 我们需要 `node-fetch` 来在后端发送网络请求，就像在前端用 `fetch` 一样。
 // 你需要在你的项目中安装它，在你的项目根目录运行: npm install node-fetch
-const fetch = require('node-fetch');
+import fetch from 'node-fetch';
 
 // 这是函数的主体。它接收一个 `event` 对象，包含了前端发来的所有信息。
-exports.handler = async function(event, context) {
+export async function handler(event, context) {
   // 1. 从前端请求中解析出数据
   // event.body 是一个 JSON 字符串，我们需要把它变回 JavaScript 对象。
   const body = JSON.parse(event.body);
@@ -24,8 +24,7 @@ exports.handler = async function(event, context) {
   const payload = {
     model: model,
     messages: messages,
-    temperature: 0.85,
-    max_tokens: 4096,
+    temperature: 0.85
   };
 
   try {
@@ -63,4 +62,4 @@ exports.handler = async function(event, context) {
       body: JSON.stringify({ error: error.message }),
     };
   }
-};
+}
