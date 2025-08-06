@@ -113,42 +113,96 @@ class PromptBuilder {
         const recentMessages = currentContact.messages.slice(-apiSettings.contextMessageCount);
         
         recentMessages.forEach(msg => {
-            const senderName = msg.role === 'user' ? userProfile.name : contacts.find(c => c.id === msg.senderId)?.name || contact.name;
+            const senderName = msg.role === 'user' ? (userProfile?.name || userProfile?.nickname || '用户') : (contacts.find(c => c.id === msg.senderId)?.name || contact.name);
             let content = msg.content;
 
-            // 优先处理红包，因为它会生成系统消息并提前返回
+            // 处理红包消息 - 改为user角色以兼容Gemini API
             if (msg.type === 'red_packet') { 
                 try { 
-                    const p = JSON.parse(content); 
-                    messages.push({ role: 'system', content: `[系统提示：${senderName}发送了一个金额为${p.amount}的红包，留言是："${p.message}"。请对此作出回应。]` }); 
-                } catch(e){} 
+                    const p = JSON.parse(content);
+                    // 确保金额和消息都存在且有效
+                    if (p.amount !== undefined && p.message !== undefined) {
+                        // 将红包信息作为用户消息发送，让AI理解这是一个红包
+                        messages.push({ 
+                            role: 'user', 
+                            content: `[用户发送了一个金额为${p.amount}元的红包，留言："${p.message}"]` 
+                        }); 
+                    } else {
+                        messages.push({ 
+                            role: 'user', 
+                            content: `[用户发送了一个红包]` 
+                        }); 
+                    }
+                } catch(e) {
+                    console.warn('解析红包数据失败:', e, 'content:', content);
+                    messages.push({ 
+                        role: 'user', 
+                        content: `[用户发送了一个红包]` 
+                    }); 
+                }
                 return; // 跳过此次循环的后续步骤
             }
             
+            // 处理文本消息
             if (msg.type === 'text') {
                 content = this._replaceBase64WithEmoji(msg.content, emojis);
-            } else if (msg.type === 'emoji') {
+            } 
+            // 处理表情消息
+            else if (msg.type === 'emoji') {
                 const foundEmoji = emojis.find(e => e.url === msg.content);
                 content = `[emoji:${foundEmoji?.meaning || '未知表情'}]`;
             }
             
-            messages.push({ role: msg.role, content: currentContact.type === 'group' ? `${senderName}: ${content}` : content });
+            // 构建最终的消息内容
+            const finalContent = currentContact.type === 'group' ? `${senderName}: ${content}` : content;
+            
+            // 确保内容不为空
+            if (finalContent && finalContent.trim()) {
+                messages.push({ 
+                    role: msg.role, 
+                    content: finalContent 
+                });
+            }
         });
 
         // 添加群聊上下文
         if (turnContext.length > 0) {
-            messages.push({role: 'system', content: '--- 以下是本回合刚刚发生的对话 ---'});
+            messages.push({role: 'user', content: '--- 以下是本回合刚刚发生的对话 ---'});
             turnContext.forEach(msg => {
                 const senderName = contacts.find(c => c.id === msg.senderId)?.name || '未知成员';
                 let content = msg.content;
 
-                if (msg.type === 'text') {
+                if (msg.type === 'red_packet') {
+                    try {
+                        const p = JSON.parse(content);
+                        content = `发送了金额为${p.amount}元的红包："${p.message}"`;
+                    } catch(e) {
+                        content = '发送了红包';
+                    }
+                } else if (msg.type === 'text') {
                     content = this._replaceBase64WithEmoji(msg.content, emojis);
+                } else if (msg.type === 'emoji') {
+                    const foundEmoji = emojis.find(e => e.url === msg.content);
+                    content = `[表情:${foundEmoji?.meaning || '未知表情'}]`;
                 }
                 
-                messages.push({ role: msg.role, content: `${senderName}: ${content}` });
+                if (content && content.trim()) {
+                    messages.push({ 
+                        role: msg.role, 
+                        content: `${senderName}: ${content}` 
+                    });
+                }
             });
-            messages.push({role: 'system', content: '--- 请针对以上最新对话进行回应 ---'});
+            messages.push({role: 'user', content: '--- 请针对以上最新对话进行回应 ---'});
+        }
+        
+        // 确保返回的messages数组不为空
+        if (messages.length === 0) {
+            console.warn('构建的消息历史为空，添加默认消息');
+            messages.push({
+                role: 'user',
+                content: '开始对话'
+            });
         }
 
         return messages;

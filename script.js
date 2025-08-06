@@ -846,7 +846,7 @@ async function getAIReply(postData, userReply, contactId) {
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.7, max_tokens: 2000 }
+        { temperature: 0.7 }
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -2143,7 +2143,7 @@ async function callAPI(contact, turnContext = []) {
             messages
         );
 
-        // 4. 处理响应
+        // 4. 处理响应 - 只增加最小的错误检查
         if (!data) {
             console.error('API返回数据为空:', data);
             throw new Error('API返回数据为空');
@@ -2163,8 +2163,18 @@ async function callAPI(contact, turnContext = []) {
             // 另一种可能的格式
             fullResponseText = data.message;
         } else {
+            // 检查是否是因为没有生成内容
+            if (data.usage && data.usage.completion_tokens === 0) {
+                console.warn('API没有生成任何内容，可能被过滤或模型限制');
+                throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
+            }
             console.error('无法从API响应中提取内容:', data);
             throw new Error('API响应格式不支持，无法提取回复内容');
+        }
+
+        // 检查内容是否有效
+        if (!fullResponseText || fullResponseText.trim() === '') {
+            throw new Error('AI回复内容为空，请稍后重试');
         }
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
