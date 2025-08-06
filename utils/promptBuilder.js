@@ -267,6 +267,10 @@ class PromptBuilder {
         const postAuthorContact = postData.author_type === 'User' ? userProfile : contact;
         const userPersona = userProfile.personality ? `用户人设为：${userProfile.personality}` : '';
 
+        const existingComments = postData.comments && postData.comments.length > 0
+            ? postData.comments.map(c => `${c.commenter_name}: ${c.comment_content}`).join('\n')
+            : '无';
+
         return `# 任务 请严格遵守以下要求完成生成 ${userProfile.name} 和 ${postAuthorContact.name} 之间的日常帖子的回复。
 # 设定
 你现在要扮演 “${postAuthorContact.name}”，你的人设是：“${postAuthorContact.personality}”。
@@ -276,7 +280,7 @@ class PromptBuilder {
 ${postData.post_content}‘
 
 # 已有的评论
-
+${existingComments}
 
 # 用户的评论
 ${userReply}
