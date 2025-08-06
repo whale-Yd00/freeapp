@@ -226,7 +226,7 @@ class PromptBuilder {
     3. 模仿自然网络语气，适当使用流行语，要有网感。
     4. 评论可以有不同观点和立场。
     5. 为每篇帖子提供一个简短的图片内容描述文字。
-    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    6. 必须以一个JSON对象格式输出，回答**只包含JSON**，不要包含任何其他文字或markdown标记。
     7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
 
     # 输出格式 (必须严格遵守此JSON结构)
