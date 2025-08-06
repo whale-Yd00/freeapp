@@ -977,6 +977,27 @@ body {
     padding: 15px;
 }
 
+.modal-footer {
+    padding: 15px;
+    text-align: right;
+    border-top: 1px solid #eee;
+}
+
+/* Specific styles for the Update Modal to make it scrollable */
+#updateModal .modal-body {
+    max-height: 60vh; /* Limit height to 60% of the viewport height */
+    overflow-y: auto; /* Enable vertical scrolling */
+    padding-right: 20px; /* Add some space for the scrollbar */
+}
+
+#updateModal .modal-footer {
+    display: none; /* Initially hide the footer */
+}
+
+#updateModal .modal-footer.visible {
+    display: block; /* Show the footer when it has the 'visible' class */
+}
+
 .form-group {
     margin-bottom: 15px;
 }

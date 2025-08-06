@@ -111,15 +111,32 @@ async function init() {
     const unreadAnnouncements = await announcementManager.getUnread();
     if (unreadAnnouncements.length > 0) {
         const modalBody = document.getElementById('updateModalBody');
+        const modalFooter = document.querySelector('#updateModal .modal-footer');
         
-        // To display chronologically, reverse the array (since newest is first)
-        // and join content.
         const combinedContent = unreadAnnouncements.reverse()
             .map(ann => ann.content)
             .join('<hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">');
         
         modalBody.innerHTML = marked.parse(combinedContent);
         showModal('updateModal');
+
+        // Logic to show button when scrolled to bottom
+        modalBody.onscroll = () => {
+            // Check if the user has scrolled to the bottom
+            // Adding a 5px tolerance
+            if (modalBody.scrollHeight - modalBody.scrollTop - modalBody.clientHeight < 5) {
+                modalFooter.classList.add('visible');
+            }
+        };
+
+        // Also check if the content is not long enough to scroll
+        // Use a timeout to allow the DOM to render first
+        setTimeout(() => {
+            if (modalBody.scrollHeight <= modalBody.clientHeight) {
+                modalFooter.classList.add('visible');
+            }
+        }, 100);
+
 
         document.getElementById('updateModalCloseBtn').onclick = () => {
             closeModal('updateModal');

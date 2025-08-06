@@ -152,9 +152,9 @@
             </div>
             
             <div class="data-management-container">
-                <!-- 数据库统计信息 -->
+                <!-- 数据统计信息 -->
                 <div class="database-stats" style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px; margin-bottom: 15px;">
-                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">数据库统计</h4>
+                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">数据统计</h4>
                     <div id="databaseStatsContent" style="font-size: 13px; color: #666;">
                         <div>正在加载统计信息...</div>
                     </div>
@@ -169,11 +169,11 @@
                     <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                         <button type="button" class="form-submit" onclick="exportDatabase()" 
                                 style="flex: 1; background-color: #28a745;">
-                            📤 导出数据库
+                            📤 导出数据
                         </button>
                         <button type="button" class="form-submit" onclick="triggerFileSelect()" 
                                 style="flex: 1; background-color: #dc3545;">
-                            📥 导入数据库
+                            📥 导入数据
                         </button>
                     </div>
                     
@@ -185,7 +185,7 @@
                             <strong>⚠️ 重要提醒</strong>
                         </div>
                         <div style="font-size: 12px; color: #721c24;">
-                            导入数据库将完全覆盖现有的所有数据！请确保已备份重要信息！！
+                            导入数据将完全覆盖现有的所有数据！请确保已备份重要信息！！
                         </div>
                     </div>
                 </div>
@@ -605,5 +605,6 @@
     <script src="utils/promptBuilder.js"></script>
     <script src="utils/memoryTable.js"></script>
     <script src="utils/dataMigrator.js"></script>
+    <script src="utils/announcementManager.js"></script>
 </body>
 </html>
