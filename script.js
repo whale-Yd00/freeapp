@@ -2020,9 +2020,6 @@ function hideTypingIndicator() {
     if (indicator) indicator.remove();
 }
 
-// ==================================================================
-// =================== 【【 核心修改区域 】】 ===================
-// ==================================================================
 /**
  * 通过我们的 Netlify Function 代理来调用 API。
  * @param {object} contact The contact object.
@@ -2053,7 +2050,24 @@ async function callAPI(contact, turnContext = []) {
             emojis, 
             turnContext
         );
-        messages.push(...messageHistory);
+
+        // ==================================================================
+        // =================== 【【 关键修改区域 】】 ===================
+        // ==================================================================
+        // 为了统一AI看到的表情格式，我们在这里拦截并修正历史记录。
+        // 无论 buildMessageHistory 生成了什么，我们都确保发往API的格式是 [emoji:...]
+        const correctedMessageHistory = messageHistory.map(msg => {
+            // 只处理用户消息，并确保 content 是字符串
+            if (msg.role === 'user' && typeof msg.content === 'string' && msg.content.startsWith('[发送了表情：')) {
+                const correctedContent = msg.content.replace('[发送了表情：', '[emoji:');
+                return { ...msg, content: correctedContent };
+            }
+            // 其他消息保持原样
+            return msg;
+        });
+        messages.push(...correctedMessageHistory);
+        // ==================================================================
+
 
         // 3. 调用API
         const data = await window.apiService.callOpenAIAPI(
