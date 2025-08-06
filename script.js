@@ -405,10 +405,10 @@ function handleRelationChange() {
     const customRelationInput = document.getElementById('postGenCustomRelation');
     
     if (relationSelect.value === 'custom') {
-        customRelationInput.style.display = 'block';
+        customRelationInput.parentElement.style.display = 'block'; // 显示父级 .form-group
         customRelationInput.required = true;
     } else {
-        customRelationInput.style.display = 'none';
+        customRelationInput.parentElement.style.display = 'none'; // 隐藏父级 .form-group
         customRelationInput.required = false;
         customRelationInput.value = '';
     }
@@ -424,8 +424,8 @@ function handleCharacterChange() {
     } else {
         const contact = contacts.find(c => c.id === contactId);
         if (contact) {
-            // 默认hashtag为角色名+用户名
-            hashtagInput.value = `${contact.name}X${userProfile.name}`;
+            // 默认hashtag为 #A & B#
+            hashtagInput.value = `${contact.name} & ${userProfile.name}`;
         }
     }
 }
