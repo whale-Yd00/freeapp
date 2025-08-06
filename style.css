@@ -26,7 +26,8 @@ body {
 .chat-page,
 .moments-page,
 .profile-page,
-.weibo-page {
+.weibo-page,
+.data-management-page {
     position: absolute;
     top: 0;
     left: 0;
@@ -47,7 +48,8 @@ body {
 .chat-page.active,
 .moments-page.active,
 .profile-page.active,
-.weibo-page.active {
+.weibo-page.active,
+.data-management-page.active {
     opacity: 1;
     pointer-events: auto;
     z-index: 10; /* 确保活动页面在最上层 */
@@ -973,6 +975,27 @@ body {
 
 .modal-body {
     padding: 15px;
+}
+
+.modal-footer {
+    padding: 15px;
+    text-align: right;
+    border-top: 1px solid #eee;
+}
+
+/* Specific styles for the Update Modal to make it scrollable */
+#updateModal .modal-body {
+    max-height: 60vh; /* Limit height to 60% of the viewport height */
+    overflow-y: auto; /* Enable vertical scrolling */
+    padding-right: 20px; /* Add some space for the scrollbar */
+}
+
+#updateModal .modal-footer {
+    display: none; /* Initially hide the footer */
+}
+
+#updateModal .modal-footer.visible {
+    display: block; /* Show the footer when it has the 'visible' class */
 }
 
 .form-group {

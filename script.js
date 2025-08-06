@@ -107,31 +107,46 @@ async function init() {
         }
     }, 1000);
 
-    // Check for update announcement
-    if (localStorage.getItem('update-20250805-seen') !== 'true') {
-        showUpdateModal();
+    // Check for update announcements
+    const unreadAnnouncements = await announcementManager.getUnread();
+    if (unreadAnnouncements.length > 0) {
+        const modalBody = document.getElementById('updateModalBody');
+        const modalFooter = document.querySelector('#updateModal .modal-footer');
+        
+        const combinedContent = unreadAnnouncements.reverse()
+            .map(ann => ann.content)
+            .join('<hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">');
+        
+        modalBody.innerHTML = marked.parse(combinedContent);
+        showModal('updateModal');
+
+        // Logic to show button when scrolled to bottom
+        modalBody.onscroll = () => {
+            // Check if the user has scrolled to the bottom
+            // Adding a 5px tolerance
+            if (modalBody.scrollHeight - modalBody.scrollTop - modalBody.clientHeight < 5) {
+                modalFooter.classList.add('visible');
+            }
+        };
+
+        // Also check if the content is not long enough to scroll
+        // Use a timeout to allow the DOM to render first
+        setTimeout(() => {
+            if (modalBody.scrollHeight <= modalBody.clientHeight) {
+                modalFooter.classList.add('visible');
+            }
+        }, 100);
+
+
+        document.getElementById('updateModalCloseBtn').onclick = () => {
+            closeModal('updateModal');
+            const idsToMark = unreadAnnouncements.map(ann => ann.id);
+            announcementManager.markAsSeen(idsToMark);
+        };
     }
 }
 
-// --- Update Modal ---
-function showUpdateModal() {
-    const updateContent = `## 2025/8/5更新
-### 论坛
- * 论坛已施工完毕！快去尝试全新的论坛吧！
- * 论坛现在支持自定义和角色的关系、生成条数，同时用户自创的角色也会参与论坛帖子的评论。以及，用户可以回复帖子了！回复后，也会触发贴主的再次回复哦！
- * 目前暂不支持回复楼中楼，后续会更新！
- * 现在，帖子的时间、回复的时间都将被记录，都是现实中的时间了！
- * 右上角三个点现在可以删除帖子了！
- ## 感谢各位的使用~未来更多更新正在路上！`;
 
-    document.getElementById('updateModalBody').innerHTML = marked.parse(updateContent);
-    showModal('updateModal');
-
-    document.getElementById('updateModalCloseBtn').onclick = () => {
-        closeModal('updateModal');
-        localStorage.setItem('update-20250805-seen', 'true');
-    };
-}
 
 // --- IndexedDB 核心函数 ---
 function openDB() {
@@ -338,7 +353,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage'];
 
 function showPage(pageIdToShow) {
     // Hide all main pages and the chat page
@@ -377,6 +392,10 @@ function showPage(pageIdToShow) {
         renderMomentsList();
         isMomentsRendered = true;
     }
+
+    if (pageIdToShow === 'dataManagementPage') {
+        refreshDatabaseStats();
+    }   
 }
 
 function showGeneratePostModal() {
@@ -662,7 +681,7 @@ function renderSingleWeiboPost(storedPost) {
                         <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
                     </div>
                     <div class="post-time">${formatTime(post.timestamp)}</div>
-                    <div class="post-source">来自 ${storedPost.relationDescription || storedPost.relations} 研究所</div>
+                    <div class="post-source">来自 ${storedPost.relations} 研究所</div>
                 </div>
                 <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
                     ...
