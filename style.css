@@ -26,7 +26,8 @@ body {
 .chat-page,
 .moments-page,
 .profile-page,
-.weibo-page {
+.weibo-page,
+.data-management-page {
     position: absolute;
     top: 0;
     left: 0;
@@ -47,7 +48,8 @@ body {
 .chat-page.active,
 .moments-page.active,
 .profile-page.active,
-.weibo-page.active {
+.weibo-page.active,
+.data-management-page.active {
     opacity: 1;
     pointer-events: auto;
     z-index: 10; /* 确保活动页面在最上层 */

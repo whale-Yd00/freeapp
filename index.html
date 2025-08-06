@@ -122,6 +122,10 @@
                     <div class="profile-item-label">编辑个人信息</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
+                <div class="profile-item" onclick="showPage('dataManagementPage')">
+                    <div class="profile-item-label">数据管理</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
             </div>
         </div>
 
@@ -135,6 +139,57 @@
                 <div class="chat-more" onclick="showGeneratePostModal()">➕</div>
             </div>
             <div class="weibo-container" id="weiboContainer"></div>
+        </div>
+
+        <div class="data-management-page" id="dataManagementPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">数据管理</div>
+                <div style="width: 24px;"></div>
+            </div>
+            
+            <div class="data-management-container">
+                <!-- 数据库统计信息 -->
+                <div class="database-stats" style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">数据库统计</h4>
+                    <div id="databaseStatsContent" style="font-size: 13px; color: #666;">
+                        <div>正在加载统计信息...</div>
+                    </div>
+                    <button type="button" class="refresh-stats-btn" onclick="refreshDatabaseStats()" 
+                            style="margin-top: 10px; padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        刷新统计
+                    </button>
+                </div>
+                
+                <!-- 导入导出操作 -->
+                <div class="import-export-actions" style="margin: 15px;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button type="button" class="form-submit" onclick="exportDatabase()" 
+                                style="flex: 1; background-color: #28a745;">
+                            📤 导出数据库
+                        </button>
+                        <button type="button" class="form-submit" onclick="triggerFileSelect()" 
+                                style="flex: 1; background-color: #dc3545;">
+                            📥 导入数据库
+                        </button>
+                    </div>
+                    
+                    <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+                    
+                    <!-- 导入说明 -->
+                    <div class="import-warning" style="margin-top: 10px; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
+                        <div style="font-size: 13px; color: #721c24; margin-bottom: 5px;">
+                            <strong>⚠️ 重要提醒</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #721c24;">
+                            导入数据库将完全覆盖现有的所有数据！请确保已备份重要信息！！
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="settings-menu" id="settingsMenu">
@@ -549,5 +604,6 @@
     <script src="api/api.js"></script>
     <script src="utils/promptBuilder.js"></script>
     <script src="utils/memoryTable.js"></script>
+    <script src="utils/dataMigrator.js"></script>
 </body>
 </html>
