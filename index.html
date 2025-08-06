@@ -10,7 +10,7 @@
 <body>
     <!-- 页面主体内容保持不变 -->
     <div class="main-container">
-        <div class="contact-list-page" id="contactListPage">
+        <div class="contact-list-page active" id="contactListPage">
             <div class="wechat-header">
                 <div class="header-title">Whale-LLT</div>
                 <div class="header-actions">
@@ -30,7 +30,7 @@
 
         <div class="chat-page" id="chatPage">
             <div class="chat-header">
-                <div class="back-btn" onclick="closeChatPage()">
+                <div class="back-btn" onclick="showPage('contactListPage')">
                     <span>‹</span>
                     <span>Whale-LLT</span>
                 </div>
@@ -82,7 +82,7 @@
 
         <div class="moments-page" id="momentsPage">
             <div class="moments-header">
-                <div class="back-btn" onclick="closeMomentsPage()">
+                <div class="back-btn" onclick="showPage('contactListPage')">
                     <span>‹</span>
                     <span>返回</span>
                 </div>
@@ -103,7 +103,7 @@
 
         <div class="profile-page" id="profilePage">
             <div class="chat-header">
-                <div class="back-btn" onclick="closeProfilePage()">
+                <div class="back-btn" onclick="showPage('contactListPage')">
                     <span>‹</span>
                     <span>Whale-LLT</span>
                 </div>
@@ -127,7 +127,7 @@
 
         <div class="weibo-page" id="weiboPage">
             <div class="weibo-header">
-                <div class="back-btn" onclick="closeWeiboPage()">
+                <div class="back-btn" onclick="showPage('contactListPage')">
                     <span>‹</span>
                     <span>返回</span>
                 </div>
@@ -147,21 +147,21 @@
     </div>
 
     <div class="bottom-nav">
-        <div class="nav-item active" onclick="showContactListPage()">
+        <div class="nav-item active" onclick="showPage('contactListPage')">
             <div class="nav-icon">💬</div>
             <div class="nav-text">聊天</div>
         </div>
-        <div class="nav-item" onclick="openWeiboPage()">
+        <div class="nav-item" onclick="showPage('weiboPage')">
             <div class="nav-icon">
                 <svg t="1721063385731" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="10099" width="24" height="24"><path d="M822.4 438.4c-3.2-16-16-28.8-32-32-12.8-3.2-25.6-3.2-38.4-3.2-108.8 0-204.8 48-275.2 128-22.4 25.6-41.6 51.2-57.6 80-96-44.8-192-115.2-265.6-204.8-19.2-25.6-48-35.2-76.8-22.4-28.8 12.8-44.8 44.8-35.2 73.6 3.2 9.6 9.6 19.2 16 28.8 48 64 108.8 118.4 179.2 163.2-83.2 16-156.8 64-211.2 131.2-19.2 25.6-16 64 9.6 83.2 25.6 19.2 64 16 83.2-9.6 44.8-54.4 105.6-92.8 172.8-112-6.4 35.2-9.6 70.4-9.6 105.6 0 163.2 102.4 304 249.6 358.4 19.2 6.4 38.4 0 51.2-16 12.8-16 12.8-38.4 0-54.4-115.2-124.8-115.2-300.8 0-425.6 64-70.4 144-112 233.6-121.6 16 0 32-3.2 44.8-9.6 16-9.6 22.4-25.6 19.2-41.6z" fill="#999999" p-id="10100"></path></svg>
             </div>
             <div class="nav-text">论坛</div>
         </div>
-        <div class="nav-item" onclick="openMomentsPage()">
+        <div class="nav-item" onclick="showPage('momentsPage')">
             <div class="nav-icon">🔍</div>
             <div class="nav-text">发现</div>
         </div>
-        <div class="nav-item" onclick="openProfilePage()">
+        <div class="nav-item" onclick="showPage('profilePage')">
             <div class="nav-icon">👤</div>
             <div class="nav-text">我</div>
         </div>

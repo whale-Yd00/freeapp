@@ -317,23 +317,46 @@ function formatTime(timestamp) {
     }
 }
 
-function showContactListPage() {
-    document.getElementById('contactListPage').style.display = 'block';
-    document.getElementById('weiboPage').classList.remove('active');
-    document.getElementById('momentsPage').classList.remove('active');
-    document.getElementById('profilePage').classList.remove('active');
-    document.getElementById('chatPage').classList.remove('active');
-}
+// --- 页面导航 ---
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage'];
 
-function openWeiboPage() {
-    document.getElementById('weiboPage').classList.add('active');
-    document.getElementById('contactListPage').style.display = 'none';
-    renderAllWeiboPosts();
-}
+function showPage(pageIdToShow) {
+    // Hide all main pages and the chat page
+    pageIds.forEach(pageId => {
+        const page = document.getElementById(pageId);
+        if (page) {
+            page.classList.remove('active');
+        }
+    });
 
-function closeWeiboPage() {
-    document.getElementById('weiboPage').classList.remove('active');
-    showContactListPage();
+    // Show the requested page
+    const pageToShow = document.getElementById(pageIdToShow);
+    if (pageToShow) {
+        pageToShow.classList.add('active');
+    }
+
+    // Update the active state of the bottom navigation buttons
+    const navItems = document.querySelectorAll('.bottom-nav .nav-item');
+    const navMapping = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage'];
+    navItems.forEach((item, index) => {
+        // This relies on the order in the HTML, which is correct.
+        if (navMapping[index] === pageIdToShow) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+
+    // --- Lazy Loading/Rendering ---
+    // Render Weibo posts when the page is shown
+    if (pageIdToShow === 'weiboPage') {
+        renderAllWeiboPosts();
+    }
+    // Render Moments only on the first time it's opened
+    if (pageIdToShow === 'momentsPage' && !isMomentsRendered) {
+        renderMomentsList();
+        isMomentsRendered = true;
+    }
 }
 
 function showGeneratePostModal() {
@@ -865,20 +888,6 @@ async function updateWeiboPost(postToUpdate) {
 
 
 // --- 朋友圈功能 ---
-function openMomentsPage() {
-    // 懒加载：第一次打开时才渲染
-    if (!isMomentsRendered) {
-        renderMomentsList();
-        isMomentsRendered = true;
-    }
-    document.getElementById('momentsPage').classList.add('active');
-    document.getElementById('contactListPage').style.display = 'none';
-}
-
-function closeMomentsPage() {
-    document.getElementById('momentsPage').classList.remove('active');
-    showContactListPage();
-}
 
 function showPublishMomentModal() {
     document.getElementById('publishMomentModal').style.display = 'block';
@@ -1676,16 +1685,6 @@ function updateUserProfileUI() {
     userAvatar.innerHTML = userProfile.avatar ? `<img src="${userProfile.avatar}">` : (userProfile.name[0] || '我');
 }
 
-function openProfilePage() {
-    document.getElementById('profilePage').classList.add('active');
-    document.getElementById('contactListPage').style.display = 'none';
-}
-
-function closeProfilePage() {
-    document.getElementById('profilePage').classList.remove('active');
-    showContactListPage();
-}
-
 function renderContactList() {
     const contactList = document.getElementById('contactList');
     contactList.innerHTML = '';
@@ -1745,8 +1744,7 @@ function openChat(contact) {
     currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
     document.getElementById('chatTitle').textContent = contact.name;
-    document.getElementById('chatPage').classList.add('active');
-    document.getElementById('contactListPage').style.display = 'none';
+    showPage('chatPage');
     
     // 重置消息加载状态
     currentlyDisplayedMessageCount = 0; 
@@ -1770,8 +1768,7 @@ function openChat(contact) {
 }
 
 function closeChatPage() {
-    document.getElementById('chatPage').classList.remove('active');
-    showContactListPage();
+    showPage('contactListPage');
     
     // 清理工作
     const chatMessagesEl = document.getElementById('chatMessages');
