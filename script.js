@@ -461,7 +461,8 @@ async function generateWeiboPosts(contactId, relations, count = 1) {
         count, 
         contact, 
         userProfile, 
-        contacts
+        contacts,
+        emojis
     );
 
     try {
@@ -2074,23 +2075,7 @@ async function callAPI(contact, turnContext = []) {
             turnContext
         );
 
-        // ==================================================================
-        // =================== 【【 关键修改区域 】】 ===================
-        // ==================================================================
-        // 为了统一AI看到的表情格式，我们在这里拦截并修正历史记录。
-        // 无论 buildMessageHistory 生成了什么，我们都确保发往API的格式是 [emoji:...]
-        const correctedMessageHistory = messageHistory.map(msg => {
-            // 只处理用户消息，并确保 content 是字符串
-            if (msg.role === 'user' && typeof msg.content === 'string' && msg.content.startsWith('[发送了表情：')) {
-                const correctedContent = msg.content.replace('[发送了表情：', '[emoji:');
-                return { ...msg, content: correctedContent };
-            }
-            // 其他消息保持原样
-            return msg;
-        });
-        messages.push(...correctedMessageHistory);
-        // ==================================================================
-
+        messages.push(...messageHistory);
 
         // 3. 调用API
         const data = await window.apiService.callOpenAIAPI(
@@ -2101,7 +2086,28 @@ async function callAPI(contact, turnContext = []) {
         );
 
         // 4. 处理响应
-        let fullResponseText = data.choices[0].message.content;
+        if (!data) {
+            console.error('API返回数据为空:', data);
+            throw new Error('API返回数据为空');
+        }
+
+        let fullResponseText;
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            // 标准OpenAI格式
+            fullResponseText = data.choices[0].message.content;
+        } else if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
+            // Gemini API 格式
+            fullResponseText = data.candidates[0].content.parts[0].text;
+        } else if (data.content) {
+            // 可能的替代格式
+            fullResponseText = data.content;
+        } else if (data.message) {
+            // 另一种可能的格式
+            fullResponseText = data.message;
+        } else {
+            console.error('无法从API响应中提取内容:', data);
+            throw new Error('API响应格式不支持，无法提取回复内容');
+        }
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         

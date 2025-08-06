@@ -114,16 +114,24 @@ class PromptBuilder {
         
         recentMessages.forEach(msg => {
             const senderName = msg.role === 'user' ? userProfile.name : contacts.find(c => c.id === msg.senderId)?.name || contact.name;
-            let content = '';
-            if (msg.type === 'text') content = msg.content;
-            else if (msg.type === 'emoji') content = `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
-            else if (msg.type === 'red_packet') { 
+            let content = msg.content;
+
+            // 优先处理红包，因为它会生成系统消息并提前返回
+            if (msg.type === 'red_packet') { 
                 try { 
-                    const p = JSON.parse(msg.content); 
+                    const p = JSON.parse(content); 
                     messages.push({ role: 'system', content: `[系统提示：${senderName}发送了一个金额为${p.amount}的红包，留言是："${p.message}"。请对此作出回应。]` }); 
                 } catch(e){} 
-                return;
+                return; // 跳过此次循环的后续步骤
             }
+            
+            if (msg.type === 'text') {
+                content = this._replaceBase64WithEmoji(msg.content, emojis);
+            } else if (msg.type === 'emoji') {
+                const foundEmoji = emojis.find(e => e.url === msg.content);
+                content = `[emoji:${foundEmoji?.meaning || '未知表情'}]`;
+            }
+            
             messages.push({ role: msg.role, content: currentContact.type === 'group' ? `${senderName}: ${content}` : content });
         });
 
@@ -131,17 +139,22 @@ class PromptBuilder {
         if (turnContext.length > 0) {
             messages.push({role: 'system', content: '--- 以下是本回合刚刚发生的对话 ---'});
             turnContext.forEach(msg => {
-                 const senderName = contacts.find(c => c.id === msg.senderId)?.name || '未知成员';
-                 let content = msg.type === 'text' ? msg.content : `[发送了表情：${emojis.find(e => e.url === msg.content)?.meaning || '未知'}]`;
-                 messages.push({ role: msg.role, content: `${senderName}: ${content}` });
+                const senderName = contacts.find(c => c.id === msg.senderId)?.name || '未知成员';
+                let content = msg.content;
+
+                if (msg.type === 'text') {
+                    content = this._replaceBase64WithEmoji(msg.content, emojis);
+                }
+                
+                messages.push({ role: msg.role, content: `${senderName}: ${content}` });
             });
-             messages.push({role: 'system', content: '--- 请针对以上最新对话进行回应 ---'});
+            messages.push({role: 'system', content: '--- 请针对以上最新对话进行回应 ---'});
         }
 
         return messages;
     }
 
-    buildWeiboPrompt(contactId, relations, count, contact, userProfile, contacts) {
+    buildWeiboPrompt(contactId, relations, count, contact, userProfile, contacts, emojis) {
         const forumRoles = [
             { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
             { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
@@ -180,7 +193,23 @@ class PromptBuilder {
         const recentMessages = contact.messages.slice(-10);
         const background = recentMessages.map(msg => {
             const sender = msg.role === 'user' ? userProfile.name : contact.name;
-            return `${sender}: ${msg.content}`;
+            let content = msg.content;
+            
+            if (msg.type === 'emoji') {
+                const foundEmoji = emojis.find(e => e.url === msg.content);
+                content = `[emoji:${foundEmoji?.meaning || '未知表情'}]`;
+            } else if (msg.type === 'text') {
+                content = this._replaceBase64WithEmoji(msg.content, emojis);
+            } else if (msg.type === 'red_packet') {
+                try {
+                    const packet = JSON.parse(msg.content);
+                    content = `[发送了红包：${packet.message}，金额：${packet.amount}]`;
+                } catch(e) {
+                    content = '[发送了红包]';
+                }
+            }
+            
+            return `${sender}: ${content}`;
         }).join('\n');
 
         const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
@@ -197,7 +226,7 @@ class PromptBuilder {
     3. 模仿自然网络语气，适当使用流行语，要有网感。
     4. 评论可以有不同观点和立场。
     5. 为每篇帖子提供一个简短的图片内容描述文字。
-    6. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+    6. 必须以一个JSON对象格式输出，回答**只包含JSON**，不要包含任何其他文字或markdown标记。
     7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
 
     # 输出格式 (必须严格遵守此JSON结构)
@@ -352,6 +381,15 @@ ${userReply}
     // 私有方法：构建输出格式指令
     _buildOutputFormatInstructions() {
         return `\n\n--- 至关重要的输出格式规则 ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 <memory_table>...</memory_table> 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
+    }
+
+    _replaceBase64WithEmoji(raw, emojis) {
+        if (typeof raw !== 'string' || !raw) return raw;
+        const re = /data:image\/[^,\s]+,[A-Za-z0-9+/=]+/g;
+        return raw.replace(re, (imgUrl) => {
+        const found = emojis.find(e => e.url === imgUrl);
+        return `[发送了表情：${found?.meaning || '未知'}]`;
+        });
     }
 }
 
