@@ -51,10 +51,12 @@ class CharacterMemoryManager {
         
         if (currentContact.type === 'group') {
             // 群聊：检查所有成员
-            for (const memberId of currentContact.members) {
-                const member = window.contacts.find(c => c.id === memberId);
-                if (member && member.type === 'private') {
-                    await this.checkAndUpdateMemory(member.id, currentContact, true);
+            if (window.contacts && Array.isArray(window.contacts)) {
+                for (const memberId of currentContact.members) {
+                    const member = window.contacts.find(c => c.id === memberId);
+                    if (member && member.type === 'private') {
+                        await this.checkAndUpdateMemory(member.id, currentContact, true);
+                    }
                 }
             }
         } else {
@@ -68,6 +70,17 @@ class CharacterMemoryManager {
      */
     getCurrentContact() {
         return window.currentContact || window.memoryTableManager?.getCurrentContact();
+    }
+
+    /**
+     * 检查系统是否准备好执行记忆操作
+     */
+    isSystemReady() {
+        return window.contacts && 
+               Array.isArray(window.contacts) && 
+               window.apiSettings && 
+               window.apiSettings.apiUrl &&
+               window.apiService;
     }
 
     /**
@@ -272,6 +285,12 @@ class CharacterMemoryManager {
      * 检查并更新记忆（主入口）
      */
     async checkAndUpdateMemory(contactId, currentContact, forceCheck = false) {
+        // 系统准备度检查
+        if (!this.isSystemReady()) {
+            console.log('系统未准备好，跳过记忆更新');
+            return;
+        }
+
         const contact = window.contacts.find(c => c.id === contactId);
         if (!contact) {
             console.warn('未找到联系人:', contactId);
@@ -377,6 +396,12 @@ class CharacterMemoryManager {
      */
     async checkAndUpdateGlobalMemory(forumContent, forceCheck = false) {
         console.log('开始检查全局记忆更新');
+        
+        // 检查必要的依赖是否准备好（全局记忆不需要contacts数组）
+        if (!window.apiSettings || !window.apiSettings.apiUrl || !window.apiService) {
+            console.log('系统未准备好，跳过全局记忆更新');
+            return;
+        }
         
         try {
             // 第一步：使用次要模型判断是否需要更新全局记忆
@@ -537,7 +562,9 @@ class CharacterMemoryManager {
         recentMessages.forEach(msg => {
             const sender = msg.role === 'user' ? 
                 (window.userProfile?.name || '用户') : 
-                (window.contacts.find(c => c.id === msg.senderId)?.name || contact.name);
+                (window.contacts && Array.isArray(window.contacts) ? 
+                    window.contacts.find(c => c.id === msg.senderId)?.name || contact.name : 
+                    contact.name);
                 
             let content = msg.content;
             
@@ -550,7 +577,8 @@ class CharacterMemoryManager {
                     content = '[发送红包]';
                 }
             } else if (msg.type === 'emoji') {
-                const emoji = window.emojis.find(e => e.url === msg.content);
+                const emoji = window.emojis && Array.isArray(window.emojis) ? 
+                    window.emojis.find(e => e.url === msg.content) : null;
                 content = `[表情: ${emoji?.meaning || '未知表情'}]`;
             }
             

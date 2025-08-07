@@ -2389,8 +2389,12 @@ async function sendMessage() {
                 await saveDataToDB();
             }
             // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
-            if (window.characterMemoryManager) {
-                window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
+            if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
+                try {
+                    await window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
+                } catch (error) {
+                    console.error('检查更新记忆失败:', error);
+                }
             }
         }
     } catch (error) {
@@ -2451,8 +2455,12 @@ async function sendGroupMessage() {
                 await saveDataToDB();
             }
             // 为群聊中的每个成员检查记忆更新
-            if (window.characterMemoryManager) {
-                window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
+            if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
+                try {
+                    await window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
+                } catch (error) {
+                    console.error('群聊成员记忆更新失败:', error);
+                }
             }
         } catch (error) {
             console.error(`群聊消息发送错误 - ${member.name}:`, error);
