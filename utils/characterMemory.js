@@ -545,7 +545,19 @@ class CharacterMemoryManager {
                 }
             );
             
-            const result = response.choices[0].message.content.trim().toLowerCase();
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('API响应格式异常:', response);
+                return false;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('API响应内容为空或格式错误:', content);
+                return false;
+            }
+            
+            const result = content.trim().toLowerCase();
             console.log('记忆更新判断结果:', result);
             
             return result.includes('满足') || result.includes('需要') || result.includes('yes');
@@ -576,7 +588,19 @@ class CharacterMemoryManager {
                 }
             );
             
-            const result = response.choices[0].message.content.trim().toLowerCase();
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('全局记忆API响应格式异常:', response);
+                return false;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('全局记忆API响应内容为空或格式错误:', content);
+                return false;
+            }
+            
+            const result = content.trim().toLowerCase();
             console.log('全局记忆更新判断结果:', result);
             
             return result.includes('满足') || result.includes('需要') || result.includes('yes');
@@ -608,7 +632,19 @@ class CharacterMemoryManager {
                 }
             );
             
-            const newMemory = response.choices[0].message.content.trim();
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('生成记忆API响应格式异常:', response);
+                return;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('生成记忆API响应内容为空或格式错误:', content);
+                return;
+            }
+            
+            const newMemory = content.trim();
             console.log('生成的新记忆:', newMemory);
             
             // 保存新记忆
@@ -640,7 +676,19 @@ class CharacterMemoryManager {
                 }
             );
             
-            const newGlobalMemory = response.choices[0].message.content.trim();
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('生成全局记忆API响应格式异常:', response);
+                return;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('生成全局记忆API响应内容为空或格式错误:', content);
+                return;
+            }
+            
+            const newGlobalMemory = content.trim();
             console.log('生成的新全局记忆:', newGlobalMemory);
             
             // 保存新全局记忆
