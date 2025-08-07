@@ -30,26 +30,51 @@ class APIService {
                     ...options
                 };
                 
+                // 创建AbortController用于超时控制
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+                
                 const response = await fetch('/api/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(requestBody)
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal
                 });
                 
+                clearTimeout(timeoutId);
+                
                 if (!response.ok) {
-                    const errorBody = await response.json();
-                    throw new Error(`代理请求失败: ${response.status} - ${errorBody.error}`);
+                    // 特殊处理504错误（Gateway Timeout）
+                    if (response.status === 504) {
+                        throw new Error(`请求超时(504): 模型响应时间过长，请稍后重试`);
+                    }
+                    
+                    try {
+                        const errorBody = await response.json();
+                        throw new Error(`代理请求失败: ${response.status} - ${errorBody.error}`);
+                    } catch (parseError) {
+                        // 如果错误响应也无法解析JSON，返回状态码
+                        throw new Error(`代理请求失败: ${response.status} - ${response.statusText}`);
+                    }
                 }
                 
-                return await response.json();
+                // 尝试解析JSON响应
+                try {
+                    return await response.json();
+                } catch (parseError) {
+                    throw new Error(`响应格式错误: 无法解析API返回的JSON数据`);
+                }
 
             } catch (error) {
-                console.error("API Call Error:", error);
+                // AbortError (超时) 不重试
+                if (error.name === 'AbortError') {
+                    throw new Error('请求超时: 模型响应时间过长，请稍后重试');
+                }
+                
                 if (i < this.maxRetries - 1) {
                     const delay = this.baseDelay * Math.pow(2, i);
-                    console.log(`Retrying in ${delay / 1000}s...`);
                     await new Promise(res => setTimeout(res, delay));
                 } else {
                     throw error;

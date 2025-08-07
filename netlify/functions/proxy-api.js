@@ -39,33 +39,11 @@ export async function handler(event, context) {
       };
     }
 
-    // 先获取原始文本，然后尝试解析JSON
-    const responseText = await response.text();
-    console.log('API Response [For: /chat/completions] ---');
-    console.log('Status:', response.status, response.statusText);
-    console.log('Headers:', Object.fromEntries(response.headers));
-    console.log('Body:', responseText);
-    console.log('-------------------');
-    
-    try {
-      const data = JSON.parse(responseText);
-      return {
-        statusCode: 200,
-        body: JSON.stringify(data),
-      };
-    } catch (parseError) {
-      console.error('JSON Parse Error:', parseError);
-      console.error('Response text length:', responseText.length);
-      console.error('Response text preview:', responseText.substring(0, 500));
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ 
-          error: `JSON Parse Error: ${parseError.message}`,
-          responsePreview: responseText.substring(0, 500),
-          responseLength: responseText.length
-        }),
-      };
-    }
+    const data = await response.json();
+    return {
+      statusCode: 200,
+      body: JSON.stringify(data),
+    };
 
   } catch (error) {
     return {
