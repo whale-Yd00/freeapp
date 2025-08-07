@@ -80,6 +80,10 @@ const MESSAGES_PER_PAGE = 15;
 let currentlyDisplayedMessageCount = 0;
 let isLoadingMoreMessages = false;
 
+// 多选模式状态
+let isMultiSelectMode = false;
+let selectedMessages = new Set();
+
 
 // --- 初始化 ---
 async function init() {
@@ -2034,11 +2038,25 @@ function renderMessages(isInitialLoad = false) {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
 
-        let msgPressTimer;
-        msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
-        msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
-        msgDiv.addEventListener('touchmove', () => clearTimeout(msgPressTimer));
-        msgDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); showMessageActionMenu(originalIndex, msgDiv); });
+        // 在多选模式下添加点击事件
+        if (isMultiSelectMode) {
+            msgDiv.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleMessageSelection(originalIndex);
+            });
+            // 如果消息已被选中，添加选中样式
+            if (selectedMessages.has(originalIndex)) {
+                msgDiv.classList.add('message-selected');
+            }
+        } else {
+            // 正常模式下的长按事件
+            let msgPressTimer;
+            msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
+            msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
+            msgDiv.addEventListener('touchmove', () => clearTimeout(msgPressTimer));
+            msgDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); showMessageActionMenu(originalIndex, msgDiv); });
+        }
         
         chatMessages.appendChild(msgDiv);
     });
@@ -2737,6 +2755,7 @@ function showMessageActionMenu(messageIndex, messageElement) {
                 <div class="modal-body">
                     <div style="display: flex; flex-direction: column; gap: 15px;">
                         <button class="form-submit" style="background-color: #576b95;" id="editMessageBtn">编辑</button>
+                        <button class="form-submit" style="background-color: #ffa500;" id="multiSelectBtn">多选</button>
                         <button class="form-submit delete-button" id="deleteMessageBtn">删除</button>
                     </div>
                 </div>
@@ -2754,6 +2773,11 @@ function showMessageActionMenu(messageIndex, messageElement) {
     document.getElementById('deleteMessageBtn').onclick = () => {
         closeModal(menuId);
         showConfirmDialog('删除消息', '确定要删除这条消息吗？此操作不可撤销。', () => deleteMessage(messageIndex));
+    };
+    
+    document.getElementById('multiSelectBtn').onclick = () => {
+        closeModal(menuId);
+        enterMultiSelectMode();
     };
     
     showModal(menuId);
@@ -3108,4 +3132,164 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
     } finally {
         loadingIndicator.remove();
     }
+}
+
+// --- 批量删除消息功能 ---
+
+/**
+ * 进入多选模式
+ */
+function enterMultiSelectMode() {
+    if (!currentContact) return;
+    
+    isMultiSelectMode = true;
+    selectedMessages.clear();
+    
+    // 重新渲染消息以显示多选状态
+    renderMessages(false);
+    
+    // 显示操作按钮
+    showMultiSelectButtons();
+    
+    showToast('多选模式已开启，点击消息进行选择');
+}
+
+/**
+ * 退出多选模式
+ */
+function exitMultiSelectMode() {
+    isMultiSelectMode = false;
+    selectedMessages.clear();
+    
+    // 重新渲染消息
+    renderMessages(false);
+    
+    // 隐藏操作按钮
+    hideMultiSelectButtons();
+}
+
+/**
+ * 显示多选操作按钮
+ */
+function showMultiSelectButtons() {
+    let buttonsDiv = document.getElementById('multiSelectButtons');
+    if (!buttonsDiv) {
+        buttonsDiv = document.createElement('div');
+        buttonsDiv.id = 'multiSelectButtons';
+        buttonsDiv.className = 'multi-select-buttons';
+        buttonsDiv.innerHTML = `
+            <button class="multi-select-btn cancel-btn" onclick="exitMultiSelectMode()">取消</button>
+            <button class="multi-select-btn delete-btn" onclick="deleteSelectedMessages()">删除</button>
+        `;
+        document.body.appendChild(buttonsDiv);
+    }
+    buttonsDiv.style.display = 'flex';
+    
+    // 隐藏底部导航栏
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) {
+        bottomNav.style.display = 'none';
+    }
+}
+
+/**
+ * 隐藏多选操作按钮
+ */
+function hideMultiSelectButtons() {
+    const buttonsDiv = document.getElementById('multiSelectButtons');
+    if (buttonsDiv) {
+        buttonsDiv.style.display = 'none';
+    }
+    
+    // 显示底部导航栏
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) {
+        bottomNav.style.display = 'flex';
+    }
+}
+
+/**
+ * 切换消息的选中状态
+ */
+function toggleMessageSelection(messageIndex) {
+    if (selectedMessages.has(messageIndex)) {
+        selectedMessages.delete(messageIndex);
+    } else {
+        selectedMessages.add(messageIndex);
+    }
+    
+    // 更新该消息的视觉效果
+    updateMessageSelectStyle(messageIndex);
+}
+
+/**
+ * 更新消息的选中样式
+ */
+function updateMessageSelectStyle(messageIndex) {
+    const messageElements = document.querySelectorAll('.message');
+    const messageElement = Array.from(messageElements).find(el => 
+        parseInt(el.dataset.messageIndex) === messageIndex
+    );
+    
+    if (messageElement) {
+        if (selectedMessages.has(messageIndex)) {
+            messageElement.classList.add('message-selected');
+        } else {
+            messageElement.classList.remove('message-selected');
+        }
+    }
+}
+
+/**
+ * 删除选中的消息
+ */
+function deleteSelectedMessages() {
+    if (selectedMessages.size === 0) {
+        showToast('请先选择要删除的消息');
+        return;
+    }
+    
+    const selectedCount = selectedMessages.size;
+    showConfirmDialog('批量删除确认', `即将批量删除所选消息（${selectedCount}条），是否确认？`, async () => {
+        try {
+            // 将选中的索引转换为数组并排序（从大到小，避免删除时索引变化）
+            const sortedIndexes = Array.from(selectedMessages).sort((a, b) => b - a);
+            
+            // 逐个删除消息
+            for (const messageIndex of sortedIndexes) {
+                if (messageIndex < currentContact.messages.length) {
+                    currentContact.messages.splice(messageIndex, 1);
+                }
+            }
+            
+            // 更新联系人最后消息信息
+            if (currentContact.messages.length > 0) {
+                const lastMsg = currentContact.messages[currentContact.messages.length - 1];
+                currentContact.lastMessage = lastMsg.type === 'text' ? lastMsg.content.substring(0, 20) + '...' : 
+                                           (lastMsg.type === 'emoji' ? '[表情]' : '[红包]');
+                currentContact.lastTime = formatContactListTime(lastMsg.time);
+            } else {
+                currentContact.lastMessage = '暂无消息';
+                currentContact.lastTime = formatContactListTime(new Date().toISOString());
+            }
+            
+            // 更新当前显示的消息数量
+            if (currentlyDisplayedMessageCount > currentContact.messages.length) {
+                currentlyDisplayedMessageCount = currentContact.messages.length;
+            }
+            
+            // 退出多选模式
+            exitMultiSelectMode();
+            
+            // 重新渲染
+            renderContactList();
+            await saveDataToDB();
+            
+            showToast(`已成功删除 ${selectedCount} 条消息`);
+            
+        } catch (error) {
+            console.error('批量删除消息失败:', error);
+            showToast('删除失败：' + error.message);
+        }
+    });
 }
