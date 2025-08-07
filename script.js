@@ -791,6 +791,11 @@ function showReplyBox(postHtmlId) {
     const replyButton = replyBox.querySelector('.reply-button');
 
     replyInput.focus();
+    
+    // 确保回复框不被底部导航栏遮挡
+    setTimeout(() => {
+        replyBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
 
     replyButton.onclick = async () => {
         const replyContent = replyInput.value.trim();

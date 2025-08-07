@@ -2091,6 +2091,7 @@ body {
 .reply-box {
     margin-top: 12px;
     padding-top: 12px;
+    padding-bottom: 60px; /* 为底部导航栏留出空间 */
     border-top: 1px solid #f0f0f0;
     display: flex;
     gap: 8px;
