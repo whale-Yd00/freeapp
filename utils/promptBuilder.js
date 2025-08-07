@@ -266,7 +266,7 @@ class PromptBuilder {
             return `${sender}: ${content}`;
         }).join('\n');
     
-        const systemPrompt = `你是一个论坛帖子生成器。请严格遵守以下要求完成生成User（用户）和Char（角色）之间的日常帖子。
+        const systemPrompt = `你是现在要扮演一个角色，发表论坛帖子。你的人设和用户人设如下。
     # 设定
     - User: ${userRole}
     - Char: ${charRole}
@@ -288,7 +288,7 @@ class PromptBuilder {
     "relation_tag": "${hashtag}",
     "posts": [
         {
-        "author_type": "User" or "Char",
+        "author_type": "Char",
         "post_content": "帖子的内容...",
         "image_description": "图片的描述文字...",
         "comments": [
@@ -359,7 +359,7 @@ class PromptBuilder {
 用户名为 ${userProfile.name} 的用户与你的关系是：${postData.relations}。${userPersona}
 
 # 你的帖子内容
-${postData.post_content}‘
+${postData.post_content}
 
 # 已有的评论
 ${existingComments}
@@ -372,6 +372,34 @@ ${userReply}
 - 你的回复必须完全符合你的人设。
 - 回复要自然、口语化，模仿 ${postAuthorContact.name} 的人设，就像一个真实的人在网上冲浪。
 - 只需输出回复内容，不要包含任何额外信息或格式。`;
+    }
+
+    /**
+     * 构建当AI被@时生成回复的提示词
+     */
+    buildMentionReplyPrompt(postData, mentioningComment, mentionedContact, contacts, userProfile) {
+        const allComments = postData.comments.map(c => `${c.commenter_name}: ${c.comment_content}`).join('\n');
+
+        return `# 任务：你被人在论坛帖子里@了，请遵循人设，生成一条回复。
+
+# 你的身份
+- 你是：**${mentionedContact.name}**
+- 你的人设是：${mentionedContact.personality}
+
+# 上下文
+- **原帖子内容**：
+  > ${postData.post_content}
+
+- **整个评论区**：
+  ${allComments}
+
+- **@你的那条评论**：
+  > ${mentioningComment.commenter_name}: ${mentioningComment.comment_content}
+
+# 你的任务
+1.  以 **${mentionedContact.name}** 的身份，针对 **@你的那条评论** 进行回复。
+2.  你的回复必须完全符合你的人设，要自然、口语化，就像一个真实的人在网上冲浪。
+3.  你的回复应该只包含回复的文本内容，不要有任何额外的解释、标签或格式。`;
     }
 
     /**

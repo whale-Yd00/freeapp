@@ -565,12 +565,21 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         }
 
         const data = await response.json();
-        const jsonText = data.choices[0].message.content;
+        let jsonText = data.choices[0].message.content;
         
         if (!jsonText) {
             throw new Error("AI未返回有效内容");
         }
         
+        // 自动清理AI可能返回的多余代码块
+        jsonText = jsonText.trim();
+        if (jsonText.startsWith('```json')) {
+            jsonText = jsonText.substring(7).trim(); // 移除 ```json 和可能的前导空格
+        }
+        if (jsonText.endsWith('```')) {
+            jsonText = jsonText.slice(0, -3).trim(); // 移除末尾的 ``` 和可能的尾随空格
+        }
+
         const weiboData = JSON.parse(jsonText);
 
         // --- 时间戳注入 ---
@@ -652,24 +661,10 @@ function renderSingleWeiboPost(storedPost) {
 
         const postElement = document.createElement('div');
         postElement.className = 'post';
-        // Use a composite key of storedPost.id and the index to uniquely identify each post
         const postHtmlId = `weibo-post-${storedPost.id}-${index}`;
         postElement.id = postHtmlId;
 
-        let commentsHtml = '';
-        if (post.comments && Array.isArray(post.comments)) {
-            post.comments.forEach(comment => {
-                const commenterType = comment.commenter_type ? ` (${comment.commenter_type})` : '';
-                commentsHtml += `
-                    <div class="comment">
-                        <span class="comment-user">${comment.commenter_name}${commenterType}:</span>
-                        <span class="comment-content">${comment.comment_content}</span>
-                        <span class="comment-time">${formatTime(comment.timestamp)}</span>
-                    </div>
-                `;
-            });
-        }
-        
+        // Set the main structure of the post
         postElement.innerHTML = `
             <div class="post-header">
                 <div class="avatar">
@@ -712,12 +707,64 @@ function renderSingleWeiboPost(storedPost) {
                     <span>${Math.floor(Math.random() * 5000)}</span>
                 </a>
             </div>
-            <div class="comments-section" onclick="showReplyBox('${postHtmlId}')">
-                ${commentsHtml}
-            </div>
+            <div class="comments-section"></div>
         `;
+
+        // Programmatically create and append comments
+        const commentsSection = postElement.querySelector('.comments-section');
+        if (commentsSection) {
+            commentsSection.onclick = () => showReplyBox(postHtmlId);
+
+            if (post.comments && Array.isArray(post.comments)) {
+                post.comments.forEach(comment => {
+                    const commenterType = comment.commenter_type ? ` (${comment.commenter_type})` : '';
+                    
+                    const commentDiv = document.createElement('div');
+                    commentDiv.className = 'comment';
+                    
+                    commentDiv.innerHTML = `
+                        <span class="comment-user">${comment.commenter_name}${commenterType}:</span>
+                        <span class="comment-content">${comment.comment_content}</span>
+                        <span class="comment-time">${formatTime(comment.timestamp)}</span>
+                    `;
+
+                    commentDiv.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        replyToComment(comment.commenter_name, postHtmlId);
+                    });
+
+                    commentsSection.appendChild(commentDiv);
+                });
+            }
+        }
+        
         container.appendChild(postElement);
     });
+}
+
+function replyToComment(commenterName, postHtmlId) {
+    // First, ensure the reply box is visible for the post.
+    showReplyBox(postHtmlId);
+
+    // Now, find the reply box and its textarea.
+    const postElement = document.getElementById(postHtmlId);
+    if (!postElement) return;
+
+    const replyInput = postElement.querySelector('.reply-input');
+    if (!replyInput) return;
+
+    // Pre-fill the textarea with the @-mention.
+    const currentText = replyInput.value;
+    const mention = `@${commenterName} `;
+    
+    // Avoid adding duplicate mentions if the user clicks multiple times.
+    if (!currentText.includes(mention)) {
+        replyInput.value = mention + currentText;
+    }
+    
+    // Focus the input and place the cursor at the end.
+    replyInput.focus();
+    replyInput.setSelectionRange(replyInput.value.length, replyInput.value.length);
 }
 
 function showReplyBox(postHtmlId) {
@@ -761,97 +808,111 @@ function showReplyBox(postHtmlId) {
             return;
         }
         const postData = storedPost.data.posts[postIndex];
-        const postAuthorContact = contacts.find(c => c.id === storedPost.contactId);
-        if (!postAuthorContact) {
-            showToast('错误：找不到帖子作者信息');
-            return;
-        }
-        const postAuthorNickname = postData.author_type === 'User' ? userProfile.name : postAuthorContact.name;
 
-        // --- 如果是回复自己的帖子，只保存不调用AI ---
-        if (postAuthorNickname === userProfile.name) {
-            const userComment = {
-                commenter_name: userProfile.name,
-                commenter_type: '楼主',
-                comment_content: replyContent,
-                timestamp: new Date().toISOString()
-            };
+        // --- Create User Comment ---
+        const userComment = {
+            commenter_name: userProfile.name,
+            commenter_type: 'User',
+            comment_content: replyContent,
+            timestamp: new Date().toISOString()
+        };
 
-            if (!postData.comments) {
-                postData.comments = [];
-            }
-            postData.comments.push(userComment);
-
-            await updateWeiboPost(storedPost);
-            showToast('已回复');
-            renderAllWeiboPosts();
-            return;
-        }
-        
-
-        // Disable input and button
+        // --- Disable UI ---
         replyInput.disabled = true;
         replyButton.disabled = true;
         replyButton.textContent = '请稍后...';
 
-        // --- Create temporary UI elements for immediate feedback ---
-        const userCommentElement = document.createElement('div');
-        userCommentElement.className = 'comment';
-        userCommentElement.innerHTML = `
-            <span class="comment-user">${userProfile.name} (你):</span>
-            <span class="comment-content">${replyContent}</span>
-            <span class="comment-time">刚刚</span>
-        `;
-        commentsSection.insertBefore(userCommentElement, replyBox);
+        // --- Add user's comment to the list immediately for better UX ---
+        if (!postData.comments) {
+            postData.comments = [];
+        }
+        postData.comments.push(userComment);
+        renderAllWeiboPosts(); // Re-render to show the user's comment
+        showReplyBox(postHtmlId); // Keep the reply box open
 
-        const aiPlaceholderElement = document.createElement('div');
-        aiPlaceholderElement.className = 'comment';
-        aiPlaceholderElement.innerHTML = `
-            <span class="comment-user">${postAuthorNickname}:</span>
-            <span class="comment-content">...</span>
-        `;
-        commentsSection.insertBefore(aiPlaceholderElement, replyBox);
-        
         try {
-            // --- Get AI Reply ---
-            const aiReplyContent = await getAIReply(postData, replyContent, storedPost.contactId);
-            
-            // --- Create comment objects ---
-            const userComment = {
-                commenter_name: userProfile.name,
-                commenter_type: '你',
-                comment_content: replyContent,
-                timestamp: new Date().toISOString()
-            };
-            const aiComment = {
-                commenter_name: postAuthorNickname,
-                commenter_type: '楼主',
-                comment_content: aiReplyContent,
-                timestamp: new Date().toISOString()
-            };
+            const mentionRegex = /@(\S+)/;
+            const match = replyContent.match(mentionRegex);
+            let mentionedContact = null;
 
-            // --- Update data structure ---
-            if (!postData.comments) {
-                postData.comments = [];
+            if (match) {
+                const mentionedName = match[1].trim();
+                mentionedContact = contacts.find(c => c.name === mentionedName && c.type === 'private');
             }
-            postData.comments.push(userComment);
-            postData.comments.push(aiComment);
 
-            // --- Save to DB ---
+            if (match) {
+                const mentionedName = match[1].trim();
+                const mentionedPersonContact = mentionedContact || {
+                    name: mentionedName,
+                    personality: `一个被@的网友，名字叫${mentionedName}`
+                };
+                
+                const aiReplyContent = await getMentionedAIReply(postData, userComment, mentionedPersonContact);
+                const aiComment = {
+                    commenter_name: mentionedName,
+                    commenter_type: 'Mentioned',
+                    comment_content: aiReplyContent,
+                    timestamp: new Date().toISOString()
+                };
+                postData.comments.push(aiComment);
+                await updateWeiboPost(storedPost);
+                showToast('AI已回复！');
+                renderAllWeiboPosts();
+                return;
+            }
+
+            if (postData.author_type !== 'User') {
+                const postAuthorContact = contacts.find(c => c.id === storedPost.contactId);
+                if (!postAuthorContact) throw new Error('Post author not found');
+                
+                const aiReplyContent = await getAIReply(postData, replyContent, storedPost.contactId);
+                const aiComment = {
+                    commenter_name: postAuthorContact.name,
+                    commenter_type: '楼主',
+                    comment_content: aiReplyContent,
+                    timestamp: new Date().toISOString()
+                };
+                postData.comments.push(aiComment);
+                await updateWeiboPost(storedPost);
+                showToast('AI已回复！');
+                renderAllWeiboPosts();
+                return;
+            }
+
             await updateWeiboPost(storedPost);
-
-            // --- Re-render the entire post for consistency ---
-            showToast('回复成功！');
-            renderAllWeiboPosts(); // This will redraw everything correctly from the source of truth
+            showToast('已回复');
+            renderAllWeiboPosts();
 
         } catch (error) {
-            // --- Handle failure ---
             showToast(`生成失败: ${error.message}`);
             console.error('AI回复生成失败:', error);
-            // Re-render to remove temporary elements
+            // On failure, remove the user's comment that was added optimistically
+            postData.comments.pop();
             renderAllWeiboPosts();
         }
     };
+}
+
+async function getMentionedAIReply(postData, mentioningComment, mentionedContact) {
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        throw new Error('API未配置');
+    }
+
+    const systemPrompt = window.promptBuilder.buildMentionReplyPrompt(postData, mentioningComment, mentionedContact, contacts, userProfile);
+    
+    const data = await window.apiService.callOpenAIAPI(
+        apiSettings.url,
+        apiSettings.key,
+        apiSettings.model,
+        [{ role: 'user', content: systemPrompt }],
+        { temperature: 0.75 } // Slightly higher temp for more creative/natural replies
+    );
+
+    if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
+        throw new Error('AI未返回有效回复');
+    }
+    
+    return data.choices[0].message.content.trim();
 }
 
 async function getAIReply(postData, userReply, contactId) {
