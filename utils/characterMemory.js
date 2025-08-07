@@ -122,6 +122,7 @@ class CharacterMemoryManager {
      */
     getNewUserMessageCount(contact) {
         if (!contact || !contact.messages || contact.messages.length === 0) {
+            console.log('[记忆调试] getNewUserMessageCount: 没有消息');
             return 0;
         }
         
@@ -129,13 +130,28 @@ class CharacterMemoryManager {
         const currentMessageCount = contact.messages.length;
         let userMessageCount = 0;
         
+        console.log('[记忆调试] getNewUserMessageCount 详情:', {
+            contactId: contact.id,
+            lastProcessedIndex,
+            currentMessageCount,
+            totalMessages: contact.messages.length
+        });
+        
         // 从最后处理的位置开始计数用户消息
         for (let i = lastProcessedIndex + 1; i < currentMessageCount; i++) {
-            if (contact.messages[i].role === 'user') {
+            const message = contact.messages[i];
+            console.log(`[记忆调试] 检查消息 ${i}:`, {
+                role: message.role,
+                content: message.content?.substring(0, 50),
+                isUser: message.role === 'user'
+            });
+            
+            if (message.role === 'user') {
                 userMessageCount++;
             }
         }
         
+        console.log('[记忆调试] 新用户消息数量:', userMessageCount);
         return userMessageCount;
     }
 

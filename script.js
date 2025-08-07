@@ -239,7 +239,10 @@ async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
 
 // --- 全局状态 ---
 let contacts = [];
+// 确保暴露到全局对象
+window.contacts = contacts;
 let currentContact = null;
+window.currentContact = currentContact;
 let editingContact = null;
 let apiSettings = {
     url: '',
@@ -249,6 +252,8 @@ let apiSettings = {
     contextMessageCount: 10,
     timeout: 60 // 新增：超时时间（秒）
 };
+// 确保暴露到全局对象
+window.apiSettings = apiSettings;
 let emojis = [];
 let backgrounds = {};
 let userProfile = {
@@ -408,10 +413,17 @@ function openDB() {
         request.onsuccess = event => {
             db = event.target.result;
             isIndexedDBReady = true; // 标记IndexedDB已准备就绪
+            
+            // 确保暴露到全局对象
+            window.db = db;
+            window.isIndexedDBReady = isIndexedDBReady;
+            
             console.log('[记忆调试] IndexedDB 成功打开', {
                 version: db.version,
                 objectStoreNames: Array.from(db.objectStoreNames),
-                isIndexedDBReady: isIndexedDBReady
+                isIndexedDBReady: isIndexedDBReady,
+                windowDb: !!window.db,
+                windowReady: window.isIndexedDBReady
             });
             resolve(db);
         };
@@ -441,6 +453,9 @@ async function loadDataFromDB() {
         const weiboPostsStore = transaction.objectStore('weiboPosts');
         
         contacts = (await promisifyRequest(contactsStore.getAll())) || [];
+        // 更新全局引用
+        window.contacts = contacts;
+        
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
@@ -456,6 +471,8 @@ async function loadDataFromDB() {
         const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
+        // 更新全局引用
+        window.apiSettings = apiSettings;
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
         backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
@@ -477,13 +494,16 @@ async function loadDataFromDB() {
             hasMemoryManager: !!window.characterMemoryManager,
             isIndexedDBReady: window.isIndexedDBReady,
             hasDb: !!window.db,
-            dbVersion: window.db?.version
+            dbVersion: window.db?.version,
+            contactsCount: window.contacts?.length
         });
         
         if (window.characterMemoryManager) {
             await window.characterMemoryManager.loadConversationCounters();
             await window.characterMemoryManager.getGlobalMemory();
-            console.log('[记忆调试] script.js 中角色记忆管理器数据加载完成');
+            console.log('[记忆调试] script.js 中角色记忆管理器数据加载完成', {
+                isSystemReady: window.characterMemoryManager.isSystemReady()
+            });
         }
 
     } catch (error) {
@@ -2140,6 +2160,7 @@ function getGroupAvatarContent(group) {
 // --- 聊天核心逻辑 ---
 function openChat(contact) {
     currentContact = contact;
+    window.currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
     document.getElementById('chatTitle').textContent = contact.name;
     showPage('chatPage');
@@ -2172,6 +2193,7 @@ function closeChatPage() {
     const chatMessagesEl = document.getElementById('chatMessages');
     chatMessagesEl.onscroll = null; // 移除监听器
     currentContact = null;
+    window.currentContact = null;
     toggleEmojiPanel(true);
     toggleSettingsMenu(true);
     toggleMemoryPanel(true);
@@ -3038,6 +3060,7 @@ async function deleteContact(contactId) {
         // 如果删除的是当前正在聊天的对象，需要重置currentContact
         if (currentContact && currentContact.id === contactId) {
             currentContact = null;
+    window.currentContact = null;
         }
 
         renderContactList(); // 重新渲染联系人列表
