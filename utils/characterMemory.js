@@ -130,15 +130,24 @@ class CharacterMemoryManager {
      * 从IndexedDB加载对话计数器
      */
     async loadConversationCounters() {
+        console.log('[记忆调试] 尝试加载对话计数器', {
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db,
+            dbVersion: window.db?.version
+        });
+        
         if (!window.isIndexedDBReady || !window.db) {
-            console.log('IndexedDB未准备好，跳过加载对话计数器');
+            console.log('[记忆调试] IndexedDB未准备好，跳过加载对话计数器');
             return;
         }
 
         try {
             // 检查数据库中是否存在conversationCounters表
+            const storeNames = Array.from(window.db.objectStoreNames);
+            console.log('[记忆调试] 数据库中的所有表:', storeNames);
+            
             if (!window.db.objectStoreNames.contains('conversationCounters')) {
-                console.log('conversationCounters表不存在，使用默认值');
+                console.log('[记忆调试] conversationCounters表不存在，使用默认值');
                 return;
             }
 
@@ -148,12 +157,12 @@ class CharacterMemoryManager {
             
             if (data) {
                 this.conversationCounters = new Map(Object.entries(data));
-                console.log('已加载对话计数器:', this.conversationCounters);
+                console.log('[记忆调试] 已加载对话计数器:', this.conversationCounters);
             } else {
-                console.log('对话计数器数据为空，使用默认值');
+                console.log('[记忆调试] 对话计数器数据为空，使用默认值');
             }
         } catch (error) {
-            console.error('加载对话计数器失败:', error);
+            console.error('[记忆调试] 加载对话计数器失败:', error);
         }
     }
 
@@ -181,24 +190,36 @@ class CharacterMemoryManager {
      * 获取角色记忆
      */
     async getCharacterMemory(contactId) {
+        console.log('[记忆调试] 尝试获取角色记忆', {
+            contactId,
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db
+        });
+        
         if (!window.isIndexedDBReady || !window.db) {
-            console.log('IndexedDB未准备好，无法获取角色记忆');
+            console.log('[记忆调试] IndexedDB未准备好，无法获取角色记忆');
             return null;
         }
 
         try {
             // 检查数据库中是否存在characterMemories表
             if (!window.db.objectStoreNames.contains('characterMemories')) {
-                console.log('characterMemories表不存在');
+                console.log('[记忆调试] characterMemories表不存在');
                 return null;
             }
 
             const transaction = window.db.transaction(['characterMemories'], 'readonly');
             const store = transaction.objectStore('characterMemories');
             const data = await this.promisifyRequest(store.get(contactId));
+            console.log('[记忆调试] 获取角色记忆结果:', {
+                contactId,
+                hasData: !!data,
+                memoryLength: data?.memory?.length || 0,
+                preview: data?.memory?.substring(0, 100) || null
+            });
             return data ? data.memory : null;
         } catch (error) {
-            console.error('获取角色记忆失败:', error);
+            console.error('[记忆调试] 获取角色记忆失败:', error);
             return null;
         }
     }
@@ -285,28 +306,53 @@ class CharacterMemoryManager {
      * 检查并更新记忆（主入口）
      */
     async checkAndUpdateMemory(contactId, currentContact, forceCheck = false) {
+        console.log('[记忆调试] 记忆更新检查开始', {
+            contactId,
+            currentContactId: currentContact?.id,
+            forceCheck,
+            systemReady: this.isSystemReady(),
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasContacts: !!window.contacts,
+            hasApiSettings: !!window.apiSettings,
+            hasApiService: !!window.apiService
+        });
+
         // 系统准备度检查
         if (!this.isSystemReady()) {
-            console.log('系统未准备好，跳过记忆更新');
+            console.log('[记忆调试] 系统未准备好，跳过记忆更新', {
+                contacts: !!window.contacts,
+                apiSettings: !!window.apiSettings,
+                apiUrl: !!window.apiSettings?.apiUrl,
+                apiService: !!window.apiService
+            });
             return;
         }
 
         const contact = window.contacts.find(c => c.id === contactId);
         if (!contact) {
-            console.warn('未找到联系人:', contactId);
+            console.warn('[记忆调试] 未找到联系人:', contactId);
             return;
         }
 
         // 使用新的触发条件：用户发送2条消息就触发
         const newUserMessageCount = this.getNewUserMessageCount(currentContact);
         const shouldCheck = forceCheck || newUserMessageCount >= 2;
+        
+        console.log('[记忆调试] 触发条件检查', {
+            contactId,
+            newUserMessageCount,
+            forceCheck,
+            shouldCheck,
+            lastProcessedIndex: this.lastProcessedMessageIndex.get(currentContact?.id),
+            totalMessages: currentContact?.messages?.length
+        });
 
         if (!shouldCheck) {
-            console.log(`角色 ${contactId} 暂不需要检查记忆更新，新用户消息数: ${newUserMessageCount}`);
+            console.log(`[记忆调试] 角色 ${contactId} 暂不需要检查记忆更新，新用户消息数: ${newUserMessageCount}`);
             return;
         }
 
-        console.log(`开始检查角色 ${contactId} 的记忆更新，新用户消息数: ${newUserMessageCount}`);
+        console.log(`[记忆调试] 开始检查角色 ${contactId} 的记忆更新，新用户消息数: ${newUserMessageCount}`);
         
         try {
             // 第一步：使用次要模型判断是否需要更新记忆
@@ -341,15 +387,22 @@ class CharacterMemoryManager {
      * 获取全局记忆
      */
     async getGlobalMemory() {
+        console.log('[记忆调试] 尝试获取全局记忆', {
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db,
+            currentGlobalMemory: this.globalMemory,
+            globalMemoryLength: this.globalMemory.length
+        });
+        
         if (!window.isIndexedDBReady || !window.db) {
-            console.log('IndexedDB未准备好，返回内存中的全局记忆');
+            console.log('[记忆调试] IndexedDB未准备好，返回内存中的全局记忆:', this.globalMemory);
             return this.globalMemory;
         }
 
         try {
             // 检查数据库中是否存在globalMemory表
             if (!window.db.objectStoreNames.contains('globalMemory')) {
-                console.log('globalMemory表不存在，使用默认值');
+                console.log('[记忆调试] globalMemory表不存在，使用默认值');
                 return this.globalMemory;
             }
 
@@ -357,9 +410,14 @@ class CharacterMemoryManager {
             const store = transaction.objectStore('globalMemory');
             const data = await this.promisifyRequest(store.get('memory'));
             this.globalMemory = data ? data.content : '';
+            console.log('[记忆调试] 从数据库获取全局记忆成功:', {
+                hasData: !!data,
+                contentLength: this.globalMemory.length,
+                preview: this.globalMemory.substring(0, 100)
+            });
             return this.globalMemory;
         } catch (error) {
-            console.error('获取全局记忆失败:', error);
+            console.error('[记忆调试] 获取全局记忆失败:', error);
             return this.globalMemory;
         }
     }
