@@ -541,15 +541,9 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.1, // 降低随机性，让判断更稳定
-                    max_tokens: 10
+                    max_tokens: 50 // 增加token数量，确保能输出完整判断结果
                 }
             );
-            
-            // 添加详细的API响应调试信息
-            console.log('[记忆调试] API响应完整结构:', response);
-            console.log('[记忆调试] response.choices:', response?.choices);
-            console.log('[记忆调试] response.choices[0]:', response?.choices?.[0]);
-            console.log('[记忆调试] response.choices[0].message:', response?.choices?.[0]?.message);
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -590,7 +584,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.1,
-                    max_tokens: 10
+                    max_tokens: 50 // 增加token数量，确保能输出完整判断结果
                 }
             );
             
