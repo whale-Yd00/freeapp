@@ -408,6 +408,11 @@ function openDB() {
         request.onsuccess = event => {
             db = event.target.result;
             isIndexedDBReady = true; // 标记IndexedDB已准备就绪
+            console.log('[记忆调试] IndexedDB 成功打开', {
+                version: db.version,
+                objectStoreNames: Array.from(db.objectStoreNames),
+                isIndexedDBReady: isIndexedDBReady
+            });
             resolve(db);
         };
 
@@ -468,10 +473,17 @@ async function loadDataFromDB() {
         hashtagCache = savedHashtagCache;
 
         // 重新初始化角色记忆管理器的数据（现在数据库已准备好）
+        console.log('[记忆调试] script.js 中准备加载角色记忆管理器数据', {
+            hasMemoryManager: !!window.characterMemoryManager,
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db,
+            dbVersion: window.db?.version
+        });
+        
         if (window.characterMemoryManager) {
             await window.characterMemoryManager.loadConversationCounters();
             await window.characterMemoryManager.getGlobalMemory();
-            console.log('角色记忆管理器数据加载完成');
+            console.log('[记忆调试] script.js 中角色记忆管理器数据加载完成');
         }
 
     } catch (error) {
@@ -2389,12 +2401,23 @@ async function sendMessage() {
                 await saveDataToDB();
             }
             // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
+            console.log('[记忆调试] 准备触发记忆更新检查', {
+                hasMemoryManager: !!window.characterMemoryManager,
+                hasContacts: !!window.contacts,
+                isContactsArray: Array.isArray(window.contacts),
+                currentContactId: currentContact?.id,
+                currentContactType: currentContact?.type,
+                messageCount: currentContact?.messages?.length
+            });
+            
             if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
                 try {
                     await window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
                 } catch (error) {
-                    console.error('检查更新记忆失败:', error);
+                    console.error('[记忆调试] 检查更新记忆失败:', error);
                 }
+            } else {
+                console.log('[记忆调试] 记忆更新条件不满足，跳过');
             }
         }
     } catch (error) {

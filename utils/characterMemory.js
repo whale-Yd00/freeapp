@@ -10,18 +10,31 @@ class CharacterMemoryManager {
      * 初始化角色记忆管理器
      */
     async init() {
-        if (this.isInitialized) return;
+        console.log('[记忆调试] 开始初始化角色记忆管理器', {
+            isInitialized: this.isInitialized,
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db
+        });
+        
+        if (this.isInitialized) {
+            console.log('[记忆调试] 角色记忆管理器已初始化，跳过');
+            return;
+        }
         
         this.bindEvents();
+        console.log('[记忆调试] 事件监听器已绑定');
         
         // 如果数据库已准备好，立即加载数据
         if (window.isIndexedDBReady && window.db) {
+            console.log('[记忆调试] 数据库已准备好，开始加载数据');
             await this.loadConversationCounters();
             await this.getGlobalMemory();
+        } else {
+            console.log('[记忆调试] 数据库未准备好，跳过数据加载');
         }
         
         this.isInitialized = true;
-        console.log('角色记忆管理器初始化完成');
+        console.log('[记忆调试] 角色记忆管理器初始化完成');
     }
 
     /**
@@ -356,20 +369,24 @@ class CharacterMemoryManager {
         
         try {
             // 第一步：使用次要模型判断是否需要更新记忆
+            console.log('[记忆调试] 开始调用次要模型判断是否需要更新记忆');
             const shouldUpdate = await this.checkMemoryUpdateNeeded(contact, currentContact);
             
+            console.log('[记忆调试] 次要模型判断结果:', { contactId, shouldUpdate });
+            
             if (shouldUpdate) {
-                console.log(`角色 ${contactId} 需要更新记忆`);
+                console.log(`[记忆调试] 角色 ${contactId} 需要更新记忆，开始调用主要模型`);
                 // 第二步：使用主要模型生成/更新记忆
                 await this.generateAndUpdateMemory(contact, currentContact);
             } else {
-                console.log(`角色 ${contactId} 无需更新记忆`);
+                console.log(`[记忆调试] 角色 ${contactId} 无需更新记忆`);
             }
             
             // 无论是否更新记忆，都标记当前消息已处理
+            console.log('[记忆调试] 标记消息已处理:', currentContact?.id);
             this.markMessagesProcessed(currentContact);
         } catch (error) {
-            console.error('检查更新记忆时发生错误:', error);
+            console.error('[记忆调试] 检查更新记忆时发生错误:', error);
         }
     }
 
