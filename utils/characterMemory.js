@@ -541,7 +541,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.1, // 降低随机性，让判断更稳定
-                    max_tokens: 50 // 增加token数量，确保能输出完整判断结果
+                    max_tokens: 500 // 增加token数量，确保能输出完整判断结果
                 }
             );
             
