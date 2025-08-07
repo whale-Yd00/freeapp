@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 4;
+        this.dbVersion = 6;
         this.db = null;
         
         // 定义所有对象存储的结构
@@ -18,7 +18,10 @@ class IndexedDBManager {
             userProfile: { keyPath: 'id' },
             moments: { keyPath: 'id' },
             weiboPosts: { keyPath: 'id', autoIncrement: true },
-            hashtagCache: { keyPath: 'id' }
+            hashtagCache: { keyPath: 'id' },
+            characterMemories: { keyPath: 'contactId' },
+            conversationCounters: { keyPath: 'id' },
+            globalMemory: { keyPath: 'id' }
         };
     }
 

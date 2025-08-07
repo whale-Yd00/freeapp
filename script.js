@@ -467,11 +467,11 @@ async function loadDataFromDB() {
         const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'))) || {};
         hashtagCache = savedHashtagCache;
 
-        // 初始化角色记忆管理器的数据
+        // 重新初始化角色记忆管理器的数据（现在数据库已准备好）
         if (window.characterMemoryManager) {
             await window.characterMemoryManager.loadConversationCounters();
-            // 加载全局记忆
             await window.characterMemoryManager.getGlobalMemory();
+            console.log('角色记忆管理器数据加载完成');
         }
 
     } catch (error) {

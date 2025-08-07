@@ -13,7 +13,13 @@ class CharacterMemoryManager {
         if (this.isInitialized) return;
         
         this.bindEvents();
-        await this.loadConversationCounters();
+        
+        // 如果数据库已准备好，立即加载数据
+        if (window.isIndexedDBReady && window.db) {
+            await this.loadConversationCounters();
+            await this.getGlobalMemory();
+        }
+        
         this.isInitialized = true;
         console.log('角色记忆管理器初始化完成');
     }
@@ -112,11 +118,17 @@ class CharacterMemoryManager {
      */
     async loadConversationCounters() {
         if (!window.isIndexedDBReady || !window.db) {
-            console.warn('IndexedDB未准备好，无法加载对话计数器');
+            console.log('IndexedDB未准备好，跳过加载对话计数器');
             return;
         }
 
         try {
+            // 检查数据库中是否存在conversationCounters表
+            if (!window.db.objectStoreNames.contains('conversationCounters')) {
+                console.log('conversationCounters表不存在，使用默认值');
+                return;
+            }
+
             const transaction = window.db.transaction(['conversationCounters'], 'readonly');
             const store = transaction.objectStore('conversationCounters');
             const data = await this.promisifyRequest(store.get('counters'));
@@ -124,6 +136,8 @@ class CharacterMemoryManager {
             if (data) {
                 this.conversationCounters = new Map(Object.entries(data));
                 console.log('已加载对话计数器:', this.conversationCounters);
+            } else {
+                console.log('对话计数器数据为空，使用默认值');
             }
         } catch (error) {
             console.error('加载对话计数器失败:', error);
@@ -155,10 +169,17 @@ class CharacterMemoryManager {
      */
     async getCharacterMemory(contactId) {
         if (!window.isIndexedDBReady || !window.db) {
+            console.log('IndexedDB未准备好，无法获取角色记忆');
             return null;
         }
 
         try {
+            // 检查数据库中是否存在characterMemories表
+            if (!window.db.objectStoreNames.contains('characterMemories')) {
+                console.log('characterMemories表不存在');
+                return null;
+            }
+
             const transaction = window.db.transaction(['characterMemories'], 'readonly');
             const store = transaction.objectStore('characterMemories');
             const data = await this.promisifyRequest(store.get(contactId));
@@ -302,10 +323,17 @@ class CharacterMemoryManager {
      */
     async getGlobalMemory() {
         if (!window.isIndexedDBReady || !window.db) {
+            console.log('IndexedDB未准备好，返回内存中的全局记忆');
             return this.globalMemory;
         }
 
         try {
+            // 检查数据库中是否存在globalMemory表
+            if (!window.db.objectStoreNames.contains('globalMemory')) {
+                console.log('globalMemory表不存在，使用默认值');
+                return this.globalMemory;
+            }
+
             const transaction = window.db.transaction(['globalMemory'], 'readonly');
             const store = transaction.objectStore('globalMemory');
             const data = await this.promisifyRequest(store.get('memory'));
@@ -733,8 +761,8 @@ ${forumContent}
 window.characterMemoryManager = new CharacterMemoryManager();
 
 // 暴露主要函数到全局作用域
-window.checkAndUpdateMemory = function(contactId, forceCheck = false) {
-    return window.characterMemoryManager.checkAndUpdateMemory(contactId, forceCheck);
+window.checkAndUpdateMemory = function(contactId, currentContact, forceCheck = false) {
+    return window.characterMemoryManager.checkAndUpdateMemory(contactId, currentContact, forceCheck);
 };
 
 window.incrementConversationCounter = function(contactId) {

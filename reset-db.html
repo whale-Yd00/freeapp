@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>数据库重置工具</title>
+</head>
+<body>
+    <h1>数据库重置工具</h1>
+    <p>这个页面可以帮助解决数据库版本冲突问题。</p>
+    <button onclick="resetDatabase()">重置数据库</button>
+    <button onclick="checkDatabaseVersion()">检查数据库版本</button>
+    
+    <div id="result"></div>
+
+    <script>
+        function showResult(message) {
+            document.getElementById('result').innerHTML += '<p>' + message + '</p>';
+        }
+
+        async function checkDatabaseVersion() {
+            try {
+                const request = indexedDB.open('WhaleLLTDB');
+                
+                request.onsuccess = function(event) {
+                    const db = event.target.result;
+                    showResult('当前数据库版本: ' + db.version);
+                    db.close();
+                };
+                
+                request.onerror = function(event) {
+                    showResult('检查数据库失败: ' + event.target.error);
+                };
+            } catch (error) {
+                showResult('检查数据库失败: ' + error.message);
+            }
+        }
+
+        async function resetDatabase() {
+            if (!confirm('确定要重置数据库吗？这将删除所有数据！')) {
+                return;
+            }
+            
+            try {
+                // 删除数据库
+                const deleteRequest = indexedDB.deleteDatabase('WhaleLLTDB');
+                
+                deleteRequest.onsuccess = function() {
+                    showResult('数据库删除成功！');
+                    showResult('请刷新主页面重新初始化数据库。');
+                };
+                
+                deleteRequest.onerror = function(event) {
+                    showResult('删除数据库失败: ' + event.target.error);
+                };
+                
+                deleteRequest.onblocked = function() {
+                    showResult('删除数据库被阻止，请关闭所有打开的标签页后重试。');
+                };
+                
+            } catch (error) {
+                showResult('重置数据库失败: ' + error.message);
+            }
+        }
+
+        // 页面加载时检查版本
+        window.addEventListener('load', checkDatabaseVersion);
+    </script>
+</body>
+</html>
