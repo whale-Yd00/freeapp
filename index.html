@@ -136,7 +136,7 @@
                     <span>返回</span>
                 </div>
                 <div class="chat-title">论坛</div>
-                <div class="chat-more" onclick="showGeneratePostModal()">➕</div>
+                <div class="chat-more" onclick="showPostChoiceModal()">➕</div>
             </div>
             <div class="weibo-container" id="weiboContainer"></div>
         </div>
@@ -595,6 +595,61 @@
             </div>
             <div class="modal-footer">
                  <button class="form-submit" id="updateModalCloseBtn">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post Choice Modal -->
+    <div class="modal" id="postChoiceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">创建论坛帖子</div>
+                <div class="modal-close" onclick="closeModal('postChoiceModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <div class="post-choice-container">
+                    <div class="choice-option" onclick="selectPostType('manual')">
+                        <div class="choice-icon">✍️</div>
+                        <div class="choice-title">自己发帖子</div>
+                        <div class="choice-description">手动输入帖子内容，系统会生成评论</div>
+                    </div>
+                    <div class="choice-option" onclick="selectPostType('generate')">
+                        <div class="choice-icon">✨</div>
+                        <div class="choice-title">生成帖子</div>
+                        <div class="choice-description">AI根据聊天记录自动生成帖子和评论</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Post Modal -->
+    <div class="modal" id="manualPostModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发布帖子</div>
+                <div class="modal-close" onclick="closeModal('manualPostModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleManualPost(event)">
+                    <div class="form-group">
+                        <label class="form-label">发帖人</label>
+                        <input type="text" class="form-input" id="manualPostAuthor" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">话题标签</label>
+                        <input type="text" class="form-input" id="manualPostTag" value="碎碎念" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">帖子内容</label>
+                        <textarea class="form-input" id="manualPostContent" placeholder="输入你的帖子内容..." rows="4" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图片描述</label>
+                        <textarea class="form-input" id="manualPostImageDesc" placeholder="描述配图内容（可选）..." rows="2"></textarea>
+                    </div>
+                    <button type="submit" class="form-submit">发布并生成评论</button>
+                </form>
             </div>
         </div>
     </div>
