@@ -280,7 +280,8 @@ let apiSettings = {
     key: '',
     model: '',
     secondaryModel: 'sync_with_primary', // 新增：次要模型
-    contextMessageCount: 10
+    contextMessageCount: 10,
+    timeout: 60 // 新增：超时时间（秒）
 };
 let emojis = [];
 let backgrounds = {};
@@ -1156,7 +1157,8 @@ async function getMentionedAIReply(postData, mentioningComment, mentionedContact
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.75 } // Slightly higher temp for more creative/natural replies
+        { temperature: 0.75 }, // Slightly higher temp for more creative/natural replies
+        (apiSettings.timeout || 60) * 1000
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -1177,7 +1179,8 @@ async function getAIReply(postData, userReply, contactId) {
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.7 }
+        { temperature: 0.7 },
+        (apiSettings.timeout || 60) * 1000
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -1315,7 +1318,8 @@ async function generateMomentContent() {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { temperature: 0.8 }
+            { temperature: 0.8 },
+            (apiSettings.timeout || 60) * 1000
         );
 
         const momentContent = data.choices[0].message.content.trim() || '';
@@ -1392,7 +1396,8 @@ async function generateImageSearchQuery(content) {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { temperature: 0.5 }
+            { temperature: 0.5 },
+            (apiSettings.timeout || 60) * 1000
         );
         return data.choices[0].message.content.trim() || null;
     } catch (error) {
@@ -1427,7 +1432,8 @@ async function generateAIComments(momentContent) {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { response_format: { type: "json_object" }, temperature: 0.9 }
+            { response_format: { type: "json_object" }, temperature: 0.9 },
+            (apiSettings.timeout || 60) * 1000
         );
         
         const jsonText = data.choices[0].message.content;
@@ -1929,6 +1935,7 @@ function showEditContactModal() {
 function showApiSettingsModal() {
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
+    document.getElementById('apiTimeout').value = apiSettings.timeout || 60;
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
@@ -2538,7 +2545,9 @@ async function callAPI(contact, turnContext = []) {
             apiSettings.url,
             apiSettings.key,
             apiSettings.model,
-            messages
+            messages,
+            {},
+            (apiSettings.timeout || 60) * 1000
         );
         
         console.log('API调用完成:', {
@@ -2755,6 +2764,7 @@ async function saveApiSettings(event) {
     apiSettings.model = document.getElementById('primaryModelSelect').value;
     apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
+    apiSettings.timeout = parseInt(document.getElementById('apiTimeout').value) || 60;
     
     await saveDataToDB();
     closeModal('apiSettingsModal');

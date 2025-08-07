@@ -1027,6 +1027,47 @@ body {
     resize: vertical;
 }
 
+.api-key-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.api-key-input {
+    flex: 1;
+}
+
+.timeout-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.timeout-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.timeout-input {
+    width: 50px;
+    padding: 8px 4px;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    text-align: center;
+}
+
+.timeout-input:focus {
+    border-color: #07c160;
+}
+
+.timeout-unit {
+    font-size: 12px;
+    color: #666;
+}
+
 .form-submit {
     width: 100%;
     padding: 12px;

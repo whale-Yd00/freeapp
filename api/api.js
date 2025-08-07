@@ -11,9 +11,10 @@ class APIService {
      * @param {string} model - 模型名称
      * @param {Array} messages - 消息数组
      * @param {Object} options - 额外选项
+     * @param {number} timeout - 超时时间(毫秒)，默认60秒
      * @returns {Promise} API响应
      */
-    async callOpenAIAPI(apiUrl, apiKey, model, messages, options = {}) {
+    async callOpenAIAPI(apiUrl, apiKey, model, messages, options = {}, timeout = 60000) {
         const payload = {
             model: model,
             messages: messages,
@@ -32,7 +33,7 @@ class APIService {
                 
                 // 创建AbortController用于超时控制
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 90000); // 60秒超时
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
                 
                 const response = await fetch('/api/', {
                     method: 'POST',
