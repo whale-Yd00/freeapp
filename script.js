@@ -63,6 +63,19 @@ function setupConsoleCapture() {
     };
 }
 
+// 传统下载方式的辅助函数
+function fallbackDownload(content, filename) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 // 导出日志功能
 function exportConsoleLogs() {
     try {
@@ -75,16 +88,37 @@ function exportConsoleLogs() {
             `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
         ).join('\n');
         
-        const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `console-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const filename = `console-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
         
+        // 检查是否支持Web Share API（移动端分享）
+        if (navigator.share && navigator.canShare) {
+            const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+            const file = new File([blob], filename, { type: 'text/plain' });
+            
+            // 检查是否可以分享文件
+            if (navigator.canShare({ files: [file] })) {
+                navigator.share({
+                    title: '调试日志',
+                    text: '应用调试日志文件',
+                    files: [file]
+                }).then(() => {
+                    showToast('分享成功');
+                    // 关闭设置菜单
+                    document.getElementById('settingsMenu').style.display = 'none';
+                }).catch((error) => {
+                    console.log('分享取消或失败:', error);
+                    // 如果分享失败，回退到传统下载方式
+                    fallbackDownload(logContent, filename);
+                    showToast(`已导出 ${consoleLogs.length} 条日志`);
+                    // 关闭设置菜单
+                    document.getElementById('settingsMenu').style.display = 'none';
+                });
+                return;
+            }
+        }
+        
+        // 回退到传统下载方式（PC端或不支持分享的移动端）
+        fallbackDownload(logContent, filename);
         showToast(`已导出 ${consoleLogs.length} 条日志`);
         
         // 关闭设置菜单
