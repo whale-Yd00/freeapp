@@ -2237,3 +2237,58 @@ body {
     background-color: #f5f5f5;
     color: #666;
 }
+
+/* 批量删除消息样式 */
+.message-selected {
+    background-color: rgba(255, 99, 99, 0.2) !important;
+    border-left: 4px solid #ff6b6b !important;
+}
+
+.message-selected .message-bubble {
+    background-color: rgba(255, 99, 99, 0.15) !important;
+}
+
+.multi-select-buttons {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: none;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1001;
+    height: 80px;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.multi-select-btn {
+    padding: 12px 30px;
+    border: none;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 120px;
+    height: 45px;
+}
+
+.multi-select-btn.cancel-btn {
+    background-color: #6c757d;
+    color: white;
+}
+
+.multi-select-btn.cancel-btn:hover {
+    background-color: #5a6268;
+}
+
+.multi-select-btn.delete-btn {
+    background-color: #dc3545;
+    color: white;
+}
+
+.multi-select-btn.delete-btn:hover {
+    background-color: #c82333;
+}
