@@ -32,7 +32,7 @@ class APIService {
                 
                 // 创建AbortController用于超时控制
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+                const timeoutId = setTimeout(() => controller.abort(), 90000); // 60秒超时
                 
                 const response = await fetch('/api/', {
                     method: 'POST',
