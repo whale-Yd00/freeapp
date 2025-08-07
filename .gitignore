@@ -3,4 +3,5 @@ node_modules/
 
 #AI
 GEMINI.md
+.claude
 .env

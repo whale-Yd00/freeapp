@@ -2008,6 +2008,16 @@ function renderMessages(isInitialLoad = false) {
             }
         }
 
+        // 添加已编辑标识
+        if (msg.edited) {
+            const editedTag = `<span style="color: #999; font-size: 12px; margin-left: 5px;">已编辑</span>`;
+            if (msg.type === 'emoji') {
+                contentHtml += editedTag;
+            } else {
+                contentHtml = contentHtml.replace('</div>', editedTag + '</div>');
+            }
+        }
+
         let avatarContent = '';
         if (msg.role === 'user') {
             avatarContent = userProfile.avatar ? `<img src="${userProfile.avatar}">` : (userProfile.name[0] || '我');
@@ -2025,10 +2035,10 @@ function renderMessages(isInitialLoad = false) {
         }
 
         let msgPressTimer;
-        msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showConfirmDialog('删除消息', '确定要删除这条消息吗？此操作不可撤销。', () => deleteMessage(originalIndex)); }, 700); });
+        msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
         msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
         msgDiv.addEventListener('touchmove', () => clearTimeout(msgPressTimer));
-        msgDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); showConfirmDialog('删除消息', '确定要删除这条消息吗？此操作不可撤销。', () => deleteMessage(originalIndex)); });
+        msgDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); showMessageActionMenu(originalIndex, msgDiv); });
         
         chatMessages.appendChild(msgDiv);
     });
@@ -2705,6 +2715,140 @@ function showConfirmDialog(title, message, onConfirm) {
     showModal(dialogId);
 }
 
+/**
+ * 显示消息操作菜单（编辑/删除）
+ * @param {number} messageIndex 消息索引
+ * @param {HTMLElement} messageElement 消息DOM元素
+ */
+function showMessageActionMenu(messageIndex, messageElement) {
+    const menuId = 'messageActionMenu';
+    let menu = document.getElementById(menuId);
+    
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = menuId;
+        menu.className = 'modal';
+        menu.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">消息操作</div>
+                    <div class="modal-close" onclick="closeModal('${menuId}')">取消</div>
+                </div>
+                <div class="modal-body">
+                    <div style="display: flex; flex-direction: column; gap: 15px;">
+                        <button class="form-submit" style="background-color: #576b95;" id="editMessageBtn">编辑</button>
+                        <button class="form-submit delete-button" id="deleteMessageBtn">删除</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(menu);
+    }
+    
+    // 设置按钮点击事件
+    document.getElementById('editMessageBtn').onclick = () => {
+        closeModal(menuId);
+        startEditMessage(messageIndex, messageElement);
+    };
+    
+    document.getElementById('deleteMessageBtn').onclick = () => {
+        closeModal(menuId);
+        showConfirmDialog('删除消息', '确定要删除这条消息吗？此操作不可撤销。', () => deleteMessage(messageIndex));
+    };
+    
+    showModal(menuId);
+}
+
+/**
+ * 开始编辑消息
+ * @param {number} messageIndex 消息索引
+ * @param {HTMLElement} messageElement 消息DOM元素
+ */
+function startEditMessage(messageIndex, messageElement) {
+    if (!currentContact || messageIndex === undefined || messageIndex < 0 || messageIndex >= currentContact.messages.length) {
+        showToast('无效的消息索引或未选择聊天');
+        return;
+    }
+    
+    const message = currentContact.messages[messageIndex];
+    
+    // 创建编辑界面
+    const editId = 'messageEditModal';
+    let editModal = document.getElementById(editId);
+    
+    if (!editModal) {
+        editModal = document.createElement('div');
+        editModal.id = editId;
+        editModal.className = 'modal';
+        editModal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">编辑消息</div>
+                    <div class="modal-close" onclick="closeModal('${editId}')">取消</div>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">消息内容</label>
+                        <textarea id="editMessageTextarea" class="form-textarea" placeholder="输入消息内容..." rows="6"></textarea>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px;">
+                        <button class="form-submit" style="background-color: #ccc; flex: 1;" onclick="closeModal('${editId}')">取消</button>
+                        <button class="form-submit" style="flex: 1;" id="saveEditedMessageBtn">保存</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(editModal);
+    }
+    
+    // 填充当前消息内容
+    document.getElementById('editMessageTextarea').value = message.content;
+    
+    // 设置保存按钮事件
+    document.getElementById('saveEditedMessageBtn').onclick = () => {
+        const newContent = document.getElementById('editMessageTextarea').value.trim();
+        if (!newContent) {
+            showToast('消息内容不能为空');
+            return;
+        }
+        saveEditedMessage(messageIndex, newContent);
+        closeModal(editId);
+    };
+    
+    showModal(editId);
+    
+    // 聚焦到文本域并选中全部文本
+    setTimeout(() => {
+        const textarea = document.getElementById('editMessageTextarea');
+        textarea.focus();
+        textarea.select();
+    }, 300);
+}
+
+/**
+ * 保存编辑后的消息
+ * @param {number} messageIndex 消息索引
+ * @param {string} newContent 新的消息内容
+ */
+async function saveEditedMessage(messageIndex, newContent) {
+    if (!currentContact || messageIndex === undefined || messageIndex < 0 || messageIndex >= currentContact.messages.length) {
+        showToast('无效的消息索引或未选择聊天');
+        return;
+    }
+    
+    // 更新消息内容
+    currentContact.messages[messageIndex].content = newContent;
+    currentContact.messages[messageIndex].edited = true;
+    currentContact.messages[messageIndex].editTime = new Date().toISOString();
+    
+    // 重新渲染消息
+    renderMessages(false);
+    
+    // 保存到数据库
+    await saveDataToDB();
+    
+    showToast('消息已更新');
+}
 
 function formatContactListTime(dateString) {
     const d = new Date(dateString);
