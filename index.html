@@ -444,7 +444,14 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">API Key</label>
-                        <input type="password" class="form-input" id="apiKey" required>
+                        <div class="api-key-row">
+                            <input type="password" class="form-input api-key-input" id="apiKey" required>
+                            <div class="timeout-group">
+                                <label class="timeout-label">超时</label>
+                                <input type="number" class="timeout-input" id="apiTimeout" min="5" max="300" value="60" placeholder="60">
+                                <span class="timeout-unit">秒</span>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="context-control">
