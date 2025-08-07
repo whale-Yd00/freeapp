@@ -360,7 +360,7 @@ async function init() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 4);
+        const request = indexedDB.open('WhaleLLTDB', 6);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -393,6 +393,16 @@ function openDB() {
             if (!db.objectStoreNames.contains('hashtagCache')) {
                 db.createObjectStore('hashtagCache', { keyPath: 'id' });
             }
+            // 角色记忆相关的ObjectStore
+            if (!db.objectStoreNames.contains('characterMemories')) {
+                db.createObjectStore('characterMemories', { keyPath: 'contactId' });
+            }
+            if (!db.objectStoreNames.contains('conversationCounters')) {
+                db.createObjectStore('conversationCounters', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('globalMemory')) {
+                db.createObjectStore('globalMemory', { keyPath: 'id' });
+            }
         };
 
         request.onsuccess = event => {
@@ -415,7 +425,7 @@ async function loadDataFromDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache'], 'readonly');
+        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache', 'characterMemories', 'conversationCounters', 'globalMemory'], 'readonly');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -456,6 +466,13 @@ async function loadDataFromDB() {
         const hashtagCacheStore = transaction.objectStore('hashtagCache');
         const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'))) || {};
         hashtagCache = savedHashtagCache;
+
+        // 初始化角色记忆管理器的数据
+        if (window.characterMemoryManager) {
+            await window.characterMemoryManager.loadConversationCounters();
+            // 加载全局记忆
+            await window.characterMemoryManager.getGlobalMemory();
+        }
 
     } catch (error) {
         console.error('从IndexedDB加载数据失败:', error);
@@ -1047,6 +1064,12 @@ function showReplyBox(postHtmlId) {
         postData.comments.push(userComment);
         renderAllWeiboPosts(); // Re-render to show the user's comment
         showReplyBox(postHtmlId); // Keep the reply box open
+
+        // 检查并更新全局记忆（用户回复内容）
+        if (window.characterMemoryManager) {
+            const forumContent = `用户回复论坛：\n原帖：${postData.post_content}\n用户回复：${replyContent}`;
+            window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent);
+        }
 
         try {
             const mentionRegex = /@(\S+)/;
@@ -2365,6 +2388,10 @@ async function sendMessage() {
                 renderContactList();
                 await saveDataToDB();
             }
+            // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
+            if (window.characterMemoryManager) {
+                window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
+            }
         }
     } catch (error) {
         console.error('发送消息错误:', error);
@@ -2423,6 +2450,10 @@ async function sendGroupMessage() {
                 renderContactList();
                 await saveDataToDB();
             }
+            // 为群聊中的每个成员检查记忆更新
+            if (window.characterMemoryManager) {
+                window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
+            }
         } catch (error) {
             console.error(`群聊消息发送错误 - ${member.name}:`, error);
             console.error('群聊错误详情:', {
@@ -2475,7 +2506,7 @@ function hideTypingIndicator() {
 async function callAPI(contact, turnContext = []) {
     try {
         // 1. 构建系统提示词
-        const systemPrompt = window.promptBuilder.buildChatPrompt(
+        const systemPrompt = await window.promptBuilder.buildChatPrompt(
             contact, 
             userProfile, 
             currentContact, 
@@ -3357,6 +3388,12 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
     weiboPosts.push(newPost);
     renderAllWeiboPosts();
     showToast('帖子发布成功！');
+
+    // 检查并更新全局记忆（用户发帖内容）
+    if (window.characterMemoryManager) {
+        const forumContent = `用户发帖：\n标题：${relationTag}\n内容：${postContent}${imageDescription ? '\n图片描述：' + imageDescription : ''}`;
+        window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent);
+    }
 
     // 如果没有配置API，就只显示帖子，不生成评论
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {

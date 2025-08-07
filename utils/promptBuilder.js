@@ -56,9 +56,39 @@ class PromptBuilder {
     /**
      * 构建聊天对话的系统提示词
      */
-    buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+    async buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+        // 获取原有记忆表格
         const memoryInfo = (currentContact.memoryTableContent || '').trim();
-        let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+        
+        // 获取全局记忆（新功能）
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 获取角色记忆（新功能）
+        let characterMemory = '';
+        if (window.characterMemoryManager) {
+            const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+            if (memory) {
+                characterMemory = memory;
+            }
+        }
+        
+        let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n`;
+        
+        // 按优先级显示记忆：全局记忆 -> 角色记忆 -> 记忆表格
+        if (globalMemory) {
+            systemPrompt += `--- 全局记忆 ---\n${globalMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        if (characterMemory) {
+            systemPrompt += `--- 角色记忆 ---\n${characterMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        if (memoryInfo) {
+            systemPrompt += `--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+        }
 
         // 添加当前时间
         const now = new Date();
