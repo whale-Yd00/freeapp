@@ -89,11 +89,23 @@ class CharacterMemoryManager {
      * 检查系统是否准备好执行记忆操作
      */
     isSystemReady() {
-        return window.contacts && 
+        const ready = window.contacts && 
                Array.isArray(window.contacts) && 
                window.apiSettings && 
-               window.apiSettings.apiUrl &&
+               (window.apiSettings.url || window.apiSettings.apiUrl) && // 检查两个可能的字段
                window.apiService;
+               
+        console.log('[记忆调试] isSystemReady 检查详情:', {
+            hasContacts: !!window.contacts,
+            isContactsArray: Array.isArray(window.contacts),
+            hasApiSettings: !!window.apiSettings,
+            hasUrl: !!(window.apiSettings?.url),
+            hasApiUrl: !!(window.apiSettings?.apiUrl),
+            hasApiService: !!window.apiService,
+            ready: ready
+        });
+        
+        return ready;
     }
 
     /**
