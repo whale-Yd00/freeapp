@@ -2360,72 +2360,36 @@ async function callAPI(contact, turnContext = []) {
             messages
         );
 
-        // 4. 处理响应 - 添加详细的debug信息
+        // 4. 处理响应
         if (!data) {
-            console.error('API返回数据为空:', data);
             throw new Error('API返回数据为空');
         }
 
-        // Debug: 打印API响应的基本信息
-        console.log('API响应分析 - 开始debug');
-        console.log('API响应对象keys:', Object.keys(data));
-        console.log('是否有choices:', !!data.choices);
-        console.log('choices类型:', typeof data.choices);
-        console.log('choices长度:', data.choices ? data.choices.length : 'N/A');
-        
-        if (data.choices && data.choices[0]) {
-            console.log('choices[0]存在:', !!data.choices[0]);
-            console.log('choices[0]的keys:', Object.keys(data.choices[0]));
-            console.log('是否有message:', !!data.choices[0].message);
-            console.log('message类型:', typeof data.choices[0].message);
-            
-            if (data.choices[0].message) {
-                console.log('message的keys:', Object.keys(data.choices[0].message));
-                console.log('是否有content:', !!data.choices[0].message.content);
-                console.log('content类型:', typeof data.choices[0].message.content);
-                console.log('content长度:', data.choices[0].message.content ? data.choices[0].message.content.length : 'N/A');
-            }
-        }
-
         let fullResponseText;
-        if (data.choices && data.choices[0] && data.choices[0].message) {
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             // 标准OpenAI格式
             fullResponseText = data.choices[0].message.content;
-            console.log('使用标准OpenAI格式提取内容');
         } else if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
             // Gemini API 格式
             fullResponseText = data.candidates[0].content.parts[0].text;
-            console.log('使用Gemini格式提取内容');
         } else if (data.content) {
             // 可能的替代格式
             fullResponseText = data.content;
-            console.log('使用备用content格式提取内容');
         } else if (data.message) {
             // 另一种可能的格式
             fullResponseText = data.message;
-            console.log('使用备用message格式提取内容');
         } else {
             // 检查是否是因为没有生成内容
-            if (data.usage && data.usage.completion_tokens === 0) {
-                console.warn('API没有生成任何内容，可能被过滤或模型限制');
+            if (data.choices && data.choices[0] && data.choices[0].finish_reason === 'content_filter') {
                 throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
             }
-            console.error('所有格式都不匹配，API响应详情:', JSON.stringify(data, null, 2));
             throw new Error('API响应格式不支持，无法提取回复内容');
         }
 
-        // 检查内容是否有效 - 添加debug信息
-        console.log('提取到的内容类型:', typeof fullResponseText);
-        console.log('提取到的内容长度:', fullResponseText ? fullResponseText.length : 'N/A');
-        console.log('内容是否为空:', !fullResponseText);
-        console.log('内容trim后是否为空:', fullResponseText ? fullResponseText.trim() === '' : 'N/A');
-        
+        // 检查内容是否有效
         if (!fullResponseText || fullResponseText.trim() === '') {
-            console.error('内容验证失败，fullResponseText:', fullResponseText);
             throw new Error('AI回复内容为空，请稍后重试');
         }
-        
-        console.log('API响应分析 - debug完成，内容提取成功');
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
@@ -2485,7 +2449,6 @@ async function callAPI(contact, turnContext = []) {
         return { replies: processedReplies, newMemoryTable };
 
     } catch (error) {
-        console.error("API Call Error:", error);
         showToast("API 调用失败: " + error.message);
         throw error;
     }
