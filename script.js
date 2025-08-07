@@ -132,6 +132,110 @@ function exportConsoleLogs() {
 // 立即启用console捕获
 setupConsoleCapture();
 
+// === 调试日志页面功能 ===
+function showDebugLogPage() {
+    showPage('debugLogPage');
+    updateDebugLogDisplay();
+}
+
+function updateDebugLogDisplay() {
+    const logContent = document.getElementById('debugLogContent');
+    const logCount = document.getElementById('logCount');
+    
+    if (consoleLogs.length === 0) {
+        logContent.innerHTML = '<div class="debug-log-empty">暂无日志记录</div>';
+        logCount.textContent = '0';
+        return;
+    }
+    
+    logCount.textContent = consoleLogs.length.toString();
+    
+    const logsHtml = consoleLogs.map(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const levelClass = `debug-log-${log.level}`;
+        return `
+            <div class="debug-log-item ${levelClass}">
+                <div class="debug-log-header">
+                    <span class="debug-log-time">${time}</span>
+                    <span class="debug-log-level">${log.level.toUpperCase()}</span>
+                </div>
+                <div class="debug-log-message">${escapeHtml(log.message)}</div>
+            </div>
+        `;
+    }).join('');
+    
+    logContent.innerHTML = logsHtml;
+    
+    // 滚动到底部显示最新日志
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+function clearDebugLogs() {
+    consoleLogs.length = 0;
+    updateDebugLogDisplay();
+    showToast('已清空调试日志');
+}
+
+function copyDebugLogs() {
+    if (consoleLogs.length === 0) {
+        showToast('没有日志可复制');
+        return;
+    }
+    
+    const logText = consoleLogs.map(log => 
+        `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+    ).join('\n');
+    
+    // 尝试使用现代的Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(logText).then(() => {
+            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
+        }).catch(err => {
+            console.error('复制失败:', err);
+            fallbackCopyTextToClipboard(logText);
+        });
+    } else {
+        fallbackCopyTextToClipboard(logText);
+    }
+}
+
+function fallbackCopyTextToClipboard(text) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
+        } else {
+            showToast('复制失败，请手动选择文本');
+        }
+    } catch (err) {
+        console.error('Fallback: 复制失败', err);
+        showToast('复制失败: ' + err.message);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
 // --- 通用文件上传函数 ---
 async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
     const fileInput = document.getElementById(inputId);
@@ -491,7 +595,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage'];
 
 function showPage(pageIdToShow) {
     // Hide all main pages and the chat page
