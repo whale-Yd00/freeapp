@@ -2395,6 +2395,25 @@ async function sendMessage() {
         }
     } catch (error) {
         console.error('发送消息错误:', error);
+        console.error('错误详情:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            currentContact: currentContact ? {
+                id: currentContact.id,
+                name: currentContact.name,
+                type: currentContact.type,
+                messagesCount: currentContact.messages ? currentContact.messages.length : 0
+            } : null,
+            apiSettings: {
+                url: apiSettings.url ? 'configured' : 'not configured',
+                key: apiSettings.key ? 'configured' : 'not configured',
+                model: apiSettings.model ? 'configured' : 'not configured'
+            },
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+            url: window.location.href
+        });
         showToast('发送失败：' + error.message);
         hideTypingIndicator();
     } finally {
@@ -2432,7 +2451,24 @@ async function sendGroupMessage() {
                 await saveDataToDB();
             }
         } catch (error) {
-            console.error(`Error getting response from ${member.name}:`, error);
+            console.error(`群聊消息发送错误 - ${member.name}:`, error);
+            console.error('群聊错误详情:', {
+                memberInfo: {
+                    id: member.id,
+                    name: member.name,
+                    type: member.type
+                },
+                groupInfo: {
+                    id: currentContact.id,
+                    name: currentContact.name,
+                    membersCount: currentContact.members ? currentContact.members.length : 0
+                },
+                turnContextLength: turnContext.length,
+                errorName: error.name,
+                errorMessage: error.message,
+                errorStack: error.stack,
+                timestamp: new Date().toISOString()
+            });
             hideTypingIndicator();
         }
     }
@@ -2491,12 +2527,25 @@ async function callAPI(contact, turnContext = []) {
         messages.push(...messageHistory);
 
         // 3. 调用API
+        console.log('准备调用API:', {
+            url: apiSettings.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
+            model: apiSettings.model,
+            messagesCount: messages.length,
+            timestamp: new Date().toISOString()
+        });
+        
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
             apiSettings.model,
             messages
         );
+        
+        console.log('API调用完成:', {
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data) : null,
+            timestamp: new Date().toISOString()
+        });
 
         // 4. 处理响应
         if (!data) {
@@ -2587,6 +2636,24 @@ async function callAPI(contact, turnContext = []) {
         return { replies: processedReplies, newMemoryTable };
 
     } catch (error) {
+        console.error('callAPI错误详情:', {
+            errorName: error.name,
+            errorMessage: error.message,
+            errorStack: error.stack,
+            contact: contact ? {
+                id: contact.id,
+                name: contact.name,
+                type: contact.type
+            } : null,
+            turnContextLength: turnContext ? turnContext.length : 0,
+            apiSettings: {
+                url: apiSettings?.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
+                hasKey: !!apiSettings?.key,
+                model: apiSettings?.model || 'not set'
+            },
+            timestamp: new Date().toISOString(),
+            networkStatus: navigator.onLine ? 'online' : 'offline'
+        });
         showToast("API 调用失败: " + error.message);
         throw error;
     }
@@ -3183,6 +3250,35 @@ document.addEventListener('click', (e) => {
 
 // 监听DOMContentLoaded事件，这是执行所有JS代码的入口
 document.addEventListener('DOMContentLoaded', init);
+
+// 全局错误处理器
+window.addEventListener('error', (event) => {
+    console.error('全局JavaScript错误:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error ? {
+            name: event.error.name,
+            message: event.error.message,
+            stack: event.error.stack
+        } : null,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+});
+
+// 处理Promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('未处理的Promise拒绝:', {
+        reason: event.reason,
+        promise: event.promise,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+});
 
 // --- 新增：帖子选择和手动发帖功能 ---
 
