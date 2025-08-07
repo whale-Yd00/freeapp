@@ -2544,6 +2544,7 @@ async function callAPI(contact, turnContext = []) {
         console.log('API调用完成:', {
             hasData: !!data,
             dataKeys: data ? Object.keys(data) : null,
+            response: data ? JSON.stringify(data) : null,
             timestamp: new Date().toISOString()
         });
 
@@ -2577,6 +2578,12 @@ async function callAPI(contact, turnContext = []) {
         if (!fullResponseText || fullResponseText.trim() === '') {
             throw new Error('AI回复内容为空，请稍后重试');
         }
+        
+        console.log('提取的原始回复内容:', {
+            fullResponseLength: fullResponseText.length,
+            fullResponse: fullResponseText,
+            timestamp: new Date().toISOString()
+        });
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
@@ -2632,6 +2639,19 @@ async function callAPI(contact, turnContext = []) {
                 processedReplies.push({ type: 'text', content: reply });
             }
         }
+        
+        console.log('处理完成的回复内容:', {
+            originalRepliesCount: replies.length,
+            processedRepliesCount: processedReplies.length,
+            processedReplies: processedReplies.map((reply, index) => ({
+                index,
+                type: reply.type,
+                content: reply.content
+            })),
+            hasMemoryTable: !!newMemoryTable,
+            memoryTablePreview: newMemoryTable ? JSON.stringify(newMemoryTable).substring(0, 200) + '...' : null,
+            timestamp: new Date().toISOString()
+        });
         
         return { replies: processedReplies, newMemoryTable };
 
