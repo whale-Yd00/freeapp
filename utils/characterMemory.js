@@ -545,6 +545,12 @@ class CharacterMemoryManager {
                 }
             );
             
+            // 添加详细的API响应调试信息
+            console.log('[记忆调试] API响应完整结构:', response);
+            console.log('[记忆调试] response.choices:', response?.choices);
+            console.log('[记忆调试] response.choices[0]:', response?.choices?.[0]);
+            console.log('[记忆调试] response.choices[0].message:', response?.choices?.[0]?.message);
+            
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
                 console.warn('API响应格式异常:', response);
