@@ -501,7 +501,7 @@ class CharacterMemoryManager {
         console.log('开始检查全局记忆更新');
         
         // 检查必要的依赖是否准备好（全局记忆不需要contacts数组）
-        if (!window.apiSettings || !window.apiSettings.apiUrl || !window.apiService) {
+        if (!window.apiSettings || !window.apiSettings.url || !window.apiService) {
             console.log('系统未准备好，跳过全局记忆更新');
             return;
         }
@@ -535,7 +535,7 @@ class CharacterMemoryManager {
         try {
             // 使用相同的API设置，但降低temperature
             const response = await window.apiService.callOpenAIAPI(
-                window.apiSettings.apiUrl,
+                window.apiSettings.url,
                 window.apiSettings.apiKey,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
@@ -566,7 +566,7 @@ class CharacterMemoryManager {
         
         try {
             const response = await window.apiService.callOpenAIAPI(
-                window.apiSettings.apiUrl,
+                window.apiSettings.url,
                 window.apiSettings.apiKey,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
@@ -598,7 +598,7 @@ class CharacterMemoryManager {
         
         try {
             const response = await window.apiService.callOpenAIAPI(
-                window.apiSettings.apiUrl,
+                window.apiSettings.url,
                 window.apiSettings.apiKey,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
@@ -630,7 +630,7 @@ class CharacterMemoryManager {
         
         try {
             const response = await window.apiService.callOpenAIAPI(
-                window.apiSettings.apiUrl,
+                window.apiSettings.url,
                 window.apiSettings.apiKey,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
