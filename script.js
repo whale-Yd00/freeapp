@@ -1,3 +1,103 @@
+// === Console日志捕获系统 ===
+let consoleLogs = [];
+const maxLogEntries = 1000; // 限制日志条目数量避免内存过大
+
+// 重写console方法来捕获日志
+function setupConsoleCapture() {
+    const originalConsole = {
+        log: console.log,
+        error: console.error,
+        warn: console.warn,
+        info: console.info,
+        debug: console.debug
+    };
+
+    function captureLog(level, args) {
+        const timestamp = new Date().toISOString();
+        const message = args.map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        }).join(' ');
+        
+        consoleLogs.push({
+            timestamp,
+            level,
+            message
+        });
+        
+        // 限制日志数量
+        if (consoleLogs.length > maxLogEntries) {
+            consoleLogs = consoleLogs.slice(-maxLogEntries);
+        }
+    }
+
+    console.log = function(...args) {
+        captureLog('log', args);
+        originalConsole.log.apply(console, args);
+    };
+
+    console.error = function(...args) {
+        captureLog('error', args);
+        originalConsole.error.apply(console, args);
+    };
+
+    console.warn = function(...args) {
+        captureLog('warn', args);
+        originalConsole.warn.apply(console, args);
+    };
+
+    console.info = function(...args) {
+        captureLog('info', args);
+        originalConsole.info.apply(console, args);
+    };
+
+    console.debug = function(...args) {
+        captureLog('debug', args);
+        originalConsole.debug.apply(console, args);
+    };
+}
+
+// 导出日志功能
+function exportConsoleLogs() {
+    try {
+        if (consoleLogs.length === 0) {
+            showToast('没有日志可导出');
+            return;
+        }
+
+        const logContent = consoleLogs.map(log => 
+            `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+        ).join('\n');
+        
+        const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `console-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast(`已导出 ${consoleLogs.length} 条日志`);
+        
+        // 关闭设置菜单
+        document.getElementById('settingsMenu').style.display = 'none';
+    } catch (error) {
+        console.error('导出日志失败:', error);
+        showToast('导出日志失败: ' + error.message);
+    }
+}
+
+// 立即启用console捕获
+setupConsoleCapture();
+
 // --- 通用文件上传函数 ---
 async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
     const fileInput = document.getElementById(inputId);
@@ -2260,39 +2360,72 @@ async function callAPI(contact, turnContext = []) {
             messages
         );
 
-        // 4. 处理响应 - 只增加最小的错误检查
+        // 4. 处理响应 - 添加详细的debug信息
         if (!data) {
             console.error('API返回数据为空:', data);
             throw new Error('API返回数据为空');
+        }
+
+        // Debug: 打印API响应的基本信息
+        console.log('API响应分析 - 开始debug');
+        console.log('API响应对象keys:', Object.keys(data));
+        console.log('是否有choices:', !!data.choices);
+        console.log('choices类型:', typeof data.choices);
+        console.log('choices长度:', data.choices ? data.choices.length : 'N/A');
+        
+        if (data.choices && data.choices[0]) {
+            console.log('choices[0]存在:', !!data.choices[0]);
+            console.log('choices[0]的keys:', Object.keys(data.choices[0]));
+            console.log('是否有message:', !!data.choices[0].message);
+            console.log('message类型:', typeof data.choices[0].message);
+            
+            if (data.choices[0].message) {
+                console.log('message的keys:', Object.keys(data.choices[0].message));
+                console.log('是否有content:', !!data.choices[0].message.content);
+                console.log('content类型:', typeof data.choices[0].message.content);
+                console.log('content长度:', data.choices[0].message.content ? data.choices[0].message.content.length : 'N/A');
+            }
         }
 
         let fullResponseText;
         if (data.choices && data.choices[0] && data.choices[0].message) {
             // 标准OpenAI格式
             fullResponseText = data.choices[0].message.content;
+            console.log('使用标准OpenAI格式提取内容');
         } else if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
             // Gemini API 格式
             fullResponseText = data.candidates[0].content.parts[0].text;
+            console.log('使用Gemini格式提取内容');
         } else if (data.content) {
             // 可能的替代格式
             fullResponseText = data.content;
+            console.log('使用备用content格式提取内容');
         } else if (data.message) {
             // 另一种可能的格式
             fullResponseText = data.message;
+            console.log('使用备用message格式提取内容');
         } else {
             // 检查是否是因为没有生成内容
             if (data.usage && data.usage.completion_tokens === 0) {
                 console.warn('API没有生成任何内容，可能被过滤或模型限制');
                 throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
             }
-            console.error('无法从API响应中提取内容:', data);
+            console.error('所有格式都不匹配，API响应详情:', JSON.stringify(data, null, 2));
             throw new Error('API响应格式不支持，无法提取回复内容');
         }
 
-        // 检查内容是否有效
+        // 检查内容是否有效 - 添加debug信息
+        console.log('提取到的内容类型:', typeof fullResponseText);
+        console.log('提取到的内容长度:', fullResponseText ? fullResponseText.length : 'N/A');
+        console.log('内容是否为空:', !fullResponseText);
+        console.log('内容trim后是否为空:', fullResponseText ? fullResponseText.trim() === '' : 'N/A');
+        
         if (!fullResponseText || fullResponseText.trim() === '') {
+            console.error('内容验证失败，fullResponseText:', fullResponseText);
             throw new Error('AI回复内容为空，请稍后重试');
         }
+        
+        console.log('API响应分析 - debug完成，内容提取成功');
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
