@@ -403,6 +403,71 @@ ${userReply}
     }
 
     /**
+     * 构建手动发帖的提示词 - 用于为用户手动输入的帖子生成评论
+     */
+    buildManualPostPrompt(authorName, relationTag, postContent, imageDescription, userProfile, contacts, emojis) {
+        const forumRoles = [
+            { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
+            { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
+            { name: '乐子人', description: '一个唯恐天下不乱的角色，喜欢发表引战或搞笑的言论，目的是看热闹。' },
+            { name: '理性分析党', description: '一个逻辑严谨，凡事都喜欢摆事实、讲道理，进行长篇大论的理性分析的角色。' },
+            { name: '颜狗', description: '一个只关注颜值和外表的角色，总是评论相关的美貌、帅气等外貌特征。' },
+            { name: '吃瓜群众', description: '一个喜欢围观看热闹的角色，总是会发表"前排吃瓜"、"坐等后续"等看戏言论。' }
+        ];
+
+        // 随机选择2-4个路人角色
+        const shuffledRoles = [...forumRoles].sort(() => 0.5 - Math.random());
+        const rolesToSelectCount = Math.floor(Math.random() * 3) + 2; // 2-4个
+        const selectedRoles = shuffledRoles.slice(0, rolesToSelectCount);
+        const genericRoleDescriptions = selectedRoles.map(role => `${role.name}：${role.description}`).join('；');
+        const genericRolePromptPart = `评论区需要有 ${selectedRoles.length} 条路人评论，他们的回复要符合人设：${genericRoleDescriptions}。对于这些路人评论，请在 "commenter_type" 字段中准确标注他们的角色（例如：\"CP头子\"、\"杠精\"）。`;
+
+        // 随机选择0-2个用户创建的角色作为额外的评论者
+        let userCharacterPromptPart = '';
+        const potentialCommenters = contacts.filter(c => c.type === 'private');
+        if (potentialCommenters.length > 0) {
+            const maxUserCharacters = Math.min(potentialCommenters.length, 2);
+            const userCharactersToSelectCount = Math.floor(Math.random() * (maxUserCharacters + 1)); // 0-2个
+            
+            if (userCharactersToSelectCount > 0) {
+                const shuffledCommenters = [...potentialCommenters].sort(() => 0.5 - Math.random());
+                const selectedUserCharacters = shuffledCommenters.slice(0, userCharactersToSelectCount);
+                const userCharacterDescriptions = selectedUserCharacters.map(c => `【${c.name}】（人设：${c.personality}）`).join('、');
+                userCharacterPromptPart = `此外，用户的 ${selectedUserCharacters.length} 位好友（${userCharacterDescriptions}）也会出现在评论区，请为他们每人生成一条符合其身份和性格的评论。对于这些好友的评论，请将他们的 "commenter_type" 字段设置为 "好友"。`;
+            }
+        }
+
+        // 组合成最终的评论生成指令
+        const finalCommentPrompt = userCharacterPromptPart ? `${genericRolePromptPart} ${userCharacterPromptPart}` : genericRolePromptPart;
+
+        const systemPrompt = `你需要为一条用户手动发布的论坛帖子生成评论。
+
+# 帖子信息
+- 发帖人：${authorName}
+- 话题标签：${relationTag}
+- 帖子内容：${postContent}
+- 图片描述：${imageDescription || '无'}
+
+# 要求
+1. ${finalCommentPrompt}
+2. 模仿自然网络语气，适当使用流行语，要有网感。
+3. 评论可以有不同观点和立场，针对帖子内容进行回复。
+4. 每条评论至少10字，最多50字。
+5. 必须以一个JSON对象格式输出，回答**只包含JSON**，不要包含任何其他文字或markdown标记。
+6. 对于每一条评论，都必须包含 "commenter_name"、"commenter_type" 和 "comment_content" 三个字段。
+
+# 输出格式 (必须严格遵守此JSON结构)
+{
+  "comments": [
+    { "commenter_name": "路人昵称1", "commenter_type": "杠精", "comment_content": "评论内容1..." },
+    { "commenter_name": "路人昵称2", "commenter_type": "CP头子", "comment_content": "评论内容2..." }
+  ]
+}`;
+
+        return systemPrompt;
+    }
+
+    /**
      * 构建朋友圈内容生成提示词
      */
     buildMomentContentPrompt(contact, userProfile, apiSettings, contacts) {

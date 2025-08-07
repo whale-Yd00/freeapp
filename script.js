@@ -645,7 +645,10 @@ function renderAllWeiboPosts() {
 function renderSingleWeiboPost(storedPost) {
     const container = document.getElementById('weiboContainer');
     const contact = contacts.find(c => c.id === storedPost.contactId);
-    if (!contact) return; // Don't render if contact is deleted
+    
+    // 对于用户自己发的帖子，contactId为null，contact为undefined，这是正常的
+    // 只有当contactId不为null但找不到对应联系人时才跳过渲染
+    if (storedPost.contactId && !contact) return; // Don't render if contact should exist but is deleted
 
     const data = storedPost.data;
 
@@ -655,9 +658,10 @@ function renderSingleWeiboPost(storedPost) {
 
     data.posts.forEach((post, index) => {
         const postAuthorContact = post.author_type === 'User' ? userProfile : contact;
-        const postAuthorNickname = post.author_type === 'User' ? userProfile.name : contact.name;
-        const postAuthorAvatar = postAuthorContact.avatar;
-        const otherPartyName = post.author_type === 'User' ? contact.name : userProfile.name;
+        const postAuthorNickname = post.author_type === 'User' ? userProfile.name : (contact ? contact.name : '未知用户');
+        const postAuthorAvatar = postAuthorContact ? postAuthorContact.avatar : '';
+        // 修复otherPartyName逻辑，对于用户自己发的帖子，otherPartyName可以是空或者话题标签
+        const otherPartyName = post.author_type === 'User' ? (contact ? contact.name : '') : userProfile.name;
 
         const postElement = document.createElement('div');
         postElement.className = 'post';
@@ -688,7 +692,7 @@ function renderSingleWeiboPost(storedPost) {
             <div class="post-content">
                 <a href="#" class="hashtag">#${storedPost.hashtag || data.relation_tag}#</a>
                 ${post.post_content}
-                <a href="#" class="mention">@${otherPartyName}</a>
+                ${otherPartyName ? `<a href="#" class="mention">@${otherPartyName}</a>` : ''}
             </div>
             <div class="post-image-desc">
                 ${post.image_description}
@@ -2777,3 +2781,187 @@ document.addEventListener('click', (e) => {
 
 // 监听DOMContentLoaded事件，这是执行所有JS代码的入口
 document.addEventListener('DOMContentLoaded', init);
+
+// --- 新增：帖子选择和手动发帖功能 ---
+
+function showPostChoiceModal() {
+    showModal('postChoiceModal');
+}
+
+function selectPostType(type) {
+    closeModal('postChoiceModal');
+    
+    if (type === 'manual') {
+        showManualPostModal();
+    } else if (type === 'generate') {
+        showGeneratePostModal();
+    }
+}
+
+function showManualPostModal() {
+    // 设置默认发帖人为用户
+    document.getElementById('manualPostAuthor').value = userProfile.name;
+    document.getElementById('manualPostTag').value = '碎碎念';
+    document.getElementById('manualPostContent').value = '';
+    document.getElementById('manualPostImageDesc').value = '';
+    
+    showModal('manualPostModal');
+}
+
+async function handleManualPost(event) {
+    event.preventDefault();
+    
+    const authorName = document.getElementById('manualPostAuthor').value;
+    const relationTag = document.getElementById('manualPostTag').value.trim();
+    const postContent = document.getElementById('manualPostContent').value.trim();
+    const imageDescription = document.getElementById('manualPostImageDesc').value.trim();
+    
+    if (!postContent) {
+        showToast('请填写帖子内容');
+        return;
+    }
+    
+    if (!relationTag) {
+        showToast('请填写话题标签');
+        return;
+    }
+    
+    closeModal('manualPostModal');
+    
+    // 生成手动帖子
+    await generateManualPost(authorName, relationTag, postContent, imageDescription);
+}
+
+async function generateManualPost(authorName, relationTag, postContent, imageDescription) {
+    const now = Date.now();
+    const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
+    
+    // 先创建不带评论的帖子并立即显示
+    const weiboData = {
+        relation_tag: relationTag,
+        posts: [{
+            author_type: 'User', // 用户自己发的帖子
+            post_content: postContent,
+            image_description: imageDescription || '暂无图片描述',
+            comments: [], // 先显示空评论，后面再添加
+            timestamp: postCreatedAt.toISOString()
+        }]
+    };
+    
+    const newPost = {
+        id: Date.now(),
+        contactId: null, // 用户自己发的帖子
+        relations: relationTag,
+        relationDescription: relationTag,
+        hashtag: relationTag,
+        data: weiboData,
+        createdAt: postCreatedAt.toISOString()
+    };
+
+    // 保存并立即显示帖子
+    await saveWeiboPost(newPost);
+    weiboPosts.push(newPost);
+    renderAllWeiboPosts();
+    showToast('帖子发布成功！');
+
+    // 如果没有配置API，就只显示帖子，不生成评论
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        showToast('未配置API，仅发布帖子，无评论生成');
+        return;
+    }
+    
+    // 显示加载指示器
+    const container = document.getElementById('weiboContainer');
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'loading-text';
+    loadingIndicator.textContent = '正在生成评论...';
+    loadingIndicator.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 20px; z-index: 1000;';
+    document.body.appendChild(loadingIndicator);
+    
+    try {
+        // 调用新的手动帖子提示词构建方法
+        const systemPrompt = window.promptBuilder.buildManualPostPrompt(
+            authorName,
+            relationTag,
+            postContent,
+            imageDescription,
+            userProfile,
+            contacts,
+            emojis
+        );
+        
+        const payload = {
+            model: apiSettings.model,
+            messages: [{ role: 'user', content: systemPrompt }],
+            response_format: { type: "json_object" },
+            temperature: 0.8
+        };
+
+        const apiUrl = `${apiSettings.url}/chat/completions`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiSettings.key}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`API请求失败: ${response.status} - ${await response.text()}`);
+        }
+
+        const data = await response.json();
+        let jsonText = data.choices[0].message.content;
+        
+        if (!jsonText) {
+            throw new Error("AI未返回有效内容");
+        }
+        
+        // 自动清理AI可能返回的多余代码块
+        jsonText = jsonText.trim();
+        if (jsonText.startsWith('```json')) {
+            jsonText = jsonText.substring(7).trim();
+        }
+        if (jsonText.endsWith('```')) {
+            jsonText = jsonText.slice(0, -3).trim();
+        }
+
+        const commentsData = JSON.parse(jsonText);
+        
+        let lastCommentTime = postCreatedAt.getTime();
+        
+        // 为每个评论添加时间戳
+        const comments = commentsData.comments.map(comment => {
+            const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000);
+            lastCommentTime = newCommentTimestamp;
+            return {
+                ...comment,
+                timestamp: new Date(Math.min(newCommentTimestamp, now)).toISOString()
+            };
+        });
+
+        // 更新帖子数据，添加评论
+        newPost.data.posts[0].comments = comments;
+        
+        // 更新数据库
+        await updateWeiboPost(newPost);
+        
+        // 也需要更新内存中的数组
+        const postIndex = weiboPosts.findIndex(p => p.id === newPost.id);
+        if (postIndex !== -1) {
+            weiboPosts[postIndex] = newPost;
+        }
+        
+        // 重新渲染页面
+        renderAllWeiboPosts();
+        showToast('评论生成完成！');
+
+    } catch (error) {
+        console.error('生成评论失败:', error);
+        showToast('评论生成失败: ' + error.message);
+    } finally {
+        loadingIndicator.remove();
+    }
+}

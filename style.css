@@ -2178,3 +2178,62 @@ body {
     background-color: #ff4444;
     color: white;
 }
+
+/* 帖子选择对话框样式 */
+.post-choice-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.choice-option {
+    padding: 20px;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+    background-color: #fff;
+}
+
+.choice-option:hover {
+    border-color: #007aff;
+    background-color: #f8f9ff;
+}
+
+.choice-option:active {
+    transform: scale(0.98);
+}
+
+.choice-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+
+.choice-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #333;
+}
+
+.choice-description {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.4;
+}
+
+/* 手动发帖表单样式 */
+#manualPostModal .form-input {
+    width: 100%;
+}
+
+#manualPostModal textarea.form-input {
+    resize: vertical;
+    min-height: 80px;
+}
+
+#manualPostAuthor {
+    background-color: #f5f5f5;
+    color: #666;
+}
