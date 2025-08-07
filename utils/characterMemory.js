@@ -536,7 +536,7 @@ class CharacterMemoryManager {
             // 使用相同的API设置，但降低temperature
             const response = await window.apiService.callOpenAIAPI(
                 window.apiSettings.url,
-                window.apiSettings.apiKey,
+                window.apiSettings.key,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
                 { 
@@ -567,7 +567,7 @@ class CharacterMemoryManager {
         try {
             const response = await window.apiService.callOpenAIAPI(
                 window.apiSettings.url,
-                window.apiSettings.apiKey,
+                window.apiSettings.key,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
                 { 
@@ -599,7 +599,7 @@ class CharacterMemoryManager {
         try {
             const response = await window.apiService.callOpenAIAPI(
                 window.apiSettings.url,
-                window.apiSettings.apiKey,
+                window.apiSettings.key,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
                 { 
@@ -631,7 +631,7 @@ class CharacterMemoryManager {
         try {
             const response = await window.apiService.callOpenAIAPI(
                 window.apiSettings.url,
-                window.apiSettings.apiKey,
+                window.apiSettings.key,
                 window.apiSettings.model,
                 [{ role: 'user', content: prompt }],
                 { 
