@@ -764,8 +764,8 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">记忆内容</label>
-                        <textarea class="form-input" id="memoryContent" placeholder="输入记忆内容（支持Markdown格式）..." rows="6" required></textarea>
-                        <div class="form-hint">支持Markdown格式，如 - 列表项 或 ## 标题</div>
+                        <textarea class="form-input" id="memoryContent" placeholder="请使用以下格式：&#10;- 第一条记忆&#10;- 第二条记忆&#10;- 第三条记忆" rows="6" required></textarea>
+                        <div class="form-hint">只支持 "- 记忆内容" 格式，一行一条记忆。其他格式会被自动忽略。</div>
                     </div>
                     <button type="submit" class="form-submit">添加记忆</button>
                 </form>
@@ -784,8 +784,8 @@
                 <form onsubmit="handleEditMemory(event)">
                     <div class="form-group">
                         <label class="form-label">记忆内容</label>
-                        <textarea class="form-input" id="editMemoryContent" placeholder="输入记忆内容（支持Markdown格式）..." rows="6" required></textarea>
-                        <div class="form-hint">支持Markdown格式，如 - 列表项 或 ## 标题</div>
+                        <textarea class="form-input" id="editMemoryContent" placeholder="请使用以下格式：&#10;- 第一条记忆&#10;- 第二条记忆&#10;- 第三条记忆" rows="6" required></textarea>
+                        <div class="form-hint">只支持 "- 记忆内容" 格式，一行一条记忆。其他格式会被自动忽略。</div>
                     </div>
                     <button type="submit" class="form-submit">保存修改</button>
                 </form>

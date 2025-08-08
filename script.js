@@ -3789,9 +3789,16 @@ class MemoryManager {
 
     // 添加全局记忆
     async addGlobalMemory(content) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
         const memory = {
             id: Date.now().toString(),
-            content: content.trim(),
+            content: cleanedContent,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -3799,7 +3806,7 @@ class MemoryManager {
         this.save();
         
         // 同步到现有的全局记忆系统
-        const allGlobalContent = this.globalMemories.map(m => m.content).join('\n\n');
+        const allGlobalContent = this.globalMemories.map(m => m.content).join('\n');
         await saveExistingGlobalMemory(allGlobalContent);
         
         return memory;
@@ -3807,12 +3814,19 @@ class MemoryManager {
 
     // 添加角色记忆
     async addCharacterMemory(characterId, content) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
         if (!this.characterMemories[characterId]) {
             this.characterMemories[characterId] = [];
         }
         const memory = {
             id: Date.now().toString(),
-            content: content.trim(),
+            content: cleanedContent,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -3820,7 +3834,7 @@ class MemoryManager {
         this.save();
         
         // 同步到现有的角色记忆系统
-        const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n\n');
+        const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n');
         await saveExistingCharacterMemory(characterId, allCharacterContent);
         
         return memory;
@@ -3828,16 +3842,23 @@ class MemoryManager {
 
     // 更新记忆
     async updateMemory(memoryId, content, isCharacter = false, characterId = null) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
         if (isCharacter && characterId) {
             const memories = this.characterMemories[characterId] || [];
             const memory = memories.find(m => m.id === memoryId);
             if (memory) {
-                memory.content = content.trim();
+                memory.content = cleanedContent;
                 memory.updatedAt = new Date().toISOString();
                 this.save();
                 
                 // 同步到现有的角色记忆系统
-                const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n\n');
+                const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n');
                 await saveExistingCharacterMemory(characterId, allCharacterContent);
                 
                 return memory;
@@ -3845,12 +3866,12 @@ class MemoryManager {
         } else {
             const memory = this.globalMemories.find(m => m.id === memoryId);
             if (memory) {
-                memory.content = content.trim();
+                memory.content = cleanedContent;
                 memory.updatedAt = new Date().toISOString();
                 this.save();
                 
                 // 同步到现有的全局记忆系统
-                const allGlobalContent = this.globalMemories.map(m => m.content).join('\n\n');
+                const allGlobalContent = this.globalMemories.map(m => m.content).join('\n');
                 await saveExistingGlobalMemory(allGlobalContent);
                 
                 return memory;
@@ -3902,21 +3923,65 @@ class MemoryManager {
         return (this.characterMemories[characterId] || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
 
-    // 解析Markdown到HTML
-    parseMarkdown(content) {
-        if (typeof marked !== 'undefined') {
-            return marked.parse(content);
+    // 清理和验证记忆内容，只保留有效的markdown列表项
+    cleanAndValidateMemoryContent(content) {
+        if (!content || typeof content !== 'string') {
+            return '';
         }
-        // 简单的Markdown解析fallback
-        return content
-            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-            .replace(/^\- (.*$)/gim, '<li>$1</li>')
-            .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/\n/g, '<br>');
+        
+        const lines = content.split('\n');
+        const validLines = [];
+        
+        lines.forEach(line => {
+            const trimmedLine = line.trim();
+            // 只保留以 "- " 开头的行
+            if (trimmedLine.startsWith('- ') && trimmedLine.length > 2) {
+                validLines.push(trimmedLine);
+            }
+        });
+        
+        return validLines.join('\n');
+    }
+    
+    // 将记忆内容分解为单独的记忆项列表
+    parseMemoryItems(content) {
+        const cleanContent = this.cleanAndValidateMemoryContent(content);
+        if (!cleanContent) return [];
+        
+        return cleanContent.split('\n').map(line => {
+            // 移除前面的 "- " 得到纯内容
+            return line.replace(/^- /, '').trim();
+        }).filter(item => item.length > 0);
+    }
+    
+    // 从记忆项列表重建markdown内容
+    buildMemoryContent(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '';
+        }
+        
+        return items.map(item => `- ${item.trim()}`).join('\n');
+    }
+    
+    // 解析Markdown到HTML（仅支持列表）
+    parseMarkdown(content) {
+        const cleanContent = this.cleanAndValidateMemoryContent(content);
+        if (!cleanContent) return '';
+        
+        const lines = cleanContent.split('\n');
+        const listItems = lines.map(line => {
+            const item = line.replace(/^- /, '');
+            return `<li>${this.escapeHtml(item)}</li>`;
+        }).join('');
+        
+        return listItems ? `<ul>${listItems}</ul>` : '';
+    }
+    
+    // HTML转义
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
@@ -4127,37 +4192,132 @@ function loadCharacterMemories() {
     memoryList.innerHTML = memories.map(memory => createMemoryItem(memory, true, characterId)).join('');
 }
 
-// 创建记忆项HTML
+// 创建记忆项HTML - 改为单条模式
 function createMemoryItem(memory, isCharacter, characterId = null) {
     const date = new Date(memory.createdAt).toLocaleDateString();
-    const preview = memory.content.substring(0, 50) + (memory.content.length > 50 ? '...' : '');
-    const parsedContent = memoryManager.parseMarkdown(memory.content);
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
     
-    return `
-        <div class="memory-item" data-id="${memory.id}">
-            <div class="memory-header" onclick="toggleMemoryItem('${memory.id}')">
-                <div class="memory-title">${preview}</div>
-                <div style="display: flex; align-items: center;">
-                    <div class="memory-date">${date}</div>
-                    <div class="memory-expand-icon">▶</div>
+    // 为每个记忆项创建单独的卡片
+    return memoryItems.map((item, index) => {
+        const itemId = `${memory.id}-${index}`;
+        
+        return `
+            <div class="memory-item single-item" data-id="${itemId}" data-memory-id="${memory.id}" data-item-index="${index}">
+                <div class="memory-single-content">
+                    <div class="memory-text">${memoryManager.escapeHtml(item)}</div>
+                    <div class="memory-meta">
+                        <span class="memory-date">${date}</span>
+                        <div class="memory-actions">
+                            <button class="memory-btn" onclick="editSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">修改</button>
+                            <button class="memory-btn delete" onclick="deleteSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">删除</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="memory-content-wrapper">
-                <div class="memory-content-text">${parsedContent}</div>
-                <div class="memory-actions">
-                    <button class="memory-btn" onclick="editMemory('${memory.id}', ${isCharacter}, '${characterId || ''}')">修改</button>
-                    <button class="memory-btn delete" onclick="deleteMemory('${memory.id}', ${isCharacter}, '${characterId || ''}')">删除</button>
-                </div>
-            </div>
-        </div>
-    `;
+        `;
+    }).join('');
 }
 
-// 切换记忆项展开/收缩
-function toggleMemoryItem(memoryId) {
-    const memoryItem = document.querySelector(`[data-id="${memoryId}"]`);
-    if (memoryItem) {
-        memoryItem.classList.toggle('expanded');
+// 编辑单个记忆项
+function editSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
+    if (itemIndex >= memoryItems.length) {
+        showToast('记忆项未找到');
+        return;
+    }
+    
+    const currentItem = memoryItems[itemIndex];
+    
+    // 使用简单的prompt进行编辑
+    const newContent = prompt('编辑记忆内容:', currentItem);
+    if (newContent !== null && newContent.trim()) {
+        // 更新记忆项
+        memoryItems[itemIndex] = newContent.trim();
+        const updatedContent = memoryManager.buildMemoryContent(memoryItems);
+        
+        // 更新记忆
+        updateSingleMemory(memoryId, updatedContent, isCharacter, characterId);
+    }
+}
+
+// 删除单个记忆项
+async function deleteSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
+    if (!confirm('确定要删除这条记忆吗？')) {
+        return;
+    }
+    
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
+    if (itemIndex >= memoryItems.length) {
+        showToast('记忆项未找到');
+        return;
+    }
+    
+    // 删除指定项
+    memoryItems.splice(itemIndex, 1);
+    
+    if (memoryItems.length === 0) {
+        // 如果没有记忆项了，删除整个记忆
+        await memoryManager.deleteMemory(memoryId, isCharacter, characterId);
+    } else {
+        // 更新记忆内容
+        const updatedContent = memoryManager.buildMemoryContent(memoryItems);
+        await updateSingleMemory(memoryId, updatedContent, isCharacter, characterId);
+    }
+    
+    // 刷新显示
+    if (isCharacter) {
+        loadCharacterMemories();
+    } else {
+        loadGlobalMemories();
+    }
+    
+    showToast('记忆删除成功');
+}
+
+// 更新单个记忆的辅助函数
+async function updateSingleMemory(memoryId, content, isCharacter, characterId) {
+    try {
+        const updated = await memoryManager.updateMemory(memoryId, content, isCharacter, characterId);
+        if (updated) {
+            // 刷新显示
+            if (isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+            showToast('记忆更新成功');
+        } else {
+            showToast('记忆更新失败');
+        }
+    } catch (error) {
+        console.error('更新记忆失败:', error);
+        showToast('记忆更新失败: ' + error.message);
     }
 }
 
@@ -4282,16 +4442,24 @@ async function loadExistingMemories() {
         // 加载全局记忆
         const existingGlobalMemory = await getExistingGlobalMemory();
         if (existingGlobalMemory && existingGlobalMemory.trim()) {
-            // 如果存在全局记忆但本地没有，创建一个条目
-            if (memoryManager.globalMemories.length === 0) {
+            // 清理现有记忆内容
+            const cleanedGlobalMemory = memoryManager.cleanAndValidateMemoryContent(existingGlobalMemory);
+            
+            if (cleanedGlobalMemory && memoryManager.globalMemories.length === 0) {
                 const globalMemoryItem = {
                     id: 'existing-global',
-                    content: existingGlobalMemory,
+                    content: cleanedGlobalMemory,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
                 memoryManager.globalMemories = [globalMemoryItem];
                 memoryManager.save();
+                
+                // 如果清理后的内容与原内容不同，更新到现有系统
+                if (cleanedGlobalMemory !== existingGlobalMemory) {
+                    await saveExistingGlobalMemory(cleanedGlobalMemory);
+                    console.log('全局记忆已清理并更新');
+                }
             }
         }
         
@@ -4301,11 +4469,13 @@ async function loadExistingMemories() {
                 if (contact.type === 'private') {
                     const existingCharacterMemory = await getExistingCharacterMemory(contact.id);
                     if (existingCharacterMemory && existingCharacterMemory.trim()) {
-                        // 如果存在角色记忆但本地没有，创建一个条目
-                        if (!memoryManager.characterMemories[contact.id] || memoryManager.characterMemories[contact.id].length === 0) {
+                        // 清理现有角色记忆内容
+                        const cleanedCharacterMemory = memoryManager.cleanAndValidateMemoryContent(existingCharacterMemory);
+                        
+                        if (cleanedCharacterMemory && (!memoryManager.characterMemories[contact.id] || memoryManager.characterMemories[contact.id].length === 0)) {
                             const characterMemoryItem = {
                                 id: `existing-${contact.id}`,
-                                content: existingCharacterMemory,
+                                content: cleanedCharacterMemory,
                                 createdAt: new Date().toISOString(),
                                 updatedAt: new Date().toISOString()
                             };
@@ -4314,6 +4484,12 @@ async function loadExistingMemories() {
                             }
                             memoryManager.characterMemories[contact.id] = [characterMemoryItem];
                             memoryManager.save();
+                            
+                            // 如果清理后的内容与原内容不同，更新到现有系统
+                            if (cleanedCharacterMemory !== existingCharacterMemory) {
+                                await saveExistingCharacterMemory(contact.id, cleanedCharacterMemory);
+                                console.log(`角色 ${contact.name} 的记忆已清理并更新`);
+                            }
                         }
                     }
                 }

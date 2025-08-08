@@ -2586,7 +2586,7 @@ body {
     background: white;
     border-radius: 8px;
     border: 1px solid #e0e0e0;
-    overflow: hidden;
+    margin-bottom: 8px;
     transition: all 0.3s ease;
 }
 
@@ -2595,11 +2595,37 @@ body {
     box-shadow: 0 2px 8px rgba(7, 193, 96, 0.1);
 }
 
-.memory-item.selected {
-    border-color: #07c160;
-    background: #f0fdf4;
+.memory-item.single-item {
+    padding: 12px 15px;
 }
 
+.memory-single-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.memory-text {
+    font-size: 14px;
+    color: #333;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.memory-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.memory-date {
+    font-size: 12px;
+    color: #999;
+}
+
+/* 保留旧的展开样式用于兼容 */
 .memory-header {
     padding: 12px 15px;
     cursor: pointer;
@@ -2615,12 +2641,6 @@ body {
     color: #333;
     font-weight: 500;
     flex: 1;
-}
-
-.memory-date {
-    font-size: 12px;
-    color: #999;
-    margin-right: 10px;
 }
 
 .memory-expand-icon {
