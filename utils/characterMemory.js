@@ -687,6 +687,164 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 检查并更新删除消息后的记忆
+     */
+    async checkAndUpdateMemoryAfterDeletion(contactId, deletedMessages, currentContact) {
+        console.log('[记忆调试] 检查删除消息后的记忆更新', {
+            contactId,
+            deletedMessagesCount: deletedMessages.length,
+            systemReady: this.isSystemReady()
+        });
+
+        // 确保数据已加载
+        await this.ensureDataLoaded();
+
+        // 系统准备度检查
+        if (!this.isSystemReady()) {
+            console.log('[记忆调试] 系统未准备好，跳过删除记忆更新');
+            return;
+        }
+
+        const contact = window.contacts.find(c => c.id === contactId);
+        if (!contact) {
+            console.warn('[记忆调试] 未找到联系人:', contactId);
+            return;
+        }
+
+        // 提取被删除的用户文本消息
+        const deletedUserTexts = this.extractDeletedUserTexts(deletedMessages);
+        
+        if (deletedUserTexts.length === 0) {
+            console.log('[记忆调试] 没有被删除的用户文本消息，跳过记忆更新');
+            return;
+        }
+
+        try {
+            console.log('[记忆调试] 开始检查是否需要删除记忆内容');
+            
+            // 第一步：使用次要模型判断是否需要删除记忆
+            const shouldDelete = await this.checkMemoryDeletionNeeded(contact, deletedUserTexts);
+            
+            console.log('[记忆调试] 记忆删除判断结果:', { contactId, shouldDelete });
+            
+            if (shouldDelete) {
+                console.log(`[记忆调试] 角色 ${contactId} 需要删除相关记忆，开始调用主要模型`);
+                // 第二步：使用主要模型删除相关记忆
+                await this.deleteMemoryContent(contact, deletedUserTexts);
+            } else {
+                console.log(`[记忆调试] 角色 ${contactId} 无需删除记忆`);
+            }
+        } catch (error) {
+            console.error('[记忆调试] 检查删除记忆时发生错误:', error);
+        }
+    }
+
+    /**
+     * 提取被删除的用户文本消息
+     */
+    extractDeletedUserTexts(deletedMessages) {
+        const userTexts = [];
+        
+        deletedMessages.forEach((message, index) => {
+            // 只收集用户的普通文本消息，排除emoji和红包
+            if (message.role === 'user' && !this.isSpecialMessageType(message)) {
+                userTexts.push(message.content);
+            }
+        });
+        
+        console.log('[记忆调试] 提取的被删除用户文本:', userTexts);
+        return userTexts;
+    }
+
+    /**
+     * 检查是否需要删除记忆内容（调用次要模型）
+     */
+    async checkMemoryDeletionNeeded(contact, deletedUserTexts) {
+        const currentMemory = await this.getCharacterMemory(contact.id);
+        
+        // 构建删除判断提示词
+        const prompt = this.buildMemoryDeletionCheckPrompt(currentMemory, deletedUserTexts, contact);
+        
+        try {
+            const response = await window.apiService.callOpenAIAPI(
+                window.apiSettings.url,
+                window.apiSettings.key,
+                window.apiSettings.model,
+                [{ role: 'user', content: prompt }],
+                { 
+                    temperature: 0.1, // 降低随机性，让判断更稳定
+                    max_tokens: 5000
+                }
+            );
+            
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('记忆删除判断API响应格式异常:', response);
+                return false;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('记忆删除判断API响应内容为空或格式错误:', content);
+                return false;
+            }
+            
+            const result = content.trim();
+            console.log('记忆删除判断结果:', result);
+            
+            // 如果模型回复"需要"或"是"，则认为需要删除
+            return result.includes('需要') || result.includes('是');
+        } catch (error) {
+            console.error('调用次要模型判断记忆删除失败:', error);
+            return false; // 出错时保守处理，不删除
+        }
+    }
+
+    /**
+     * 删除记忆内容（调用主要模型）
+     */
+    async deleteMemoryContent(contact, deletedUserTexts) {
+        const currentMemory = await this.getCharacterMemory(contact.id);
+        
+        // 构建记忆删除提示词
+        const prompt = this.buildMemoryDeletionPrompt(currentMemory, deletedUserTexts, contact);
+        
+        try {
+            const response = await window.apiService.callOpenAIAPI(
+                window.apiSettings.url,
+                window.apiSettings.key,
+                window.apiSettings.model,
+                [{ role: 'user', content: prompt }],
+                { 
+                    temperature: 0.3,
+                    max_tokens: 10000
+                }
+            );
+            
+            // 安全检查API响应格式
+            if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+                console.warn('删除记忆API响应格式异常:', response);
+                return;
+            }
+            
+            const content = response.choices[0].message.content;
+            if (!content || typeof content !== 'string') {
+                console.warn('删除记忆API响应内容为空或格式错误:', content);
+                return;
+            }
+            
+            const newMemory = content.trim();
+            console.log('更新后的记忆:', newMemory);
+            
+            // 保存更新后的记忆
+            await this.saveCharacterMemory(contact.id, newMemory);
+            
+        } catch (error) {
+            console.error('删除记忆内容失败:', error);
+        }
+    }
+
+    /**
      * 检查并更新全局记忆
      */
     async checkAndUpdateGlobalMemory(forumContent, forceCheck = false) {
@@ -1013,6 +1171,60 @@ ${userTextInput}
     }
 
     /**
+     * 构建记忆删除检查提示词
+     */
+    buildMemoryDeletionCheckPrompt(currentMemory, deletedUserTexts, contact) {
+        const deletedTextsContent = deletedUserTexts.join('\n---\n');
+        
+        return `你是一个记忆分析助手。用户删除了一些消息，请判断是否需要从角色记忆中删除相关内容。
+
+当前角色记忆：
+${currentMemory || '暂无记忆'}
+
+用户删除的消息内容：
+${deletedTextsContent}
+
+判断标准：
+1. 被删除的消息内容是否在当前记忆中有对应的记录？
+2. 被删除的内容是否包含重要的个人信息、事件或约定？
+3. 删除这些消息是否意味着用户不希望这些信息被记住？
+
+请仅回答"需要删除"或"不需要删除"，不要其他解释。`;
+    }
+
+    /**
+     * 构建记忆删除提示词
+     */
+    buildMemoryDeletionPrompt(currentMemory, deletedUserTexts, contact) {
+        const deletedTextsContent = deletedUserTexts.join('\n---\n');
+        const userName = window.userProfile?.name || '用户';
+        
+        return `你是一个记忆整理助手。用户删除了一些消息，请从角色记忆中删除相关内容。
+
+角色信息：
+- 姓名：${contact.name}
+- 人设：${contact.personality}
+
+用户信息：
+- 姓名：${userName}
+- 人设：${window.userProfile?.personality || '未设置'}
+
+当前记忆：
+${currentMemory || '暂无记忆'}
+
+用户删除的消息内容：
+${deletedTextsContent}
+
+请从当前记忆中删除与被删除消息相关的内容，生成更新后的记忆。注意：
+1. 删除与被删除消息直接相关的信息
+2. 保留其他不相关的重要信息
+3. 如果删除后记忆变空，请输出"暂无记忆"
+4. 保持记忆的完整性和逻辑性
+
+请直接输出更新后的记忆内容，不要其他解释：`;
+    }
+
+    /**
      * 构建全局记忆检查提示词
      */
     buildGlobalMemoryCheckPrompt(currentGlobalMemory, forumContent) {
@@ -1173,6 +1385,10 @@ window.incrementConversationCounter = function(contactId) {
 
 window.checkAndUpdateGlobalMemory = function(forumContent, forceCheck = false) {
     return window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent, forceCheck);
+};
+
+window.checkAndUpdateMemoryAfterDeletion = function(contactId, deletedMessages, currentContact) {
+    return window.characterMemoryManager.checkAndUpdateMemoryAfterDeletion(contactId, deletedMessages, currentContact);
 };
 
 window.clearCharacterMemory = function(contactId) {

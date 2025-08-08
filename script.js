@@ -3015,6 +3015,9 @@ async function deleteMessage(messageIndex) {
         return;
     }
     
+    // 保存被删除的消息，用于记忆更新
+    const deletedMessage = currentContact.messages[messageIndex];
+    
     currentContact.messages.splice(messageIndex, 1);
 
     // 如果删除的是已显示的消息，则更新计数
@@ -3035,6 +3038,16 @@ async function deleteMessage(messageIndex) {
     renderMessages(false); // 重新渲染，但不滚动到底部
     renderContactList();
     await saveDataToDB();
+    
+    // 检查并更新记忆
+    if (window.checkAndUpdateMemoryAfterDeletion && deletedMessage) {
+        try {
+            await window.checkAndUpdateMemoryAfterDeletion(currentContact.id, [deletedMessage], currentContact);
+        } catch (error) {
+            console.error('删除消息后更新记忆失败:', error);
+        }
+    }
+    
     showToast('消息已删除');
 }
 
@@ -3702,6 +3715,14 @@ function deleteSelectedMessages() {
             // 将选中的索引转换为数组并排序（从大到小，避免删除时索引变化）
             const sortedIndexes = Array.from(selectedMessages).sort((a, b) => b - a);
             
+            // 保存被删除的消息，用于记忆更新
+            const deletedMessages = [];
+            for (const messageIndex of sortedIndexes) {
+                if (messageIndex < currentContact.messages.length) {
+                    deletedMessages.push(currentContact.messages[messageIndex]);
+                }
+            }
+            
             // 逐个删除消息
             for (const messageIndex of sortedIndexes) {
                 if (messageIndex < currentContact.messages.length) {
@@ -3731,6 +3752,15 @@ function deleteSelectedMessages() {
             // 重新渲染
             renderContactList();
             await saveDataToDB();
+            
+            // 检查并更新记忆
+            if (window.checkAndUpdateMemoryAfterDeletion && deletedMessages.length > 0) {
+                try {
+                    await window.checkAndUpdateMemoryAfterDeletion(currentContact.id, deletedMessages, currentContact);
+                } catch (error) {
+                    console.error('批量删除消息后更新记忆失败:', error);
+                }
+            }
             
             showToast(`已成功删除 ${selectedCount} 条消息`);
             
