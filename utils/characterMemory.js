@@ -275,12 +275,16 @@ class CharacterMemoryManager {
         }
 
         try {
+            // 先获取更新次数，避免在事务中等待导致事务超时
+            const currentUpdateCount = await this.getMemoryUpdateCount(contactId);
+            
+            // 然后创建新的事务进行保存
             const transaction = window.db.transaction(['characterMemories'], 'readwrite');
             const store = transaction.objectStore('characterMemories');
             const memoryData = {
                 contactId: contactId,
                 memory: memory,
-                updateCount: (await this.getMemoryUpdateCount(contactId)) + 1,
+                updateCount: currentUpdateCount + 1,
                 lastUpdated: new Date().toISOString()
             };
             
