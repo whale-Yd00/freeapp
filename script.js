@@ -3812,11 +3812,23 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         if (audioBlob.type !== 'audio/mpeg') {
              throw new Error('返回的不是有效的音频文件');
         }
+// --- 修改开始 ---
+        // 1. 服务器返回的是 JSON 格式，所以我们用 .json() 来解析它。
+        const responseData = await response.json();
+        
+        // 2. 真正的音频数据在返回的 JSON 对象的 'body' 属性里，是 Base64 格式。
+        if (!responseData.body) {
+            throw new Error('服务器响应中未包含音频数据。');
+        }
+
+        // 3. 使用我们刚添加的辅助函数，将 Base64 字符串转换成浏览器可以播放的音频 Blob。
+        const audioBlob = b64toBlob(responseData.body, 'audio/mpeg');
+        // --- 修改结束 ---
+        
         const audioUrl = URL.createObjectURL(audioBlob);
         
         voiceAudio.src = audioUrl;
 
-        // 获取音频时长
         voiceAudio.onloadedmetadata = () => {
             if (isFinite(voiceAudio.duration)) {
                 const minutes = Math.floor(voiceAudio.duration / 60);
@@ -3829,7 +3841,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
 
         playerElement.classList.remove('loading');
         playerElement.classList.add('playing');
-        playButton.textContent = '❚❚'; // 暂停图标
+        playButton.textContent = '❚❚';
 
     } catch (error) {
         console.error('语音播放失败:', error);
@@ -3838,4 +3850,35 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playButton.textContent = '▶';
         currentPlayingElement = null;
     }
+}
+/**
+ * 将 Base64 字符串转换为 Blob 对象。
+ * @param {string} b64Data - Base64 编码的数据。
+ * @param {string} contentType - 内容类型，例如 'audio/mpeg'。
+ * @param {number} sliceSize - 处理时每个切片的大小。
+ * @returns {Blob}
+ */
+function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
+    // 使用 atob 函数解码 Base64 字符串
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+
+    // 将解码后的字符串分片处理
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+        const slice = byteCharacters.slice(offset, offset + sliceSize);
+
+        // 获取每个字符的 Unicode 编码
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+        }
+
+        // 将 Unicode 编码转换为 8 位无符号整数数组
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+    }
+
+    // 使用处理后的数据创建 Blob 对象
+    const blob = new Blob(byteArrays, { type: contentType });
+    return blob;
 }
