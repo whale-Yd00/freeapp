@@ -521,6 +521,92 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 清空指定角色的记忆
+     */
+    async clearCharacterMemory(contactId) {
+        console.log(`[记忆调试] 开始清空角色 ${contactId} 的记忆`);
+        
+        if (!contactId) {
+            console.warn('[记忆调试] contactId为空，无法清空记忆');
+            return false;
+        }
+
+        try {
+            // 清空内存中的数据
+            this.lastProcessedMessageIndex.delete(contactId);
+            this.conversationCounters.delete(contactId);
+            
+            // 清空数据库中的数据
+            if (window.isIndexedDBReady && window.db) {
+                const transaction = window.db.transaction([
+                    'characterMemories', 
+                    'memoryProcessedIndex', 
+                    'conversationCounters'
+                ], 'readwrite');
+                
+                // 删除角色记忆
+                const memoryStore = transaction.objectStore('characterMemories');
+                await this.promisifyRequest(memoryStore.delete(contactId));
+                
+                // 删除消息处理索引
+                const indexStore = transaction.objectStore('memoryProcessedIndex');
+                await this.promisifyRequest(indexStore.delete(contactId));
+                
+                // 更新对话计数器（删除该角色的计数）
+                const counterStore = transaction.objectStore('conversationCounters');
+                const counterData = await this.promisifyRequest(counterStore.get('counters'));
+                if (counterData && counterData[contactId]) {
+                    delete counterData[contactId];
+                    await this.promisifyRequest(counterStore.put({ id: 'counters', ...counterData }));
+                }
+                
+                console.log(`[记忆调试] 角色 ${contactId} 的记忆已从数据库清空`);
+            }
+            
+            console.log(`[记忆调试] 角色 ${contactId} 的记忆清空完成`);
+            return true;
+        } catch (error) {
+            console.error(`[记忆调试] 清空角色 ${contactId} 记忆失败:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * 清空所有角色记忆（危险操作）
+     */
+    async clearAllCharacterMemories() {
+        console.log('[记忆调试] 开始清空所有角色记忆');
+        
+        try {
+            // 清空内存数据
+            this.lastProcessedMessageIndex.clear();
+            this.conversationCounters.clear();
+            
+            // 清空数据库数据
+            if (window.isIndexedDBReady && window.db) {
+                const transaction = window.db.transaction([
+                    'characterMemories', 
+                    'memoryProcessedIndex', 
+                    'conversationCounters'
+                ], 'readwrite');
+                
+                // 清空所有表
+                await this.promisifyRequest(transaction.objectStore('characterMemories').clear());
+                await this.promisifyRequest(transaction.objectStore('memoryProcessedIndex').clear());
+                await this.promisifyRequest(transaction.objectStore('conversationCounters').clear());
+                
+                console.log('[记忆调试] 所有角色记忆已从数据库清空');
+            }
+            
+            console.log('[记忆调试] 所有角色记忆清空完成');
+            return true;
+        } catch (error) {
+            console.error('[记忆调试] 清空所有角色记忆失败:', error);
+            return false;
+        }
+    }
+
+    /**
      * 标记消息已处理
      */
     async markMessagesProcessed(contact) {
@@ -888,8 +974,8 @@ ${currentMemory || '暂无记忆'}
 ${userTextInput}
 
 判断标准：
-1. 用户输入是否涉及到当前记忆中没有的重要信息？
-2. 用户输入是否涉及到用户本身的形象、生活状态、个人情况？（例如：用户正在接受心理治疗、用户正在准备演讲比赛、用户喜欢你称呼他为...等）
+1. 用户新输入是否涉及到当前记忆中没有的个人信息？
+2. 用户是否主动说明自身的形象、生活状态、个人情况？（例如：用户正在接受心理治疗、用户正在准备演讲比赛、用户喜欢你称呼他为...等）
 3. 用户输入是否包含值得记住的事件、约定或重要细节？
 
 请仅回答"是"或"否"，不要其他解释。`;
@@ -918,10 +1004,10 @@ ${currentMemory || '暂无原有记忆'}
 ${userTextInput}
 
 请整合原有记忆和用户的新输入，生成更新后的完整记忆。记忆应该包含：
-1. 用户自己的重要个人信息、生活状态、兴趣爱好
-2. 用户提到的重要事件、计划或约定
-3. 用户自己的态度、偏好和个性特征
-4. 其他值得记住的重要细节
+1. 用户主动说明的重要个人信息、生活状态、兴趣爱好
+2. 用户主动提到的重要事件、计划或约定
+3. 用户主动说明的自己的态度、偏好和个性特征
+4. 其他值得记住的重要细节、约定等
 
 请直接输出更新后的记忆内容为列表，不要其他解释：`;
     }
@@ -1087,6 +1173,14 @@ window.incrementConversationCounter = function(contactId) {
 
 window.checkAndUpdateGlobalMemory = function(forumContent, forceCheck = false) {
     return window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent, forceCheck);
+};
+
+window.clearCharacterMemory = function(contactId) {
+    return window.characterMemoryManager.clearCharacterMemory(contactId);
+};
+
+window.clearAllCharacterMemories = function() {
+    return window.characterMemoryManager.clearAllCharacterMemories();
 };
 
 // 自动初始化 - 仅绑定事件，数据加载在数据库准备好后自动执行

@@ -2993,6 +2993,13 @@ async function clearMessages() {
         renderMessages(true); // 重新渲染
         renderContactList();
         await saveDataToDB();
+        
+        // 清空该角色的记忆数据
+        if (window.clearCharacterMemory) {
+            await window.clearCharacterMemory(currentContact.id);
+            console.log(`[清空聊天] 已清空角色 ${currentContact.id} 的记忆数据`);
+        }
+        
         showToast('已清空聊天记录');
         toggleSettingsMenu(true);
     });
@@ -3081,6 +3088,13 @@ async function deleteContact(contactId) {
 
         renderContactList(); // 重新渲染联系人列表
         await saveDataToDB(); // 重新保存contacts数组到IndexedDB，确保数据同步
+        
+        // 清空该角色的记忆数据
+        if (window.clearCharacterMemory) {
+            await window.clearCharacterMemory(contactId);
+            console.log(`[删除联系人] 已清空角色 ${contactId} 的记忆数据`);
+        }
+        
         showToast('聊天对象已删除');
     } catch (error) {
         console.error('删除联系人/群聊失败:', error);
