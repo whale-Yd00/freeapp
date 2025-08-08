@@ -26,8 +26,8 @@
   to = "/.netlify/functions/tts"
   status = 200
 
-# 将数据分享的请求转发到 share-data 函数
+# 将数据分享的请求转发到 transfer-data 函数
 [[redirects]]
-  from = "/api/share-data"
+  from = "/api/transfer-data"
   to = "/.netlify/functions/transfer-data"
   status = 200

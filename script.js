@@ -3848,7 +3848,7 @@ async function handleShareData() {
         const exportData = await dbManager.exportDatabase();
 
         // 2. 将数据发送到我们的云函数中转站
-        const response = await fetch('/api/share-data', {
+        const response = await fetch('/api/transfer-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(exportData),
@@ -3931,7 +3931,7 @@ async function handleAutoImport(importId) {
     try {
         // 3. 去Netlify中转站取回数据
         // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
-        const netlifyFunctionUrl = `https://deploy-preview-54--velvety-belekoy-02a99e.netlify.app/.netlify/functions/share-data?id=${importId}`;
+        const netlifyFunctionUrl = `https://deploy-preview-54--velvety-belekoy-02a99e.netlify.app/.netlify/functions/transfer-data?id=${importId}`;
         const response = await fetch(netlifyFunctionUrl);
 
         if (!response.ok) {
