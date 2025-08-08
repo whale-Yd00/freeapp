@@ -3931,7 +3931,7 @@ async function handleAutoImport(importId) {
     try {
         // 3. 去Netlify中转站取回数据
         // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
-        const netlifyFunctionUrl = `https://velvety-belekoy-02a99e.netlify.app/.netlify/functions/share-data?id=${importId}`;
+        const netlifyFunctionUrl = `https://deploy-preview-54--velvety-belekoy-02a99e.netlify.app/.netlify/functions/share-data?id=${importId}`;
         const response = await fetch(netlifyFunctionUrl);
 
         if (!response.ok) {
