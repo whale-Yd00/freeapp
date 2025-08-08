@@ -3352,8 +3352,22 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// 监听DOMContentLoaded事件，这是执行所有JS代码的入口
-document.addEventListener('DOMContentLoaded', init);
+// --- 1. 修改你的 DOMContentLoaded 事件监听器 ---
+// 找到文件末尾的这个事件监听器，用下面的代码替换它
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 检查URL中是否有导入ID
+    const urlParams = new URLSearchParams(window.location.search);
+    const importId = urlParams.get('importId');
+
+    if (importId) {
+        // 如果有ID，则执行自动导入流程
+        await handleAutoImport(importId);
+    } else {
+        // 否则，正常初始化应用
+        await init();
+    }
+});
 
 // 全局错误处理器
 window.addEventListener('error', (event) => {
@@ -3819,5 +3833,141 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.remove('loading');
         playButton.textContent = '▶';
         currentPlayingElement = null;
+    }
+}
+
+// 【【【【【这是你要在 script.js 末尾新增的函数】】】】】
+
+async function handleShareData() {
+    const shareBtn = document.getElementById('shareDataBtn');
+    shareBtn.disabled = true;
+    shareBtn.textContent = '生成中...';
+
+    try {
+        // 1. 使用你已有的 IndexedDBManager 导出整个数据库的数据
+        const exportData = await dbManager.exportDatabase();
+
+        // 2. 将数据发送到我们的云函数中转站
+        const response = await fetch('/api/share-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(exportData),
+        });
+
+        if (!response.ok) {
+            throw new Error('创建分享链接失败，请稍后重试。');
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.id) {
+            throw new Error(result.error || '服务器返回数据格式错误。');
+        }
+
+        // 3. 构造给Vercel应用使用的链接
+        // !!! 注意：请把下面的 'https://your-app.vercel.app' 换成你Vercel应用的真实地址
+        const vercelAppUrl = 'https://whalellt.vercel.app'; 
+        const shareLink = `${vercelAppUrl}/?importId=${result.id}`;
+
+        // 4. 显示分享链接给用户
+        showShareLinkDialog(shareLink);
+
+    } catch (error) {
+        console.error('分享数据失败:', error);
+        showToast('分享失败: ' + error.message);
+    } finally {
+        shareBtn.disabled = false;
+        shareBtn.textContent = '🔗 分享到新设备';
+    }
+}
+
+// 一个用于显示分享链接的对话框函数
+function showShareLinkDialog(link) {
+    const dialogId = 'shareLinkDialog';
+    let dialog = document.getElementById(dialogId);
+    if (!dialog) {
+        dialog = document.createElement('div');
+        dialog.id = dialogId;
+        dialog.className = 'modal';
+        dialog.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">分享链接已生成</div>
+                    <div class="modal-close" onclick="closeModal('${dialogId}')">关闭</div>
+                </div>
+                <div class="modal-body" style="text-align: center;">
+                    <p style="margin-bottom: 15px; font-size: 14px; color: #666;">请复制以下链接，在新设备或浏览器中打开即可自动导入数据。链接15分钟内有效。</p>
+                    <textarea id="shareLinkTextarea" class="form-textarea" rows="3" readonly>${link}</textarea>
+                    <button class="form-submit" style="margin-top: 15px;" onclick="copyShareLink()">复制链接</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+    } else {
+        document.getElementById('shareLinkTextarea').value = link;
+    }
+    showModal(dialogId);
+}
+
+/**
+ * 复制链接到剪贴板的辅助函数
+ */
+function copyShareLink() {
+    const textarea = document.getElementById('shareLinkTextarea');
+    textarea.select();
+    document.execCommand('copy');
+    showToast('链接已复制！');
+}
+
+/**
+ * 处理从URL自动导入的逻辑
+ */
+async function handleAutoImport(importId) {
+    // 1. 清理URL，防止刷新页面时重复导入
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // 2. 显示一个友好的加载提示
+    showToast('检测到分享数据，正在导入...');
+
+    try {
+        // 3. 去Netlify中转站取回数据
+        // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
+        const netlifyFunctionUrl = `https://velvety-belekoy-02a99e.netlify.app/.netlify/functions/share-data?id=${importId}`;
+        const response = await fetch(netlifyFunctionUrl);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => null);
+            throw new Error(error?.error || '数据获取失败，链接可能已失效。');
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.data) {
+            throw new Error(result.error || '服务器返回数据格式错误。');
+        }
+
+        const importData = result.data;
+
+        // 4. 使用你已有的导入逻辑 (dataMigrator.js)
+        if (!window.dbManager) {
+            window.dbManager = new IndexedDBManager();
+        }
+        await dbManager.initDB();
+        
+        // 5. 调用导入函数，直接覆盖
+        const importResult = await dbManager.importDatabase(importData, { overwrite: true });
+
+        if (importResult.success) {
+            alert('数据导入成功！页面将自动刷新以应用新数据。');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(importResult.error || '导入数据库时发生未知错误。');
+        }
+
+    } catch (error) {
+        console.error('自动导入失败:', error);
+        alert('自动导入失败: ' + error.message + '\n\n即将正常加载页面。');
+        // 如果导入失败，就正常初始化页面
+        await init();
     }
 }

@@ -175,6 +175,11 @@
                                 style="flex: 1; background-color: #28a745;">
                             📤 导出数据
                         </button>
+
+                        <button type="button" class="form-submit" id="shareDataBtn" onclick="handleShareData()" style="flex: 1; background-color: #007bff;">
+                            🔗 数据传输
+                        </button>
+
                         <button type="button" class="form-submit" onclick="triggerFileSelect()" 
                                 style="flex: 1; background-color: #dc3545;">
                             📥 导入数据
@@ -716,7 +721,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>
-    <script src="api/api.js"></script>
+    <script src="js/api.js"></script>
     <script src="utils/promptBuilder.js"></script>
     <script src="utils/memoryTable.js"></script>
     <script src="utils/dataMigrator.js"></script>
