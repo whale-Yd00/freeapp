@@ -2074,8 +2074,9 @@ function renderMessages(isInitialLoad = false) {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
         
-        // 【修改】如果消息是AI发送的文本，且配置了语音，则注入播放器
-        if (msg.role === 'assistant' && msg.type === 'text' && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
+        // 【【【【【修改点 2】】】】】
+        // 修改判断条件：检查 forceVoice 标志
+        if (msg.forceVoice && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
             const bubble = msgDiv.querySelector('.message-bubble');
             if (bubble) {
                 const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
@@ -2209,7 +2210,27 @@ async function sendMessage() {
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-                const aiMessage = { role: 'assistant', content: response.content, type: response.type, time: new Date().toISOString(), senderId: currentContact.id };
+                
+                let messageContent = response.content;
+                let forceVoice = false;
+
+                // 【【【【【修改点 1】】】】】
+                // 检查并处理AI的语音指令
+                if (messageContent.startsWith('[语音]:')) {
+                    forceVoice = true;
+                    // 从消息内容中移除 [语音]: 标签
+                    messageContent = messageContent.substring(4).trim();
+                }
+
+                const aiMessage = { 
+                    role: 'assistant', 
+                    content: messageContent, // 使用处理过的内容
+                    type: response.type, 
+                    time: new Date().toISOString(), 
+                    senderId: currentContact.id,
+                    forceVoice: forceVoice // 添加新标志
+                };
+
                 currentContact.messages.push(aiMessage);
                 if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                     currentlyDisplayedMessageCount++;
@@ -2247,7 +2268,25 @@ async function sendGroupMessage() {
             if (!replies || replies.length === 0) continue;
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-                const aiMessage = { role: 'assistant', content: response.content, type: response.type, time: new Date().toISOString(), senderId: member.id };
+
+                let messageContent = response.content;
+                let forceVoice = false;
+
+                // 【【【【【修改点 1, 群聊部分】】】】】
+                if (messageContent.startsWith('[语音]:')) {
+                    forceVoice = true;
+                    messageContent = messageContent.substring(4).trim();
+                }
+
+                const aiMessage = { 
+                    role: 'assistant', 
+                    content: messageContent,
+                    type: response.type, 
+                    time: new Date().toISOString(), 
+                    senderId: member.id,
+                    forceVoice: forceVoice 
+                };
+
                 currentContact.messages.push(aiMessage);
                 if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                     currentlyDisplayedMessageCount++;
