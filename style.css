@@ -27,7 +27,8 @@ body {
 .moments-page,
 .profile-page,
 .weibo-page,
-.data-management-page {
+.data-management-page,
+.memory-management-page {
     position: absolute;
     top: 0;
     left: 0;
@@ -49,7 +50,8 @@ body {
 .moments-page.active,
 .profile-page.active,
 .weibo-page.active,
-.data-management-page.active {
+.data-management-page.active,
+.memory-management-page.active {
     opacity: 1;
     pointer-events: auto;
     z-index: 10; /* 确保活动页面在最上层 */
@@ -2502,4 +2504,210 @@ body {
 .header-actions {
     display: flex;
     align-items: center;
+}
+
+/* === 记忆管理页面样式 === */
+.memory-management-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 70px;
+}
+
+.memory-tabs {
+    display: flex;
+    background: white;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.memory-tab {
+    flex: 1;
+    padding: 15px;
+    border: none;
+    background: none;
+    font-size: 16px;
+    cursor: pointer;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s ease;
+}
+
+.memory-tab.active {
+    color: #07c160;
+    border-bottom-color: #07c160;
+    font-weight: 600;
+}
+
+.memory-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.memory-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+}
+
+.memory-section.hidden {
+    display: none;
+}
+
+.character-selector {
+    margin-bottom: 15px;
+}
+
+.character-selector select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 16px;
+    background: white;
+}
+
+.memory-list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.memory-empty {
+    text-align: center;
+    color: #999;
+    font-size: 14px;
+    padding: 40px 20px;
+}
+
+.memory-item {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.memory-item:hover {
+    border-color: #07c160;
+    box-shadow: 0 2px 8px rgba(7, 193, 96, 0.1);
+}
+
+.memory-item.selected {
+    border-color: #07c160;
+    background: #f0fdf4;
+}
+
+.memory-header {
+    padding: 12px 15px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f9f9f9;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.memory-title {
+    font-size: 14px;
+    color: #333;
+    font-weight: 500;
+    flex: 1;
+}
+
+.memory-date {
+    font-size: 12px;
+    color: #999;
+    margin-right: 10px;
+}
+
+.memory-expand-icon {
+    font-size: 14px;
+    color: #666;
+    transition: transform 0.3s ease;
+}
+
+.memory-item.expanded .memory-expand-icon {
+    transform: rotate(90deg);
+}
+
+.memory-content-wrapper {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.memory-item.expanded .memory-content-wrapper {
+    max-height: 500px;
+}
+
+.memory-content-text {
+    padding: 15px;
+    color: #333;
+    line-height: 1.6;
+    font-size: 14px;
+}
+
+.memory-content-text h1,
+.memory-content-text h2,
+.memory-content-text h3 {
+    margin: 0 0 8px 0;
+    font-weight: 600;
+}
+
+.memory-content-text h1 { font-size: 18px; }
+.memory-content-text h2 { font-size: 16px; }
+.memory-content-text h3 { font-size: 14px; }
+
+.memory-content-text ul,
+.memory-content-text ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.memory-content-text li {
+    margin: 4px 0;
+}
+
+.memory-actions {
+    padding: 10px 15px;
+    background: #f9f9f9;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    border-top: 1px solid #e0e0e0;
+}
+
+.memory-btn {
+    padding: 6px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background: white;
+    color: #333;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.memory-btn:hover {
+    border-color: #07c160;
+    color: #07c160;
+}
+
+.memory-btn.delete {
+    color: #e53e3e;
+    border-color: #e53e3e;
+}
+
+.memory-btn.delete:hover {
+    background: #e53e3e;
+    color: white;
+}
+
+.form-hint {
+    font-size: 12px;
+    color: #999;
+    margin-top: 5px;
 }

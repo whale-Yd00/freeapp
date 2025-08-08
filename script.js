@@ -627,7 +627,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage'];
 
 function showPage(pageIdToShow) {
     // Hide all main pages and the chat page
@@ -3770,3 +3770,425 @@ function deleteSelectedMessages() {
         }
     });
 }
+
+// === 记忆管理系统 ===
+class MemoryManager {
+    constructor() {
+        this.globalMemories = JSON.parse(localStorage.getItem('globalMemories') || '[]');
+        this.characterMemories = JSON.parse(localStorage.getItem('characterMemories') || '{}');
+        this.currentMemoryType = 'global';
+        this.currentCharacter = null;
+        this.selectedMemoryId = null;
+    }
+
+    // 保存到localStorage
+    save() {
+        localStorage.setItem('globalMemories', JSON.stringify(this.globalMemories));
+        localStorage.setItem('characterMemories', JSON.stringify(this.characterMemories));
+    }
+
+    // 添加全局记忆
+    addGlobalMemory(content) {
+        const memory = {
+            id: Date.now().toString(),
+            content: content.trim(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        this.globalMemories.push(memory);
+        this.save();
+        return memory;
+    }
+
+    // 添加角色记忆
+    addCharacterMemory(characterId, content) {
+        if (!this.characterMemories[characterId]) {
+            this.characterMemories[characterId] = [];
+        }
+        const memory = {
+            id: Date.now().toString(),
+            content: content.trim(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        this.characterMemories[characterId].push(memory);
+        this.save();
+        return memory;
+    }
+
+    // 更新记忆
+    updateMemory(memoryId, content, isCharacter = false, characterId = null) {
+        if (isCharacter && characterId) {
+            const memories = this.characterMemories[characterId] || [];
+            const memory = memories.find(m => m.id === memoryId);
+            if (memory) {
+                memory.content = content.trim();
+                memory.updatedAt = new Date().toISOString();
+                this.save();
+                return memory;
+            }
+        } else {
+            const memory = this.globalMemories.find(m => m.id === memoryId);
+            if (memory) {
+                memory.content = content.trim();
+                memory.updatedAt = new Date().toISOString();
+                this.save();
+                return memory;
+            }
+        }
+        return null;
+    }
+
+    // 删除记忆
+    deleteMemory(memoryId, isCharacter = false, characterId = null) {
+        if (isCharacter && characterId) {
+            const memories = this.characterMemories[characterId] || [];
+            const index = memories.findIndex(m => m.id === memoryId);
+            if (index !== -1) {
+                memories.splice(index, 1);
+                this.save();
+                return true;
+            }
+        } else {
+            const index = this.globalMemories.findIndex(m => m.id === memoryId);
+            if (index !== -1) {
+                this.globalMemories.splice(index, 1);
+                this.save();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 获取全局记忆
+    getGlobalMemories() {
+        return this.globalMemories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    // 获取角色记忆
+    getCharacterMemories(characterId) {
+        return (this.characterMemories[characterId] || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    // 解析Markdown到HTML
+    parseMarkdown(content) {
+        if (typeof marked !== 'undefined') {
+            return marked.parse(content);
+        }
+        // 简单的Markdown解析fallback
+        return content
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+            .replace(/^\- (.*$)/gim, '<li>$1</li>')
+            .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/\n/g, '<br>');
+    }
+}
+
+// 初始化记忆管理器
+const memoryManager = new MemoryManager();
+
+// 显示添加记忆模态框
+function showAddMemoryModal() {
+    const modal = document.getElementById('addMemoryModal');
+    const memoryType = document.getElementById('memoryType');
+    const characterSelectGroup = document.getElementById('characterSelectGroup');
+    const memoryCharacterSelect = document.getElementById('memoryCharacterSelect');
+    
+    // 根据当前标签设置记忆类型
+    memoryType.value = memoryManager.currentMemoryType;
+    
+    // 填充角色选择器
+    memoryCharacterSelect.innerHTML = '<option value="">选择角色...</option>';
+    contacts.forEach(contact => {
+        if (contact.type === 'AI') {
+            const option = document.createElement('option');
+            option.value = contact.id;
+            option.textContent = contact.name;
+            memoryCharacterSelect.appendChild(option);
+        }
+    });
+    
+    // 显示/隐藏角色选择
+    handleMemoryTypeChange();
+    
+    showModal('addMemoryModal');
+}
+
+// 处理记忆类型改变
+function handleMemoryTypeChange() {
+    const memoryType = document.getElementById('memoryType').value;
+    const characterSelectGroup = document.getElementById('characterSelectGroup');
+    
+    if (memoryType === 'character') {
+        characterSelectGroup.classList.remove('hidden');
+    } else {
+        characterSelectGroup.classList.add('hidden');
+    }
+}
+
+// 处理添加记忆
+function handleAddMemory(event) {
+    event.preventDefault();
+    
+    const memoryType = document.getElementById('memoryType').value;
+    const memoryContent = document.getElementById('memoryContent').value.trim();
+    const memoryCharacterSelect = document.getElementById('memoryCharacterSelect').value;
+    
+    if (!memoryContent) {
+        showToast('请输入记忆内容');
+        return;
+    }
+    
+    if (memoryType === 'character' && !memoryCharacterSelect) {
+        showToast('请选择角色');
+        return;
+    }
+    
+    try {
+        if (memoryType === 'global') {
+            memoryManager.addGlobalMemory(memoryContent);
+            showToast('全局记忆添加成功');
+            if (memoryManager.currentMemoryType === 'global') {
+                loadGlobalMemories();
+            }
+        } else {
+            memoryManager.addCharacterMemory(memoryCharacterSelect, memoryContent);
+            showToast('角色记忆添加成功');
+            if (memoryManager.currentMemoryType === 'character' && memoryManager.currentCharacter === memoryCharacterSelect) {
+                loadCharacterMemories();
+            }
+        }
+        
+        closeModal('addMemoryModal');
+        document.getElementById('memoryContent').value = '';
+    } catch (error) {
+        console.error('添加记忆失败:', error);
+        showToast('添加记忆失败');
+    }
+}
+
+// 切换记忆标签
+function switchMemoryTab(type) {
+    const globalTab = document.querySelector('.memory-tab:first-child');
+    const characterTab = document.querySelector('.memory-tab:last-child');
+    const globalSection = document.getElementById('globalMemorySection');
+    const characterSection = document.getElementById('characterMemorySection');
+    
+    // 更新标签样式
+    globalTab.classList.toggle('active', type === 'global');
+    characterTab.classList.toggle('active', type === 'character');
+    
+    // 显示对应内容
+    globalSection.classList.toggle('hidden', type !== 'global');
+    characterSection.classList.toggle('hidden', type !== 'character');
+    
+    memoryManager.currentMemoryType = type;
+    
+    if (type === 'global') {
+        loadGlobalMemories();
+    } else {
+        loadCharacterSelector();
+    }
+}
+
+// 加载全局记忆
+function loadGlobalMemories() {
+    const memoryList = document.getElementById('globalMemoryList');
+    const memories = memoryManager.getGlobalMemories();
+    
+    if (memories.length === 0) {
+        memoryList.innerHTML = '<div class="memory-empty">暂无全局记忆</div>';
+        return;
+    }
+    
+    memoryList.innerHTML = memories.map(memory => createMemoryItem(memory, false)).join('');
+}
+
+// 加载角色选择器
+function loadCharacterSelector() {
+    const characterSelector = document.getElementById('characterSelector');
+    characterSelector.innerHTML = '<option value="">选择角色...</option>';
+    
+    contacts.forEach(contact => {
+        if (contact.type === 'AI') {
+            const option = document.createElement('option');
+            option.value = contact.id;
+            option.textContent = contact.name;
+            characterSelector.appendChild(option);
+        }
+    });
+}
+
+// 加载角色记忆
+function loadCharacterMemories() {
+    const characterSelector = document.getElementById('characterSelector');
+    const memoryList = document.getElementById('characterMemoryList');
+    const characterId = characterSelector.value;
+    
+    if (!characterId) {
+        memoryList.innerHTML = '<div class="memory-empty">请先选择角色</div>';
+        return;
+    }
+    
+    memoryManager.currentCharacter = characterId;
+    const memories = memoryManager.getCharacterMemories(characterId);
+    
+    if (memories.length === 0) {
+        memoryList.innerHTML = '<div class="memory-empty">该角色暂无记忆</div>';
+        return;
+    }
+    
+    memoryList.innerHTML = memories.map(memory => createMemoryItem(memory, true, characterId)).join('');
+}
+
+// 创建记忆项HTML
+function createMemoryItem(memory, isCharacter, characterId = null) {
+    const date = new Date(memory.createdAt).toLocaleDateString();
+    const preview = memory.content.substring(0, 50) + (memory.content.length > 50 ? '...' : '');
+    const parsedContent = memoryManager.parseMarkdown(memory.content);
+    
+    return `
+        <div class="memory-item" data-id="${memory.id}">
+            <div class="memory-header" onclick="toggleMemoryItem('${memory.id}')">
+                <div class="memory-title">${preview}</div>
+                <div style="display: flex; align-items: center;">
+                    <div class="memory-date">${date}</div>
+                    <div class="memory-expand-icon">▶</div>
+                </div>
+            </div>
+            <div class="memory-content-wrapper">
+                <div class="memory-content-text">${parsedContent}</div>
+                <div class="memory-actions">
+                    <button class="memory-btn" onclick="editMemory('${memory.id}', ${isCharacter}, '${characterId || ''}')">修改</button>
+                    <button class="memory-btn delete" onclick="deleteMemory('${memory.id}', ${isCharacter}, '${characterId || ''}')">删除</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// 切换记忆项展开/收缩
+function toggleMemoryItem(memoryId) {
+    const memoryItem = document.querySelector(`[data-id="${memoryId}"]`);
+    if (memoryItem) {
+        memoryItem.classList.toggle('expanded');
+    }
+}
+
+// 编辑记忆
+function editMemory(memoryId, isCharacter, characterId) {
+    memoryManager.selectedMemoryId = memoryId;
+    
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const editContentTextarea = document.getElementById('editMemoryContent');
+    editContentTextarea.value = memory.content;
+    
+    // 存储编辑上下文
+    memoryManager.editingContext = {
+        isCharacter,
+        characterId
+    };
+    
+    showModal('editMemoryModal');
+}
+
+// 处理编辑记忆
+function handleEditMemory(event) {
+    event.preventDefault();
+    
+    const newContent = document.getElementById('editMemoryContent').value.trim();
+    const memoryId = memoryManager.selectedMemoryId;
+    const context = memoryManager.editingContext || {};
+    
+    if (!newContent) {
+        showToast('请输入记忆内容');
+        return;
+    }
+    
+    if (!memoryId) {
+        showToast('记忆ID丢失');
+        return;
+    }
+    
+    try {
+        const updated = memoryManager.updateMemory(memoryId, newContent, context.isCharacter, context.characterId);
+        if (updated) {
+            showToast('记忆更新成功');
+            closeModal('editMemoryModal');
+            
+            // 刷新显示
+            if (context.isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+        } else {
+            showToast('记忆更新失败');
+        }
+    } catch (error) {
+        console.error('更新记忆失败:', error);
+        showToast('记忆更新失败');
+    }
+}
+
+// 删除记忆
+function deleteMemory(memoryId, isCharacter, characterId) {
+    const confirmMessage = '确定要删除这条记忆吗？';
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        const deleted = memoryManager.deleteMemory(memoryId, isCharacter, characterId);
+        if (deleted) {
+            showToast('记忆删除成功');
+            
+            // 刷新显示
+            if (isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+        } else {
+            showToast('记忆删除失败');
+        }
+    } catch (error) {
+        console.error('删除记忆失败:', error);
+        showToast('记忆删除失败');
+    }
+}
+
+// 初始化记忆管理页面
+function initMemoryManagementPage() {
+    // 默认加载全局记忆
+    loadGlobalMemories();
+    loadCharacterSelector();
+}
+
+// 页面显示时初始化记忆管理
+document.addEventListener('DOMContentLoaded', function() {
+    // 当显示记忆管理页面时初始化
+    const originalShowPage = showPage;
+    window.showPage = function(pageIdToShow) {
+        originalShowPage(pageIdToShow);
+        if (pageIdToShow === 'memoryManagementPage') {
+            setTimeout(initMemoryManagementPage, 100);
+        }
+    };
+});

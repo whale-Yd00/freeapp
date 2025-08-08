@@ -125,6 +125,10 @@
                     <div class="profile-item-label">数据管理</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
+                <div class="profile-item" onclick="showPage('memoryManagementPage')">
+                    <div class="profile-item-label">记忆管理</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
                 <div class="profile-item" onclick="showDebugLogPage()">
                     <div class="profile-item-label">查看调试日志</div>
                     <div class="profile-item-arrow">›</div>
@@ -221,6 +225,45 @@
                 <div class="debug-log-content" id="debugLogContent">
                     <div class="debug-log-empty">
                         暂无日志记录
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="memory-management-page" id="memoryManagementPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">记忆管理</div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="showAddMemoryModal()">添加</button>
+                </div>
+            </div>
+            
+            <div class="memory-management-container">
+                <div class="memory-tabs">
+                    <button class="memory-tab active" onclick="switchMemoryTab('global')">全局记忆</button>
+                    <button class="memory-tab" onclick="switchMemoryTab('character')">角色记忆</button>
+                </div>
+                
+                <div class="memory-content">
+                    <div class="memory-section" id="globalMemorySection">
+                        <div class="memory-list" id="globalMemoryList">
+                            <div class="memory-empty">暂无全局记忆</div>
+                        </div>
+                    </div>
+                    
+                    <div class="memory-section hidden" id="characterMemorySection">
+                        <div class="character-selector">
+                            <select id="characterSelector" onchange="loadCharacterMemories()">
+                                <option value="">选择角色...</option>
+                            </select>
+                        </div>
+                        <div class="memory-list" id="characterMemoryList">
+                            <div class="memory-empty">请先选择角色</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -692,6 +735,59 @@
                         <textarea class="form-input" id="manualPostImageDesc" placeholder="描述配图内容（可选）..." rows="2"></textarea>
                     </div>
                     <button type="submit" class="form-submit">发布并生成评论</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Memory Modal -->
+    <div class="modal" id="addMemoryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">添加记忆</div>
+                <div class="modal-close" onclick="closeModal('addMemoryModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleAddMemory(event)">
+                    <div class="form-group" id="memoryTypeGroup">
+                        <label class="form-label">记忆类型</label>
+                        <select class="form-input" id="memoryType" onchange="handleMemoryTypeChange()">
+                            <option value="global">全局记忆</option>
+                            <option value="character">角色记忆</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="characterSelectGroup">
+                        <label class="form-label">选择角色</label>
+                        <select class="form-input" id="memoryCharacterSelect">
+                            <option value="">选择角色...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">记忆内容</label>
+                        <textarea class="form-input" id="memoryContent" placeholder="输入记忆内容（支持Markdown格式）..." rows="6" required></textarea>
+                        <div class="form-hint">支持Markdown格式，如 - 列表项 或 ## 标题</div>
+                    </div>
+                    <button type="submit" class="form-submit">添加记忆</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Memory Modal -->
+    <div class="modal" id="editMemoryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">编辑记忆</div>
+                <div class="modal-close" onclick="closeModal('editMemoryModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleEditMemory(event)">
+                    <div class="form-group">
+                        <label class="form-label">记忆内容</label>
+                        <textarea class="form-input" id="editMemoryContent" placeholder="输入记忆内容（支持Markdown格式）..." rows="6" required></textarea>
+                        <div class="form-hint">支持Markdown格式，如 - 列表项 或 ## 标题</div>
+                    </div>
+                    <button type="submit" class="form-submit">保存修改</button>
                 </form>
             </div>
         </div>
