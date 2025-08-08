@@ -58,9 +58,31 @@ class PromptBuilder {
      */
     buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
         const memoryInfo = (currentContact.memoryTableContent || '').trim();
-        let systemPrompt = `你必须严格遵守以下设定和记忆，这是最高优先级指令，在任何情况下都不能违背：\n\n--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+        let systemPrompt = `你正在进行一次角色扮演。你的所有行为和回复都必须严格遵循以下为你设定的指令。这是最高优先级的指令，在任何情况下都不能违背。\n\n`;
 
-        // 添加当前时间
+        // 核心身份与记忆
+        systemPrompt += `--- [核心身份与记忆] ---\n`;
+        systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n`;
+        const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
+        systemPrompt += `用户的名字是${userProfile.name}。${userPersona}\n`;
+        systemPrompt += `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。\n`;
+        systemPrompt += `记忆表格如下：\n${memoryInfo}\n\n`;
+
+        // 群聊特定指令
+        if (currentContact.type === 'group') {
+            const memberNames = currentContact.members.map(id => contacts.find(c => c.id === id)?.name || '未知成员');
+            systemPrompt += `--- [群聊场景指令] ---\n`;
+            systemPrompt += `你现在在一个名为"${currentContact.name}"的群聊中。群成员有：${userProfile.name} (用户), ${memberNames.join(', ')}。\n`;
+            systemPrompt += `你的任务是根据自己的人设、记忆表格和用户人设，对**本回合**中在你之前其他人的**完整发言**进行回应，然后发表你自己的**完整观点**，以推动群聊进行。可以赞同、反驳、开玩笑、或者提出新的话题。\n`;
+            systemPrompt += `你的发言需要自然地融入对话，就像一个真正在参与群聊的人。\n\n`;
+        }
+
+        // 添加自定义提示词
+        if (contact.customPrompts) {
+            systemPrompt += `--- [自定义行为指令] ---\n${contact.customPrompts}\n\n`;
+        }
+        
+        // 添加实时情景信息
         const now = new Date();
         const year = now.getFullYear();
         const month = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -69,35 +91,18 @@ class PromptBuilder {
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const currentTimeString = `${year}年${month}月${day}日 ${hours}:${minutes}`;
         
-        systemPrompt += `[重要系统指令：当前的标准北京时间是"${currentTimeString}"。当用户询问时间时，你必须根据这个时间来回答。]\n\n`;
-        
-        const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
-
-        // 构建角色设定
-        if (currentContact.type === 'group') {
-            const memberNames = currentContact.members.map(id => contacts.find(c => c.id === id)?.name || '未知成员');
-            systemPrompt += `你是群成员之一：${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
-                `你现在在一个名为"${currentContact.name}"的群聊中。群成员有：${userProfile.name} (用户), ${memberNames.join(', ')}。\n` +
-                `你的任务是根据自己的人设、记忆表格和用户人设，对**本回合**中在你之前其他人的**完整发言**进行回应，然后发表你自己的**完整观点**，以推动群聊进行。可以赞同、反驳、开玩笑、或者提出新的话题。\n` +
-                `你的发言需要自然地融入对话，就像一个真正在参与群聊的人。`;
-        } else {
-            systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n用户的名字是${userProfile.name}。${userPersona}\n` +
-                `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。`;
-        }
-
-        // 添加自定义提示词
-        if (contact.customPrompts) systemPrompt += '\n\n' + contact.customPrompts;
-        
-        // 添加音乐信息
+        systemPrompt += `--- [实时情景信息] ---\n`;
+        systemPrompt += `[重要系统指令：当前的标准北京时间是"${currentTimeString}"。当用户询问时间时，你必须根据这个时间来回答。]\n`;
         if (window.currentMusicInfo && window.currentMusicInfo.isPlaying) {
-            systemPrompt += `\n\n[系统提示：用户正在听歌，当前歌曲是《${window.currentMusicInfo.songName}》，正在播放的歌词是："${window.currentMusicInfo.lyric}"]`;
+            systemPrompt += `[系统提示：用户正在听歌，当前歌曲是《${window.currentMusicInfo.songName}》，正在播放的歌词是："${window.currentMusicInfo.lyric}"]\n`;
         }
-        
-        // 添加红包功能说明
+        systemPrompt += `\n`;
+
+        // 添加特殊能力模块
+        systemPrompt += `--- [你的特殊能力与使用规则] ---\n`;
         systemPrompt += this._buildRedPacketInstructions();
-        
-        // 添加表情包使用规则
         systemPrompt += this._buildEmojiInstructions(emojis);
+        systemPrompt += this._buildVoiceInstructions(contact, apiSettings);
         
         // 添加输出格式规则
         systemPrompt += this._buildOutputFormatInstructions();
@@ -502,10 +507,10 @@ ${userReply}
 
     // 私有方法：构建红包指令
     _buildRedPacketInstructions() {
-        return `\n\n--- 红包功能 ---\n`
+        return `\n\n**能力一：发送红包**\n`
              + `你可以给用户发红包来表达祝贺、感谢或作为奖励。\n`
              + `要发送红包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）：\n`
-             + `[red_packet:{"amount":8.88, "message":"恭喜发财！"}]\n`
+             + `\`[red_packet:{"amount":8.88, "message":"恭喜发财！"}]\`\n`
              + `其中 "amount" 是一个 1 到 1000000 之间的数字，"message" 是字符串。\n`
              + `例如: 太棒了！|||[red_packet:{"amount":6.66, "message":"奖励你的！"}]|||继续加油哦！\n`
              + `你必须自己决定何时发送红包以及红包的金额和留言。这个决定必须完全符合你的人设和当前的对话情景。例如，一个慷慨的角色可能会在用户取得成就时发送一个大红包，而一个节俭的角色可能会发送一个小红包并附上有趣的留言。`;
@@ -515,18 +520,42 @@ ${userReply}
     _buildEmojiInstructions(emojis) {
         const availableEmojisString = emojis.map(e => `- [emoji:${e.meaning}] (含义: ${e.meaning})`).join('\n');
         
-        return `\n\n--- 表情包使用规则 ---\n`
+        return `\n\n**能力二：发送表情包**\n`
              + `你可以从下面的列表中选择表情包来丰富你的表达。\n`
              + `要发送表情包，你必须严格使用以下格式，并将其作为一条独立的消息（即前后都有 ||| 分隔符）。你必须使用表情的"含义"作为占位符，而不是图片URL。\n`
-             + `格式: [emoji:表情含义]\n`
+             + `格式: \`[emoji:表情含义]\`\n`
              + `例如: 你好呀|||[emoji:开心]|||今天天气真不错\n`
-             + `**重要提醒：** 你可能会在用户的消息历史中看到 "[发送了表情：...]" 这样的文字，这是系统为了让你理解对话而生成的提示，你绝对不能在你的回复中模仿或使用这种格式。你只能使用 [emoji:表情含义] 格式来发送表情。\n\n`
+             + `**重要提醒：** 你可能会在用户的消息历史中看到 "[发送了表情：...]" 这样的文字，这是系统为了让你理解对话而生成的提示，你绝对不能在你的回复中模仿或使用这种格式。你只能使用 \`[emoji:表情含义]\` 格式来发送表情。\n\n`
              + `可用表情列表:\n${availableEmojisString || '无可用表情'}`;
     }
 
+    // 私有方法：构建语音指令
+    _buildVoiceInstructions(contact, apiSettings) {
+        // 如果没有语音ID或者没有ElevenLabs API Key，则不提供语音能力
+        if (!contact?.voiceId || !apiSettings?.elevenLabsApiKey) {
+            return '';
+        }
+        
+        return `\n\n**能力三：发送语音**\n`
+             + `你拥有一项特殊能力：发送语音消息。当你认为通过声音更能表达情绪、强调重点、唱歌、讲笑话或模仿特定语气时，你可以选择发送语音。\n\n`
+             + `**使用格式：**\n`
+             + `若要发送语音，你必须严格按照以下格式回复，将 \`[语音]:\` 放在你回复内容的最前面：\n`
+             + `\`[语音]: 你好呀，今天过得怎么样？\`\n\n`
+             + `**使用场景举例：**\n`
+             + `- 当你想表达特别开心或激动的情绪时。\n`
+             + `- 当你想用温柔或严肃的语气说话时。\n`
+             + `- 当你想给用户唱一小段歌时。\n`
+             + `- 当你想模仿某个角色的声音时。\n\n`
+             + `**注意：**\n`
+             + `- **不要**滥用此功能，只在必要或能增强角色扮演效果时使用。\n`
+             + `- \`[语音]:\` 标签本身不会被用户看到，系统会自动将其转换为语音播放器。\n`
+             + `- 如果你不想发送语音，就正常回复，**不要**添加 \`[语音]:\` 标签。`;
+    }
+
+
     // 私有方法：构建输出格式指令
     _buildOutputFormatInstructions() {
-        return `\n\n--- 至关重要的输出格式规则 ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 <memory_table>...</memory_table> 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
+        return `\n\n--- [至关重要的输出格式规则] ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 \`<memory_table>...\</memory_table>\` 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
     }
 
     _replaceBase64WithEmoji(raw, emojis) {

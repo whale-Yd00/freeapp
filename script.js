@@ -279,9 +279,10 @@ let apiSettings = {
     url: '',
     key: '',
     model: '',
-    secondaryModel: 'sync_with_primary', // 新增：次要模型
+    secondaryModel: 'sync_with_primary',
     contextMessageCount: 10,
-    timeout: 60 // 新增：超时时间（秒）
+    timeout: 60,
+    elevenLabsApiKey: ''
 };
 let emojis = [];
 let backgrounds = {};
@@ -323,6 +324,10 @@ let isLoadingMoreMessages = false;
 let isMultiSelectMode = false;
 let selectedMessages = new Set();
 
+// 语音播放相关全局变量
+let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
+let currentPlayingElement = null; // 跟踪当前播放的语音元素
+
 
 // --- 初始化 ---
 async function init() {
@@ -349,6 +354,26 @@ async function init() {
             }, 5000);
         }
     }, 1000);
+
+    // 为全局voiceAudio对象绑定事件
+    voiceAudio.onended = () => {
+        if (currentPlayingElement) {
+            currentPlayingElement.classList.remove('playing');
+            const playButton = currentPlayingElement.querySelector('.play-button');
+            if (playButton) playButton.textContent = '▶';
+            currentPlayingElement = null;
+        }
+    };
+    voiceAudio.onerror = () => {
+        showToast('音频文件加载失败');
+        if (currentPlayingElement) {
+             currentPlayingElement.classList.remove('playing', 'loading');
+             const playButton = currentPlayingElement.querySelector('.play-button');
+             if (playButton) playButton.textContent = '▶';
+             currentPlayingElement = null;
+        }
+    };
+
 
     // Check for update announcements
     const unreadAnnouncements = await announcementManager.getUnread();
@@ -463,6 +488,8 @@ async function loadDataFromDB() {
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
+            // 为旧联系人数据添加 voiceId 默认值
+            if (contact.voiceId === undefined) contact.voiceId = '';
             window.memoryTableManager.initContactMemoryTable(contact);
             if (contact.messages) {
                 contact.messages.forEach(msg => {
@@ -475,6 +502,8 @@ async function loadDataFromDB() {
         const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
+        // 为旧API设置数据添加 elevenLabsApiKey 默认值
+        if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
         backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
@@ -1911,12 +1940,16 @@ function closeModal(modalId) {
         document.getElementById('contactAvatar').value = '';
         document.getElementById('contactPersonality').value = '';
         document.getElementById('customPrompts').value = '';
+        // 重置语音ID输入框
+        document.getElementById('contactVoiceId').value = '';
     }
 }
 
 function showAddContactModal() {
     editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
+    // 清空语音ID输入框
+    document.getElementById('contactVoiceId').value = '';
     showModal('addContactModal');
 }
 
@@ -1928,6 +1961,8 @@ function showEditContactModal() {
     document.getElementById('contactAvatar').value = currentContact.avatar || '';
     document.getElementById('contactPersonality').value = currentContact.personality;
     document.getElementById('customPrompts').value = currentContact.customPrompts || '';
+    // 加载当前联系人的语音ID
+    document.getElementById('contactVoiceId').value = currentContact.voiceId || '';
     showModal('addContactModal');
     toggleSettingsMenu();
 }
@@ -1936,6 +1971,7 @@ function showApiSettingsModal() {
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
     document.getElementById('apiTimeout').value = apiSettings.timeout || 60;
+    document.getElementById('elevenLabsApiKey').value = apiSettings.elevenLabsApiKey;
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
@@ -2012,7 +2048,9 @@ async function saveContact(event) {
         name: document.getElementById('contactName').value,
         avatar: document.getElementById('contactAvatar').value,
         personality: document.getElementById('contactPersonality').value,
-        customPrompts: document.getElementById('customPrompts').value
+        customPrompts: document.getElementById('customPrompts').value,
+        // 保存语音ID
+        voiceId: document.getElementById('contactVoiceId').value.trim()
     };
     if (editingContact) {
         Object.assign(editingContact, contactData);
@@ -2181,20 +2219,15 @@ function renderMessages(isInitialLoad = false) {
     const chatMessages = document.getElementById('chatMessages');
     const allMessages = currentContact.messages;
 
-    // 确定要渲染的消息
     if (isInitialLoad) {
         currentlyDisplayedMessageCount = Math.min(allMessages.length, MESSAGES_PER_PAGE);
     }
     const messagesToRender = allMessages.slice(allMessages.length - currentlyDisplayedMessageCount);
 
-    // 保存滚动位置
     const oldScrollHeight = chatMessages.scrollHeight;
-    const oldScrollTop = chatMessages.scrollTop;
-
-    // 清空并重新渲染
+    
     chatMessages.innerHTML = '';
 
-    // 如果还有更多消息，显示"加载更多"按钮
     if (allMessages.length > currentlyDisplayedMessageCount) {
         const loadMoreDiv = document.createElement('div');
         loadMoreDiv.className = 'load-more-messages';
@@ -2257,7 +2290,6 @@ function renderMessages(isInitialLoad = false) {
             }
         }
 
-        // 添加已编辑标识
         if (msg.edited) {
             const editedTag = `<span style="color: #999; font-size: 12px; margin-left: 5px;">已编辑</span>`;
             if (msg.type === 'emoji') {
@@ -2282,20 +2314,50 @@ function renderMessages(isInitialLoad = false) {
         } else {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
+        
+        // 【【【【【修改点 2】】】】】
+        // 修改判断条件：检查 forceVoice 标志
+        if (msg.forceVoice && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
+            const bubble = msgDiv.querySelector('.message-bubble');
+            if (bubble) {
+                const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
+                const voicePlayer = document.createElement('div');
+                voicePlayer.className = 'voice-player';
+                voicePlayer.id = `voice-player-${messageUniqueId}`;
+                
+                // 使用匿名函数包装，确保传递正确的参数
+                voicePlayer.onclick = () => playVoiceMessage(voicePlayer, msg.content, currentContact.voiceId);
+                
+                voicePlayer.innerHTML = `
+                    <div class="play-button">▶</div>
+                    <div class="waveform">
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                    </div>
+                    <div class="duration"></div>
+                `;
+                // 将播放器插入到气泡的开头
+                bubble.prepend(voicePlayer);
+                
+                const textContentDiv = bubble.querySelector('.message-content');
+                if (textContentDiv) {
+                    textContentDiv.classList.add('has-voice-player');
+                }
+            }
+        }
 
-        // 在多选模式下添加点击事件
+
         if (isMultiSelectMode) {
             msgDiv.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 toggleMessageSelection(originalIndex);
             });
-            // 如果消息已被选中，添加选中样式
             if (selectedMessages.has(originalIndex)) {
                 msgDiv.classList.add('message-selected');
             }
         } else {
-            // 正常模式下的长按事件
             let msgPressTimer;
             msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
             msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
@@ -2306,13 +2368,14 @@ function renderMessages(isInitialLoad = false) {
         chatMessages.appendChild(msgDiv);
     });
 
-    // 调整滚动位置
     if (isInitialLoad) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     } else {
-        chatMessages.scrollTop = chatMessages.scrollHeight - oldScrollHeight;
+        const newScrollHeight = chatMessages.scrollHeight;
+        chatMessages.scrollTop = newScrollHeight - oldScrollHeight;
     }
 }
+
 
 function loadMoreMessages() {
     if (isLoadingMoreMessages) return;
@@ -2388,7 +2451,27 @@ async function sendMessage() {
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-                const aiMessage = { role: 'assistant', content: response.content, type: response.type, time: new Date().toISOString(), senderId: currentContact.id };
+                
+                let messageContent = response.content;
+                let forceVoice = false;
+
+                // 【【【【【修改点 1】】】】】
+                // 检查并处理AI的语音指令
+                if (messageContent.startsWith('[语音]:')) {
+                    forceVoice = true;
+                    // 从消息内容中移除 [语音]: 标签
+                    messageContent = messageContent.substring(4).trim();
+                }
+
+                const aiMessage = { 
+                    role: 'assistant', 
+                    content: messageContent, // 使用处理过的内容
+                    type: response.type, 
+                    time: new Date().toISOString(), 
+                    senderId: currentContact.id,
+                    forceVoice: forceVoice // 添加新标志
+                };
+
                 currentContact.messages.push(aiMessage);
                 if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                     currentlyDisplayedMessageCount++;
@@ -2445,7 +2528,25 @@ async function sendGroupMessage() {
             if (!replies || replies.length === 0) continue;
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-                const aiMessage = { role: 'assistant', content: response.content, type: response.type, time: new Date().toISOString(), senderId: member.id };
+
+                let messageContent = response.content;
+                let forceVoice = false;
+
+                // 【【【【【修改点 1, 群聊部分】】】】】
+                if (messageContent.startsWith('[语音]:')) {
+                    forceVoice = true;
+                    messageContent = messageContent.substring(4).trim();
+                }
+
+                const aiMessage = { 
+                    role: 'assistant', 
+                    content: messageContent,
+                    type: response.type, 
+                    time: new Date().toISOString(), 
+                    senderId: member.id,
+                    forceVoice: forceVoice 
+                };
+
                 currentContact.messages.push(aiMessage);
                 if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                     currentlyDisplayedMessageCount++;
@@ -2534,12 +2635,6 @@ async function callAPI(contact, turnContext = []) {
         messages.push(...messageHistory);
 
         // 3. 调用API
-        console.log('准备调用API:', {
-            url: apiSettings.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
-            model: apiSettings.model,
-            messagesCount: messages.length,
-            timestamp: new Date().toISOString()
-        });
         
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
@@ -2550,12 +2645,6 @@ async function callAPI(contact, turnContext = []) {
             (apiSettings.timeout || 60) * 1000
         );
         
-        console.log('API调用完成:', {
-            hasData: !!data,
-            dataKeys: data ? Object.keys(data) : null,
-            response: data ? JSON.stringify(data) : null,
-            timestamp: new Date().toISOString()
-        });
 
         // 4. 处理响应
         if (!data) {
@@ -2588,11 +2677,6 @@ async function callAPI(contact, turnContext = []) {
             throw new Error('AI回复内容为空，请稍后重试');
         }
         
-        console.log('提取的原始回复内容:', {
-            fullResponseLength: fullResponseText.length,
-            fullResponse: fullResponseText,
-            timestamp: new Date().toISOString()
-        });
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
@@ -2649,18 +2733,6 @@ async function callAPI(contact, turnContext = []) {
             }
         }
         
-        console.log('处理完成的回复内容:', {
-            originalRepliesCount: replies.length,
-            processedRepliesCount: processedReplies.length,
-            processedReplies: processedReplies.map((reply, index) => ({
-                index,
-                type: reply.type,
-                content: reply.content
-            })),
-            hasMemoryTable: !!newMemoryTable,
-            memoryTablePreview: newMemoryTable ? JSON.stringify(newMemoryTable).substring(0, 200) + '...' : null,
-            timestamp: new Date().toISOString()
-        });
         
         return { replies: processedReplies, newMemoryTable };
 
@@ -2765,6 +2837,7 @@ async function saveApiSettings(event) {
     apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
     apiSettings.timeout = parseInt(document.getElementById('apiTimeout').value) || 60;
+    apiSettings.elevenLabsApiKey = document.getElementById('elevenLabsApiKey').value.trim();
     
     await saveDataToDB();
     closeModal('apiSettingsModal');
@@ -3652,4 +3725,98 @@ function deleteSelectedMessages() {
             showToast('删除失败：' + error.message);
         }
     });
+}
+
+
+// ElevenLabs 语音播放功能
+/**
+ * 播放或停止语音消息
+ * @param {HTMLElement} playerElement - 被点击的播放器元素
+ * @param {string} text - 需要转换为语音的文本
+ * @param {string} voiceId - ElevenLabs 的语音ID
+ */
+async function playVoiceMessage(playerElement, text, voiceId) {
+    if (!apiSettings.elevenLabsApiKey) {
+        showToast('请在设置中填写 ElevenLabs API Key');
+        return;
+    }
+    if (!voiceId) {
+        showToast('该角色未设置语音ID');
+        return;
+    }
+
+    const wasPlaying = playerElement === currentPlayingElement && !voiceAudio.paused;
+
+    // 停止任何当前正在播放的音频
+    if (currentPlayingElement) {
+        voiceAudio.pause();
+        voiceAudio.currentTime = 0;
+        const oldPlayButton = currentPlayingElement.querySelector('.play-button');
+        if (oldPlayButton) oldPlayButton.textContent = '▶';
+        currentPlayingElement.classList.remove('playing', 'loading');
+    }
+
+    // 如果点击的是正在播放的元素，则仅停止它
+    if (wasPlaying) {
+        currentPlayingElement = null;
+        return;
+    }
+
+    // 设置新的播放目标
+    currentPlayingElement = playerElement;
+    const playButton = playerElement.querySelector('.play-button');
+    const durationEl = playerElement.querySelector('.duration');
+
+    try {
+        playerElement.classList.add('loading');
+        playButton.textContent = '...'; // 加载指示
+
+        // 调用 TTS API
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: text,
+                voiceId: voiceId,
+                apiKey: apiSettings.elevenLabsApiKey
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: '语音生成失败，请检查服务器日志' }));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const audioBlob = await response.blob();
+        if (audioBlob.type !== 'audio/mpeg') {
+             throw new Error('返回的不是有效的音频文件');
+        }
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        voiceAudio.src = audioUrl;
+
+        // 获取音频时长
+        voiceAudio.onloadedmetadata = () => {
+            if (isFinite(voiceAudio.duration)) {
+                const minutes = Math.floor(voiceAudio.duration / 60);
+                const seconds = Math.floor(voiceAudio.duration % 60).toString().padStart(2, '0');
+                durationEl.textContent = `${minutes}:${seconds}`;
+            }
+        };
+
+        await voiceAudio.play();
+
+        playerElement.classList.remove('loading');
+        playerElement.classList.add('playing');
+        playButton.textContent = '❚❚'; // 暂停图标
+
+    } catch (error) {
+        console.error('语音播放失败:', error);
+        showToast(`语音播放错误: ${error.message}`);
+        playerElement.classList.remove('loading');
+        playButton.textContent = '▶';
+        currentPlayingElement = null;
+    }
 }

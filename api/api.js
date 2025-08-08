@@ -35,7 +35,8 @@ class APIService {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), timeout);
                 
-                const response = await fetch('/api/', {
+                // 将请求路径修改为 /api/proxy/ 以匹配 netlify.toml 中的规则
+                const response = await fetch('/api/proxy/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -96,7 +97,9 @@ class APIService {
             apiKey: apiKey,
         };
 
-        const response = await fetch('/api-test/', {
+        // 【【【【【修改点 2】】】】】
+        // 将请求路径修改为 /api/test-connection 以匹配 netlify.toml 中的规则
+        const response = await fetch('/api/test-connection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

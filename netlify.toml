@@ -5,15 +5,23 @@
   publish = "."
   functions = "netlify/functions"
 
-# 这是处理聊天请求的规则
+# 规则一：将所有聊天相关的请求转发到 proxy-api 函数
+# 例如: /api/proxy/chat/completions
 [[redirects]]
-  from = "/api/*"
+  from = "/api/proxy/*"
   to = "/.netlify/functions/proxy-api/:splat"
   status = 200
 
-# 【【【【【新增内容在这里】】】】】
-# 这是我们为“测试连接”按钮新增的规则
+# 规则二：将测试连接的请求转发到 test-connection 函数
+# 请求路径: /api/test-connection
 [[redirects]]
-  from = "/api-test/*"
-  to = "/.netlify/functions/test-connection/:splat"
+  from = "/api/test-connection"
+  to = "/.netlify/functions/test-connection"
+  status = 200
+
+# 规则三：将语音合成(TTS)的请求转发到 tts 函数
+# 请求路径: /api/tts
+[[redirects]]
+  from = "/api/tts"
+  to = "/.netlify/functions/tts"
   status = 200
