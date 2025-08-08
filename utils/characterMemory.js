@@ -411,9 +411,25 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 确保数据已从数据库加载（延迟加载机制）
+     */
+    async ensureDataLoaded() {
+        if (!this.isInitialized && window.isIndexedDBReady && window.db) {
+            console.log('[记忆调试] 延迟加载记忆数据');
+            await this.loadConversationCounters();
+            await this.loadLastProcessedMessageIndex();
+            await this.getGlobalMemory();
+            this.isInitialized = true;
+            console.log('[记忆调试] 延迟加载完成');
+        }
+    }
+
+    /**
      * 检查并更新记忆（主入口）
      */
     async checkAndUpdateMemory(contactId, currentContact, forceCheck = false) {
+        // 确保数据已加载
+        await this.ensureDataLoaded();
         console.log('[记忆调试] 记忆更新检查开始', {
             contactId,
             currentContactId: currentContact?.id,
@@ -1033,10 +1049,12 @@ window.checkAndUpdateGlobalMemory = function(forumContent, forceCheck = false) {
     return window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent, forceCheck);
 };
 
-// 自动初始化
+// 自动初始化 - 仅绑定事件，数据加载在数据库准备好后自动执行
 document.addEventListener('DOMContentLoaded', function() {
     if (window.characterMemoryManager) {
-        window.characterMemoryManager.init();
+        console.log('[记忆调试] DOM加载完成，初始化记忆管理器基础功能');
+        window.characterMemoryManager.bindEvents();
+        // 注意：数据加载将在 script.js 中数据库准备好后自动执行
     }
 });
 

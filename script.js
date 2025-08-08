@@ -428,6 +428,19 @@ function openDB() {
                 windowDb: !!window.db,
                 windowReady: window.isIndexedDBReady
             });
+            
+            // 数据库准备好后，初始化记忆管理器数据
+            if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
+                setTimeout(async () => {
+                    console.log('[记忆调试] 数据库已准备好，开始初始化记忆管理器数据');
+                    await window.characterMemoryManager.loadConversationCounters();
+                    await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                    await window.characterMemoryManager.getGlobalMemory();
+                    window.characterMemoryManager.isInitialized = true;
+                    console.log('[记忆调试] 记忆管理器数据初始化完成');
+                }, 100); // 稍微延迟确保所有设置都完成
+            }
+            
             resolve(db);
         };
 
