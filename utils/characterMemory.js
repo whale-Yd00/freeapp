@@ -723,10 +723,10 @@ class CharacterMemoryManager {
      */
     async generateAndUpdateMemory(contact, currentContact) {
         const currentMemory = await this.getCharacterMemory(contact.id);
-        const recentContext = this.buildRecentContext(currentContact);
+        const userTextContext = this.buildUserTextContext(currentContact);
         
         // 构建记忆生成提示词
-        const prompt = this.buildMemoryGeneratePrompt(currentMemory, recentContext, contact);
+        const prompt = this.buildMemoryGeneratePrompt(currentMemory, userTextContext, contact);
         
         try {
             const response = await window.apiService.callOpenAIAPI(
@@ -898,10 +898,10 @@ ${userTextInput}
     /**
      * 构建记忆生成提示词
      */
-    buildMemoryGeneratePrompt(currentMemory, recentContext, contact) {
+    buildMemoryGeneratePrompt(currentMemory, userTextInput, contact) {
         const userName = window.userProfile?.name || '用户';
         
-        return `你是一个记忆整理助手。请根据原有记忆和最新对话，更新角色记忆。
+        return `你是一个记忆整理助手。请根据原有记忆和用户的新输入，更新角色记忆。
 
 角色信息：
 - 姓名：${contact.name}
@@ -914,14 +914,14 @@ ${userTextInput}
 原有记忆：
 ${currentMemory || '暂无原有记忆'}
 
-最新对话内容：
-${recentContext}
+用户的新输入：
+${userTextInput}
 
-请整合原有记忆和新的对话内容，生成更新后的完整记忆。记忆应该包含：
+请整合原有记忆和用户的新输入，生成更新后的完整记忆。记忆应该包含：
 1. 用户的重要个人信息、生活状态、兴趣爱好
-2. 用户与角色的互动历史和关系发展
-3. 重要的事件和约定
-4. 其他值得记住的细节
+2. 用户提到的重要事件、计划或约定
+3. 用户的态度、偏好和个性特征
+4. 其他值得记住的重要细节
 
 请直接输出更新后的记忆内容为列表，不要其他解释：`;
     }
