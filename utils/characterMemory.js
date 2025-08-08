@@ -541,7 +541,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.1, // 降低随机性，让判断更稳定
-                    max_tokens: 500 // 增加token数量，确保能输出完整判断结果
+                    max_tokens: 5000
                 }
             );
             
@@ -584,7 +584,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.1,
-                    max_tokens: 50 // 增加token数量，确保能输出完整判断结果
+                    max_tokens: 7000
                 }
             );
             
@@ -628,7 +628,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.3,
-                    max_tokens: 1000
+                    max_tokens: 10000
                 }
             );
             
@@ -672,7 +672,7 @@ class CharacterMemoryManager {
                 [{ role: 'user', content: prompt }],
                 { 
                     temperature: 0.3,
-                    max_tokens: 1000
+                    max_tokens: 10000
                 }
             );
             
@@ -786,7 +786,7 @@ ${recentContext}
 3. 重要的事件和约定
 4. 其他值得记住的细节
 
-请直接输出更新后的记忆内容，不要其他解释：`;
+请直接输出更新后的记忆内容为列表，不要其他解释：`;
     }
 
     /**
@@ -832,7 +832,7 @@ ${forumContent}
 3. 用户在论坛中展现的性格特征
 4. 其他所有角色都应该知道的关于用户的重要信息
 
-请直接输出更新后的全局记忆内容，不要其他解释：`;
+请直接输出更新后的全局记忆内容为列表，不要其他解释：`;
     }
 
     /**
