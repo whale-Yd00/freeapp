@@ -1,3 +1,241 @@
+// === Console日志捕获系统 ===
+let consoleLogs = [];
+const maxLogEntries = 1000; // 限制日志条目数量避免内存过大
+
+// 重写console方法来捕获日志
+function setupConsoleCapture() {
+    const originalConsole = {
+        log: console.log,
+        error: console.error,
+        warn: console.warn,
+        info: console.info,
+        debug: console.debug
+    };
+
+    function captureLog(level, args) {
+        const timestamp = new Date().toISOString();
+        const message = args.map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        }).join(' ');
+        
+        consoleLogs.push({
+            timestamp,
+            level,
+            message
+        });
+        
+        // 限制日志数量
+        if (consoleLogs.length > maxLogEntries) {
+            consoleLogs = consoleLogs.slice(-maxLogEntries);
+        }
+    }
+
+    console.log = function(...args) {
+        captureLog('log', args);
+        originalConsole.log.apply(console, args);
+    };
+
+    console.error = function(...args) {
+        captureLog('error', args);
+        originalConsole.error.apply(console, args);
+    };
+
+    console.warn = function(...args) {
+        captureLog('warn', args);
+        originalConsole.warn.apply(console, args);
+    };
+
+    console.info = function(...args) {
+        captureLog('info', args);
+        originalConsole.info.apply(console, args);
+    };
+
+    console.debug = function(...args) {
+        captureLog('debug', args);
+        originalConsole.debug.apply(console, args);
+    };
+}
+
+// 传统下载方式的辅助函数
+function fallbackDownload(content, filename) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// 导出日志功能
+function exportConsoleLogs() {
+    try {
+        if (consoleLogs.length === 0) {
+            showToast('没有日志可导出');
+            return;
+        }
+
+        const logContent = consoleLogs.map(log => 
+            `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+        ).join('\n');
+        
+        const filename = `console-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        
+        // 检查是否支持Web Share API（移动端分享）
+        if (navigator.share && navigator.canShare) {
+            const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+            const file = new File([blob], filename, { type: 'text/plain' });
+            
+            // 检查是否可以分享文件
+            if (navigator.canShare({ files: [file] })) {
+                navigator.share({
+                    title: '调试日志',
+                    text: '应用调试日志文件',
+                    files: [file]
+                }).then(() => {
+                    showToast('分享成功');
+                    // 关闭设置菜单
+                    document.getElementById('settingsMenu').style.display = 'none';
+                }).catch((error) => {
+                    console.log('分享取消或失败:', error);
+                    // 如果分享失败，回退到传统下载方式
+                    fallbackDownload(logContent, filename);
+                    showToast(`已导出 ${consoleLogs.length} 条日志`);
+                    // 关闭设置菜单
+                    document.getElementById('settingsMenu').style.display = 'none';
+                });
+                return;
+            }
+        }
+        
+        // 回退到传统下载方式（PC端或不支持分享的移动端）
+        fallbackDownload(logContent, filename);
+        showToast(`已导出 ${consoleLogs.length} 条日志`);
+        
+        // 关闭设置菜单
+        document.getElementById('settingsMenu').style.display = 'none';
+    } catch (error) {
+        console.error('导出日志失败:', error);
+        showToast('导出日志失败: ' + error.message);
+    }
+}
+
+// 立即启用console捕获
+setupConsoleCapture();
+
+// === 调试日志页面功能 ===
+function showDebugLogPage() {
+    showPage('debugLogPage');
+    updateDebugLogDisplay();
+}
+
+function updateDebugLogDisplay() {
+    const logContent = document.getElementById('debugLogContent');
+    const logCount = document.getElementById('logCount');
+    
+    if (consoleLogs.length === 0) {
+        logContent.innerHTML = '<div class="debug-log-empty">暂无日志记录</div>';
+        logCount.textContent = '0';
+        return;
+    }
+    
+    logCount.textContent = consoleLogs.length.toString();
+    
+    const logsHtml = consoleLogs.map(log => {
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const levelClass = `debug-log-${log.level}`;
+        return `
+            <div class="debug-log-item ${levelClass}">
+                <div class="debug-log-header">
+                    <span class="debug-log-time">${time}</span>
+                    <span class="debug-log-level">${log.level.toUpperCase()}</span>
+                </div>
+                <div class="debug-log-message">${escapeHtml(log.message)}</div>
+            </div>
+        `;
+    }).join('');
+    
+    logContent.innerHTML = logsHtml;
+    
+    // 滚动到底部显示最新日志
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+function clearDebugLogs() {
+    consoleLogs.length = 0;
+    updateDebugLogDisplay();
+    showToast('已清空调试日志');
+}
+
+function copyDebugLogs() {
+    if (consoleLogs.length === 0) {
+        showToast('没有日志可复制');
+        return;
+    }
+    
+    const logText = consoleLogs.map(log => 
+        `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
+    ).join('\n');
+    
+    // 尝试使用现代的Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(logText).then(() => {
+            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
+        }).catch(err => {
+            console.error('复制失败:', err);
+            fallbackCopyTextToClipboard(logText);
+        });
+    } else {
+        fallbackCopyTextToClipboard(logText);
+    }
+}
+
+function fallbackCopyTextToClipboard(text) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
+        } else {
+            showToast('复制失败，请手动选择文本');
+        }
+    } catch (err) {
+        console.error('Fallback: 复制失败', err);
+        showToast('复制失败: ' + err.message);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
 // --- 通用文件上传函数 ---
 async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
     const fileInput = document.getElementById(inputId);
@@ -41,9 +279,10 @@ let apiSettings = {
     url: '',
     key: '',
     model: '',
-    secondaryModel: 'sync_with_primary', // 新增：次要模型
+    secondaryModel: 'sync_with_primary',
     contextMessageCount: 10,
-    elevenLabsApiKey: '' // 【新增】ElevenLabs API Key
+    timeout: 60,
+    elevenLabsApiKey: ''
 };
 let emojis = [];
 let backgrounds = {};
@@ -386,7 +625,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage'];
 
 function showPage(pageIdToShow) {
     // Hide all main pages and the chat page
@@ -947,7 +1186,8 @@ async function getMentionedAIReply(postData, mentioningComment, mentionedContact
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.75 } // Slightly higher temp for more creative/natural replies
+        { temperature: 0.75 }, // Slightly higher temp for more creative/natural replies
+        (apiSettings.timeout || 60) * 1000
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -968,7 +1208,8 @@ async function getAIReply(postData, userReply, contactId) {
         apiSettings.key,
         apiSettings.model,
         [{ role: 'user', content: systemPrompt }],
-        { temperature: 0.7 }
+        { temperature: 0.7 },
+        (apiSettings.timeout || 60) * 1000
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
@@ -1106,7 +1347,8 @@ async function generateMomentContent() {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { temperature: 0.8 }
+            { temperature: 0.8 },
+            (apiSettings.timeout || 60) * 1000
         );
 
         const momentContent = data.choices[0].message.content.trim() || '';
@@ -1183,7 +1425,8 @@ async function generateImageSearchQuery(content) {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { temperature: 0.5 }
+            { temperature: 0.5 },
+            (apiSettings.timeout || 60) * 1000
         );
         return data.choices[0].message.content.trim() || null;
     } catch (error) {
@@ -1218,7 +1461,8 @@ async function generateAIComments(momentContent) {
             apiSettings.key,
             apiSettings.model,
             [{ role: 'user', content: systemPrompt }],
-            { response_format: { type: "json_object" }, temperature: 0.9 }
+            { response_format: { type: "json_object" }, temperature: 0.9 },
+            (apiSettings.timeout || 60) * 1000
         );
         
         const jsonText = data.choices[0].message.content;
@@ -1727,8 +1971,7 @@ function showEditContactModal() {
 function showApiSettingsModal() {
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
-    // 【新增】加载 ElevenLabs API Key
-    // 后续操作：你需要在 index.html 的 apiSettingsModal 中添加 id="elevenLabsApiKey" 的输入框
+    document.getElementById('apiTimeout').value = apiSettings.timeout || 60;
     document.getElementById('elevenLabsApiKey').value = apiSettings.elevenLabsApiKey;
 
     const primarySelect = document.getElementById('primaryModelSelect');
@@ -2244,6 +2487,25 @@ async function sendMessage() {
         }
     } catch (error) {
         console.error('发送消息错误:', error);
+        console.error('错误详情:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            currentContact: currentContact ? {
+                id: currentContact.id,
+                name: currentContact.name,
+                type: currentContact.type,
+                messagesCount: currentContact.messages ? currentContact.messages.length : 0
+            } : null,
+            apiSettings: {
+                url: apiSettings.url ? 'configured' : 'not configured',
+                key: apiSettings.key ? 'configured' : 'not configured',
+                model: apiSettings.model ? 'configured' : 'not configured'
+            },
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+            url: window.location.href
+        });
         showToast('发送失败：' + error.message);
         hideTypingIndicator();
     } finally {
@@ -2299,7 +2561,24 @@ async function sendGroupMessage() {
                 await saveDataToDB();
             }
         } catch (error) {
-            console.error(`Error getting response from ${member.name}:`, error);
+            console.error(`群聊消息发送错误 - ${member.name}:`, error);
+            console.error('群聊错误详情:', {
+                memberInfo: {
+                    id: member.id,
+                    name: member.name,
+                    type: member.type
+                },
+                groupInfo: {
+                    id: currentContact.id,
+                    name: currentContact.name,
+                    membersCount: currentContact.members ? currentContact.members.length : 0
+                },
+                turnContextLength: turnContext.length,
+                errorName: error.name,
+                errorMessage: error.message,
+                errorStack: error.stack,
+                timestamp: new Date().toISOString()
+            });
             hideTypingIndicator();
         }
     }
@@ -2358,21 +2637,36 @@ async function callAPI(contact, turnContext = []) {
         messages.push(...messageHistory);
 
         // 3. 调用API
+        console.log('准备调用API:', {
+            url: apiSettings.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
+            model: apiSettings.model,
+            messagesCount: messages.length,
+            timestamp: new Date().toISOString()
+        });
+        
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
             apiSettings.model,
-            messages
+            messages,
+            {},
+            (apiSettings.timeout || 60) * 1000
         );
+        
+        console.log('API调用完成:', {
+            hasData: !!data,
+            dataKeys: data ? Object.keys(data) : null,
+            response: data ? JSON.stringify(data) : null,
+            timestamp: new Date().toISOString()
+        });
 
-        // 4. 处理响应 - 只增加最小的错误检查
+        // 4. 处理响应
         if (!data) {
-            console.error('API返回数据为空:', data);
             throw new Error('API返回数据为空');
         }
 
         let fullResponseText;
-        if (data.choices && data.choices[0] && data.choices[0].message) {
+        if (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) {
             // 标准OpenAI格式
             fullResponseText = data.choices[0].message.content;
         } else if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0]) {
@@ -2386,11 +2680,9 @@ async function callAPI(contact, turnContext = []) {
             fullResponseText = data.message;
         } else {
             // 检查是否是因为没有生成内容
-            if (data.usage && data.usage.completion_tokens === 0) {
-                console.warn('API没有生成任何内容，可能被过滤或模型限制');
+            if (data.choices && data.choices[0] && data.choices[0].finish_reason === 'content_filter') {
                 throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
             }
-            console.error('无法从API响应中提取内容:', data);
             throw new Error('API响应格式不支持，无法提取回复内容');
         }
 
@@ -2398,6 +2690,12 @@ async function callAPI(contact, turnContext = []) {
         if (!fullResponseText || fullResponseText.trim() === '') {
             throw new Error('AI回复内容为空，请稍后重试');
         }
+        
+        console.log('提取的原始回复内容:', {
+            fullResponseLength: fullResponseText.length,
+            fullResponse: fullResponseText,
+            timestamp: new Date().toISOString()
+        });
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
@@ -2454,10 +2752,40 @@ async function callAPI(contact, turnContext = []) {
             }
         }
         
+        console.log('处理完成的回复内容:', {
+            originalRepliesCount: replies.length,
+            processedRepliesCount: processedReplies.length,
+            processedReplies: processedReplies.map((reply, index) => ({
+                index,
+                type: reply.type,
+                content: reply.content
+            })),
+            hasMemoryTable: !!newMemoryTable,
+            memoryTablePreview: newMemoryTable ? JSON.stringify(newMemoryTable).substring(0, 200) + '...' : null,
+            timestamp: new Date().toISOString()
+        });
+        
         return { replies: processedReplies, newMemoryTable };
 
     } catch (error) {
-        console.error("API Call Error:", error);
+        console.error('callAPI错误详情:', {
+            errorName: error.name,
+            errorMessage: error.message,
+            errorStack: error.stack,
+            contact: contact ? {
+                id: contact.id,
+                name: contact.name,
+                type: contact.type
+            } : null,
+            turnContextLength: turnContext ? turnContext.length : 0,
+            apiSettings: {
+                url: apiSettings?.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
+                hasKey: !!apiSettings?.key,
+                model: apiSettings?.model || 'not set'
+            },
+            timestamp: new Date().toISOString(),
+            networkStatus: navigator.onLine ? 'online' : 'offline'
+        });
         showToast("API 调用失败: " + error.message);
         throw error;
     }
@@ -2539,8 +2867,7 @@ async function saveApiSettings(event) {
     apiSettings.model = document.getElementById('primaryModelSelect').value;
     apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
-    // 【新增】保存 ElevenLabs API Key
-    // 后续操作：你需要在 index.html 的 apiSettingsModal 中添加 id="elevenLabsApiKey" 的输入框
+    apiSettings.timeout = parseInt(document.getElementById('apiTimeout').value) || 60;
     apiSettings.elevenLabsApiKey = document.getElementById('elevenLabsApiKey').value.trim();
     
     await saveDataToDB();
@@ -3057,6 +3384,35 @@ document.addEventListener('click', (e) => {
 
 // 监听DOMContentLoaded事件，这是执行所有JS代码的入口
 document.addEventListener('DOMContentLoaded', init);
+
+// 全局错误处理器
+window.addEventListener('error', (event) => {
+    console.error('全局JavaScript错误:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error ? {
+            name: event.error.name,
+            message: event.error.message,
+            stack: event.error.stack
+        } : null,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+});
+
+// 处理Promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('未处理的Promise拒绝:', {
+        reason: event.reason,
+        promise: event.promise,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+});
 
 // --- 新增：帖子选择和手动发帖功能 ---
 

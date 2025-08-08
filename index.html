@@ -126,6 +126,10 @@
                     <div class="profile-item-label">数据管理</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
+                <div class="profile-item" onclick="showDebugLogPage()">
+                    <div class="profile-item-label">查看调试日志</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
             </div>
         </div>
 
@@ -192,12 +196,45 @@
             </div>
         </div>
 
+        <div class="debug-log-page" id="debugLogPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">调试日志</div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="clearDebugLogs()">清空</button>
+                    <button class="header-btn" onclick="copyDebugLogs()">复制</button>
+                </div>
+            </div>
+            
+            <div class="debug-log-container">
+                <div class="debug-log-info">
+                    <div class="debug-log-stats">
+                        总计 <span id="logCount">0</span> 条日志
+                    </div>
+                    <div class="debug-log-hint">
+                        显示浏览器控制台的实时日志，包括错误、警告和调试信息
+                    </div>
+                </div>
+                
+                <div class="debug-log-content" id="debugLogContent">
+                    <div class="debug-log-empty">
+                        暂无日志记录
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-menu" id="settingsMenu">
             <div class="menu-item" onclick="showEditContactModal()">编辑联系人</div>
             <div class="menu-item" onclick="showBackgroundModal()">设置背景</div>
             <div class="menu-item" onclick="clearMessages()">清空聊天</div>
             <!-- 新增删除聊天对象选项 -->
             <div class="menu-item delete-item" onclick="deleteCurrentContact()">删除聊天对象</div>
+            <!-- 调试功能 -->
+            <div class="menu-item" onclick="exportConsoleLogs()">导出调试日志</div>
         </div>
     </div>
 
@@ -413,7 +450,14 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">API Key</label>
-                        <input type="password" class="form-input" id="apiKey" required>
+                        <div class="api-key-row">
+                            <input type="password" class="form-input api-key-input" id="apiKey" required>
+                            <div class="timeout-group">
+                                <label class="timeout-label">超时</label>
+                                <input type="number" class="timeout-input" id="apiTimeout" min="5" max="300" value="60" placeholder="60">
+                                <span class="timeout-unit">秒</span>
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- 【【【【【新增内容在这里】】】】】 -->

@@ -1027,6 +1027,47 @@ body {
     resize: vertical;
 }
 
+.api-key-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.api-key-input {
+    flex: 1;
+}
+
+.timeout-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.timeout-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.timeout-input {
+    width: 50px;
+    padding: 8px 4px;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    text-align: center;
+}
+
+.timeout-input:focus {
+    border-color: #07c160;
+}
+
+.timeout-unit {
+    font-size: 12px;
+    color: #666;
+}
+
 .form-submit {
     width: 100%;
     padding: 12px;
@@ -2293,7 +2334,6 @@ body {
     background-color: #c82333;
 }
 
-/* 【【【【【新增内容在这里】】】】】 */
 /* 语音播放器样式 */
 .voice-player {
     display: flex;
@@ -2382,4 +2422,174 @@ body {
 }
 .message.sent .message-content.has-voice-player {
      border-top: 1px solid rgba(0,0,0,0.1);
+}
+
+/* === 调试日志页面样式 === */
+.debug-log-page {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    background-color: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.debug-log-page.active {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 10;
+}
+
+.debug-log-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    padding-bottom: 70px; /* 给底部导航留出空间 */
+}
+
+.debug-log-info {
+    margin-bottom: 15px;
+}
+
+.debug-log-stats {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.debug-log-hint {
+    font-size: 12px;
+    color: #999;
+    line-height: 1.4;
+}
+
+.debug-log-content {
+    flex: 1;
+    background: white;
+    border-radius: 8px;
+    padding: 10px;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.debug-log-empty {
+    text-align: center;
+    color: #999;
+    padding: 40px 20px;
+    font-size: 14px;
+}
+
+.debug-log-item {
+    margin-bottom: 8px;
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 3px solid #ddd;
+    font-size: 13px;
+    word-break: break-all;
+}
+
+.debug-log-item.debug-log-error {
+    background: #fff5f5;
+    border-left-color: #e53e3e;
+}
+
+.debug-log-item.debug-log-warn {
+    background: #fffbf0;
+    border-left-color: #dd6b20;
+}
+
+.debug-log-item.debug-log-info {
+    background: #f0f8ff;
+    border-left-color: #3182ce;
+}
+
+.debug-log-item.debug-log-log {
+    background: #f7fafc;
+    border-left-color: #718096;
+}
+
+.debug-log-item.debug-log-debug {
+    background: #f0fff4;
+    border-left-color: #38a169;
+}
+
+.debug-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.debug-log-time {
+    color: #666;
+    font-size: 11px;
+}
+
+.debug-log-level {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.debug-log-error .debug-log-level {
+    background: #e53e3e;
+    color: white;
+}
+
+.debug-log-warn .debug-log-level {
+    background: #dd6b20;
+    color: white;
+}
+
+.debug-log-info .debug-log-level {
+    background: #3182ce;
+    color: white;
+}
+
+.debug-log-log .debug-log-level {
+    background: #718096;
+    color: white;
+}
+
+.debug-log-debug .debug-log-level {
+    background: #38a169;
+    color: white;
+}
+
+.debug-log-message {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    color: #333;
+}
+
+.header-btn {
+    background: #07c160;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: 8px;
+}
+
+.header-btn:hover {
+    background: #06ad56;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
 }
