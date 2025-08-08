@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 6;
+        this.dbVersion = 7;
         this.db = null;
         
         // 定义所有对象存储的结构
@@ -146,7 +146,8 @@ class IndexedDBManager {
             const { 
                 overwrite = false, 
                 validateVersion = true,
-                stores = null 
+                stores = null,
+                enableMigration = true
             } = options;
 
             if (!this.db) {
@@ -158,15 +159,19 @@ class IndexedDBManager {
                 throw new Error('导入数据格式无效');
             }
 
-            // 版本验证
-            if (validateVersion && importData._metadata) {
-                if (importData._metadata.version !== this.dbVersion) {
+            // 版本检查和迁移处理
+            let migratedData = importData;
+            if (importData._metadata && importData._metadata.version !== this.dbVersion) {
+                if (enableMigration && importData._metadata.version < this.dbVersion) {
+                    console.log(`检测到版本 ${importData._metadata.version}，开始迁移到版本 ${this.dbVersion}`);
+                    migratedData = await this.migrateData(importData);
+                } else if (validateVersion) {
                     throw new Error(`数据库版本不匹配。当前版本: ${this.dbVersion}, 导入版本: ${importData._metadata.version}`);
                 }
             }
 
             // 确定要导入的存储
-            const storesToImport = stores || Object.keys(importData).filter(key => key !== '_metadata');
+            const storesToImport = stores || Object.keys(migratedData).filter(key => key !== '_metadata');
             
             // 清空现有数据（如果选择覆盖）
             if (overwrite) {
@@ -180,18 +185,110 @@ class IndexedDBManager {
             // 导入数据
             const importResults = {};
             for (const storeName of storesToImport) {
-                if (this.db.objectStoreNames.contains(storeName) && importData[storeName]) {
-                    const result = await this.importStore(storeName, importData[storeName], overwrite);
+                if (this.db.objectStoreNames.contains(storeName) && migratedData[storeName]) {
+                    const result = await this.importStore(storeName, migratedData[storeName], overwrite);
                     importResults[storeName] = result;
                 }
             }
 
-            return { success: true, importedStores: storesToImport, results: importResults };
+            return { success: true, importedStores: storesToImport, results: importResults, migrated: migratedData !== importData };
             
         } catch (error) {
             console.error('数据库导入失败:', error);
             throw new Error(`导入失败: ${error.message}`);
         }
+    }
+
+    /**
+     * 数据迁移函数
+     * @param {Object} importData - 原始导入数据
+     * @returns {Object} 迁移后的数据
+     */
+    async migrateData(importData) {
+        const { _metadata } = importData;
+        const fromVersion = _metadata.version;
+        const toVersion = this.dbVersion;
+        
+        console.log(`开始数据迁移：从版本 ${fromVersion} 到版本 ${toVersion}`);
+        
+        // 创建迁移后的数据副本
+        const migratedData = JSON.parse(JSON.stringify(importData));
+        
+        // 更新元数据版本
+        migratedData._metadata.version = toVersion;
+        migratedData._metadata.migrationTime = new Date().toISOString();
+        migratedData._metadata.originalVersion = fromVersion;
+        
+        // 根据版本差异进行迁移
+        if (fromVersion <= 4 && toVersion >= 5) {
+            // 版本4到5的迁移：添加缺失的存储
+            this.migrateFrom4To5(migratedData);
+        }
+        
+        if (fromVersion <= 5 && toVersion >= 6) {
+            // 版本5到6的迁移（如果有需要的话）
+            this.migrateFrom5To6(migratedData);
+        }
+        
+        if (fromVersion <= 6 && toVersion >= 7) {
+            // 版本6到7的迁移（如果有需要的话）
+            this.migrateFrom6To7(migratedData);
+        }
+        
+        console.log('数据迁移完成');
+        return migratedData;
+    }
+    
+    /**
+     * 从版本4迁移到版本5
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom4To5(data) {
+        console.log('执行版本4到5的迁移');
+        
+        // 添加缺失的存储，使用空数组作为默认值
+        if (!data.characterMemories) {
+            data.characterMemories = [];
+            console.log('添加 characterMemories 存储');
+        }
+        
+        if (!data.conversationCounters) {
+            data.conversationCounters = [];
+            console.log('添加 conversationCounters 存储');
+        }
+        
+        if (!data.globalMemory) {
+            data.globalMemory = [];
+            console.log('添加 globalMemory 存储');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            const newStores = ['characterMemories', 'conversationCounters', 'globalMemory'];
+            for (const store of newStores) {
+                if (!data._metadata.stores.includes(store)) {
+                    data._metadata.stores.push(store);
+                }
+            }
+        }
+    }
+    
+    /**
+     * 从版本5迁移到版本6
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom5To6(data) {
+        console.log('执行版本5到6的迁移');
+        // 如果有需要的字段更新，在这里添加
+    }
+    
+    /**
+     * 从版本6迁移到版本7
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom6To7(data) {
+        console.log('执行版本6到7的迁移');
+        // 如果有需要的字段更新，在这里添加
     }
 
     /**
@@ -419,11 +516,13 @@ class IndexedDBManager {
         
         // 版本检查
         if (importData._metadata) {
-            if (importData._metadata.version !== this.dbVersion) {
-                warnings.push(`版本不匹配：当前 ${this.dbVersion}，导入 ${importData._metadata.version}`);
+            if (importData._metadata.version > this.dbVersion) {
+                errors.push(`不支持从较新版本降级：导入版本 ${importData._metadata.version} 高于当前版本 ${this.dbVersion}`);
+            } else if (importData._metadata.version < this.dbVersion) {
+                warnings.push(`检测到旧版本数据：导入版本 ${importData._metadata.version}，将自动迁移到当前版本 ${this.dbVersion}`);
             }
         } else {
-            warnings.push('缺少元数据信息');
+            warnings.push('缺少元数据信息，可能是早期版本的备份文件');
         }
         
         // 存储结构检查
@@ -658,17 +757,21 @@ async function performImport(file, overwrite) {
             }
             
             // 显示成功消息
-            const successMessage = `导入成功！\n导入了 ${result.result?.importedStores?.length || '多个'} 个数据表\n页面将自动刷新以更新显示`;
+            let successMessage = result.message || `导入成功！\n导入了 ${result.result?.importedStores?.length || '多个'} 个数据表\n页面将自动刷新以更新显示`;
             
             if (typeof showToast === 'function') {
-                showToast('导入成功！正在刷新页面以应用新数据...');
+                const toastMessage = result.result?.migrated ? '导入并迁移成功！正在刷新页面...' : '导入成功！正在刷新页面以应用新数据...';
+                showToast(toastMessage);
             }
             
             // 显示警告信息（如果有）
             if (result.validation && result.validation.warnings.length > 0) {
-                alert('导入成功，但有以下警告，请及时截图:\n' + result.validation.warnings.join('\n') + '\n\n页面即将刷新');
+                const warningMessage = result.result?.migrated 
+                    ? `数据迁移成功，但有以下提示信息，请及时截图:\n${result.validation.warnings.join('\n')}\n\n${successMessage}\n\n页面即将刷新`
+                    : `导入成功，但有以下警告，请及时截图:\n${result.validation.warnings.join('\n')}\n\n页面即将刷新`;
+                alert(warningMessage);
             } else {
-                alert(successMessage);
+                alert(successMessage + '\n\n页面即将刷新');
             }
             
             // 自动刷新页面
@@ -768,15 +871,20 @@ window.DatabaseManager = {
                 };
             }
             
-            // 导入数据
+            // 导入数据（启用迁移功能）
             const result = await dbManager.importDatabase(importData, { 
                 overwrite,
-                validateVersion: true 
+                validateVersion: false,  // 关闭严格版本验证，启用迁移
+                enableMigration: true   // 启用数据迁移
             });
             
+            const successMessage = result.migrated 
+                ? `导入并迁移成功！已将数据从版本 ${importData._metadata?.version || '未知'} 迁移到版本 ${this.dbVersion}，导入了 ${result.importedStores?.length || 0} 个数据表`
+                : `导入成功！导入了 ${result.importedStores?.length || 0} 个数据表`;
+                
             return { 
                 success: true, 
-                message: `导入成功！导入了 ${result.importedStores?.length || 0} 个数据表`,
+                message: successMessage,
                 result,
                 validation 
             };
