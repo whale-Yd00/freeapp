@@ -557,10 +557,11 @@ class CharacterMemoryManager {
                 return false;
             }
             
-            const result = content.trim().toLowerCase();
+            const result = content.trim();
             console.log('记忆更新判断结果:', result);
             
-            return result.includes('满足') || result.includes('需要') || result.includes('yes');
+            // 如果模型有回复且不含"不"或"否"，则认为满足条件
+            return result.length > 0 && !result.includes('不') && !result.includes('否');
         } catch (error) {
             console.error('调用次要模型判断记忆更新失败:', error);
             return false; // 出错时保守处理，不更新
@@ -600,10 +601,11 @@ class CharacterMemoryManager {
                 return false;
             }
             
-            const result = content.trim().toLowerCase();
+            const result = content.trim();
             console.log('全局记忆更新判断结果:', result);
             
-            return result.includes('满足') || result.includes('需要') || result.includes('yes');
+            // 如果模型有回复且不含"不"或"否"，则认为满足条件
+            return result.length > 0 && !result.includes('不') && !result.includes('否');
         } catch (error) {
             console.error('调用次要模型判断全局记忆更新失败:', error);
             return false;
