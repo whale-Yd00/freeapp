@@ -3788,7 +3788,7 @@ class MemoryManager {
     }
 
     // 添加全局记忆
-    addGlobalMemory(content) {
+    async addGlobalMemory(content) {
         const memory = {
             id: Date.now().toString(),
             content: content.trim(),
@@ -3797,11 +3797,16 @@ class MemoryManager {
         };
         this.globalMemories.push(memory);
         this.save();
+        
+        // 同步到现有的全局记忆系统
+        const allGlobalContent = this.globalMemories.map(m => m.content).join('\n\n');
+        await saveExistingGlobalMemory(allGlobalContent);
+        
         return memory;
     }
 
     // 添加角色记忆
-    addCharacterMemory(characterId, content) {
+    async addCharacterMemory(characterId, content) {
         if (!this.characterMemories[characterId]) {
             this.characterMemories[characterId] = [];
         }
@@ -3813,11 +3818,16 @@ class MemoryManager {
         };
         this.characterMemories[characterId].push(memory);
         this.save();
+        
+        // 同步到现有的角色记忆系统
+        const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n\n');
+        await saveExistingCharacterMemory(characterId, allCharacterContent);
+        
         return memory;
     }
 
     // 更新记忆
-    updateMemory(memoryId, content, isCharacter = false, characterId = null) {
+    async updateMemory(memoryId, content, isCharacter = false, characterId = null) {
         if (isCharacter && characterId) {
             const memories = this.characterMemories[characterId] || [];
             const memory = memories.find(m => m.id === memoryId);
@@ -3825,6 +3835,11 @@ class MemoryManager {
                 memory.content = content.trim();
                 memory.updatedAt = new Date().toISOString();
                 this.save();
+                
+                // 同步到现有的角色记忆系统
+                const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n\n');
+                await saveExistingCharacterMemory(characterId, allCharacterContent);
+                
                 return memory;
             }
         } else {
@@ -3833,6 +3848,11 @@ class MemoryManager {
                 memory.content = content.trim();
                 memory.updatedAt = new Date().toISOString();
                 this.save();
+                
+                // 同步到现有的全局记忆系统
+                const allGlobalContent = this.globalMemories.map(m => m.content).join('\n\n');
+                await saveExistingGlobalMemory(allGlobalContent);
+                
                 return memory;
             }
         }
@@ -3840,13 +3860,19 @@ class MemoryManager {
     }
 
     // 删除记忆
-    deleteMemory(memoryId, isCharacter = false, characterId = null) {
+    async deleteMemory(memoryId, isCharacter = false, characterId = null) {
         if (isCharacter && characterId) {
             const memories = this.characterMemories[characterId] || [];
             const index = memories.findIndex(m => m.id === memoryId);
             if (index !== -1) {
                 memories.splice(index, 1);
                 this.save();
+                
+                // 同步到现有的角色记忆系统
+                const allCharacterContent = memories.length > 0 ? 
+                    memories.map(m => m.content).join('\n\n') : '';
+                await saveExistingCharacterMemory(characterId, allCharacterContent);
+                
                 return true;
             }
         } else {
@@ -3854,6 +3880,12 @@ class MemoryManager {
             if (index !== -1) {
                 this.globalMemories.splice(index, 1);
                 this.save();
+                
+                // 同步到现有的全局记忆系统
+                const allGlobalContent = this.globalMemories.length > 0 ? 
+                    this.globalMemories.map(m => m.content).join('\n\n') : '';
+                await saveExistingGlobalMemory(allGlobalContent);
+                
                 return true;
             }
         }
@@ -3903,14 +3935,20 @@ function showAddMemoryModal() {
     
     // 填充角色选择器
     memoryCharacterSelect.innerHTML = '<option value="">选择角色...</option>';
-    contacts.forEach(contact => {
-        if (contact.type === 'AI') {
-            const option = document.createElement('option');
-            option.value = contact.id;
-            option.textContent = contact.name;
-            memoryCharacterSelect.appendChild(option);
-        }
-    });
+    
+    // 确保contacts数组存在
+    if (window.contacts && Array.isArray(window.contacts)) {
+        window.contacts.forEach(contact => {
+            if (contact.type === 'AI') {
+                const option = document.createElement('option');
+                option.value = contact.id;
+                option.textContent = contact.name;
+                memoryCharacterSelect.appendChild(option);
+            }
+        });
+    } else {
+        console.warn('contacts数组不可用，无法填充角色选择器');
+    }
     
     // 显示/隐藏角色选择
     handleMemoryTypeChange();
@@ -3931,7 +3969,7 @@ function handleMemoryTypeChange() {
 }
 
 // 处理添加记忆
-function handleAddMemory(event) {
+async function handleAddMemory(event) {
     event.preventDefault();
     
     const memoryType = document.getElementById('memoryType').value;
@@ -3950,13 +3988,13 @@ function handleAddMemory(event) {
     
     try {
         if (memoryType === 'global') {
-            memoryManager.addGlobalMemory(memoryContent);
+            await memoryManager.addGlobalMemory(memoryContent);
             showToast('全局记忆添加成功');
             if (memoryManager.currentMemoryType === 'global') {
                 loadGlobalMemories();
             }
         } else {
-            memoryManager.addCharacterMemory(memoryCharacterSelect, memoryContent);
+            await memoryManager.addCharacterMemory(memoryCharacterSelect, memoryContent);
             showToast('角色记忆添加成功');
             if (memoryManager.currentMemoryType === 'character' && memoryManager.currentCharacter === memoryCharacterSelect) {
                 loadCharacterMemories();
@@ -4011,16 +4049,31 @@ function loadGlobalMemories() {
 // 加载角色选择器
 function loadCharacterSelector() {
     const characterSelector = document.getElementById('characterSelector');
+    if (!characterSelector) {
+        console.error('角色选择器元素未找到');
+        return;
+    }
+    
     characterSelector.innerHTML = '<option value="">选择角色...</option>';
     
-    contacts.forEach(contact => {
+    // 确保contacts数组存在
+    if (!window.contacts || !Array.isArray(window.contacts)) {
+        console.warn('contacts数组不可用，无法加载角色');
+        return;
+    }
+    
+    let aiContactCount = 0;
+    window.contacts.forEach(contact => {
         if (contact.type === 'AI') {
             const option = document.createElement('option');
             option.value = contact.id;
             option.textContent = contact.name;
             characterSelector.appendChild(option);
+            aiContactCount++;
         }
     });
+    
+    console.log(`已加载 ${aiContactCount} 个AI角色到选择器`);
 }
 
 // 加载角色记忆
@@ -4109,7 +4162,7 @@ function editMemory(memoryId, isCharacter, characterId) {
 }
 
 // 处理编辑记忆
-function handleEditMemory(event) {
+async function handleEditMemory(event) {
     event.preventDefault();
     
     const newContent = document.getElementById('editMemoryContent').value.trim();
@@ -4127,7 +4180,7 @@ function handleEditMemory(event) {
     }
     
     try {
-        const updated = memoryManager.updateMemory(memoryId, newContent, context.isCharacter, context.characterId);
+        const updated = await memoryManager.updateMemory(memoryId, newContent, context.isCharacter, context.characterId);
         if (updated) {
             showToast('记忆更新成功');
             closeModal('editMemoryModal');
@@ -4148,14 +4201,14 @@ function handleEditMemory(event) {
 }
 
 // 删除记忆
-function deleteMemory(memoryId, isCharacter, characterId) {
+async function deleteMemory(memoryId, isCharacter, characterId) {
     const confirmMessage = '确定要删除这条记忆吗？';
     if (!confirm(confirmMessage)) {
         return;
     }
     
     try {
-        const deleted = memoryManager.deleteMemory(memoryId, isCharacter, characterId);
+        const deleted = await memoryManager.deleteMemory(memoryId, isCharacter, characterId);
         if (deleted) {
             showToast('记忆删除成功');
             
@@ -4175,10 +4228,73 @@ function deleteMemory(memoryId, isCharacter, characterId) {
 }
 
 // 初始化记忆管理页面
-function initMemoryManagementPage() {
-    // 默认加载全局记忆
-    loadGlobalMemories();
-    loadCharacterSelector();
+async function initMemoryManagementPage() {
+    console.log('初始化记忆管理页面');
+    try {
+        // 从现有系统加载数据
+        await loadExistingMemories();
+        
+        // 默认加载全局记忆
+        loadGlobalMemories();
+        loadCharacterSelector();
+    } catch (error) {
+        console.error('初始化记忆管理页面失败:', error);
+        // 即使加载失败也显示界面
+        loadGlobalMemories();
+        loadCharacterSelector();
+    }
+}
+
+// 从现有记忆系统加载数据
+async function loadExistingMemories() {
+    console.log('从现有记忆系统加载数据');
+    
+    try {
+        // 加载全局记忆
+        const existingGlobalMemory = await getExistingGlobalMemory();
+        if (existingGlobalMemory && existingGlobalMemory.trim()) {
+            // 如果存在全局记忆但本地没有，创建一个条目
+            if (memoryManager.globalMemories.length === 0) {
+                const globalMemoryItem = {
+                    id: 'existing-global',
+                    content: existingGlobalMemory,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                memoryManager.globalMemories = [globalMemoryItem];
+                memoryManager.save();
+            }
+        }
+        
+        // 加载角色记忆
+        if (window.contacts && Array.isArray(window.contacts)) {
+            for (const contact of window.contacts) {
+                if (contact.type === 'AI') {
+                    const existingCharacterMemory = await getExistingCharacterMemory(contact.id);
+                    if (existingCharacterMemory && existingCharacterMemory.trim()) {
+                        // 如果存在角色记忆但本地没有，创建一个条目
+                        if (!memoryManager.characterMemories[contact.id] || memoryManager.characterMemories[contact.id].length === 0) {
+                            const characterMemoryItem = {
+                                id: `existing-${contact.id}`,
+                                content: existingCharacterMemory,
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString()
+                            };
+                            if (!memoryManager.characterMemories[contact.id]) {
+                                memoryManager.characterMemories[contact.id] = [];
+                            }
+                            memoryManager.characterMemories[contact.id] = [characterMemoryItem];
+                            memoryManager.save();
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log('现有记忆数据加载完成');
+    } catch (error) {
+        console.error('加载现有记忆数据失败:', error);
+    }
 }
 
 // 页面显示时初始化记忆管理
@@ -4192,3 +4308,32 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 });
+
+// 集成现有的记忆系统 - 添加接口函数
+async function getExistingGlobalMemory() {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.getGlobalMemory();
+    }
+    return '';
+}
+
+async function getExistingCharacterMemory(characterId) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.getCharacterMemory(characterId);
+    }
+    return null;
+}
+
+async function saveExistingGlobalMemory(content) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.saveGlobalMemory(content);
+    }
+    return false;
+}
+
+async function saveExistingCharacterMemory(characterId, content) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.saveCharacterMemory(characterId, content);
+    }
+    return false;
+}
