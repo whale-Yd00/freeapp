@@ -37,10 +37,20 @@ class MemoryTableManager {
     constructor() {
         this.isInitialized = false;
         this.currentContact = null;
+        this.MESSAGE_THRESHOLD = 10; // 每10条消息触发一次更新
+        this.contactMemoryTracking = new Map(); // 跟踪每个联系人的消息处理状态
     }
 
     setCurrentContact(contact) {
         this.currentContact = contact;
+        
+        // 初始化联系人的记忆跟踪状态
+        if (contact && !this.contactMemoryTracking.has(contact.id)) {
+            this.contactMemoryTracking.set(contact.id, {
+                lastProcessedMessageIndex: -1, // 已处理的最后一条消息索引
+                messageCount: 0 // 自上次更新以来的消息计数
+            });
+        }
     }
 
     getCurrentContact() {
@@ -332,6 +342,167 @@ class MemoryTableManager {
             totalMatches: matches.length
         };
     }
+
+    // 检查并触发记忆表格更新
+    async checkAndTriggerMemoryUpdate(contact) {
+        if (!contact || !contact.messages) {
+            return false;
+        }
+
+        const contactId = contact.id;
+        const currentMessageCount = contact.messages.length;
+        
+        // 获取或初始化跟踪状态
+        if (!this.contactMemoryTracking.has(contactId)) {
+            this.contactMemoryTracking.set(contactId, {
+                lastProcessedMessageIndex: -1,
+                messageCount: 0
+            });
+        }
+
+        const tracking = this.contactMemoryTracking.get(contactId);
+        const newMessages = currentMessageCount - (tracking.lastProcessedMessageIndex + 1);
+        
+        // 累计新消息数
+        tracking.messageCount += newMessages;
+        tracking.lastProcessedMessageIndex = currentMessageCount - 1;
+
+        console.log(`联系人 ${contact.name}: 新消息 ${newMessages} 条，累计 ${tracking.messageCount} 条`);
+
+        // 检查是否达到更新阈值
+        if (tracking.messageCount >= this.MESSAGE_THRESHOLD) {
+            console.log(`达到更新阈值，触发记忆表格更新 - 联系人: ${contact.name}`);
+            
+            // 重置计数
+            tracking.messageCount = 0;
+            
+            // 触发记忆表格更新
+            try {
+                await this.triggerMemoryUpdate(contact);
+                return true;
+            } catch (error) {
+                console.error('记忆表格更新失败:', error);
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    // 触发记忆表格更新
+    async triggerMemoryUpdate(contact) {
+        if (!contact || !window.promptBuilder) {
+            console.warn('无法触发记忆表格更新：缺少必要的对象');
+            return false;
+        }
+
+        try {
+            // 获取最近的消息用于更新记忆表格
+            const recentMessages = contact.messages.slice(-20); // 取最近20条消息
+            const userProfile = window.userProfile || { name: '用户', personality: '' };
+            const apiSettings = window.apiSettings || { contextMessageCount: 10 };
+
+            // 构建记忆表格更新提示词
+            const memoryUpdatePrompt = window.promptBuilder.buildMemoryUpdatePrompt(
+                contact, 
+                userProfile, 
+                contact, 
+                apiSettings, 
+                recentMessages
+            );
+
+            console.log('发送记忆表格更新请求...');
+            
+            // 调用API更新记忆表格
+            const response = await this.callMemoryUpdateAPI(memoryUpdatePrompt);
+            
+            if (response && !response.includes('无需更新')) {
+                // 更新联系人的记忆表格内容
+                contact.memoryTableContent = response;
+                
+                // 保存到数据库
+                if (window.saveDataToDB) {
+                    await window.saveDataToDB();
+                }
+                
+                console.log(`记忆表格已更新 - 联系人: ${contact.name}`);
+                
+                // 如果记忆面板打开，刷新显示
+                const memoryPanel = document.getElementById('memoryPanel');
+                if (memoryPanel && memoryPanel.classList.contains('active')) {
+                    this.renderMemoryTable(response);
+                }
+                
+                return true;
+            } else {
+                console.log(`AI回复无需更新记忆表格 - 联系人: ${contact.name}`);
+                return false;
+            }
+        } catch (error) {
+            console.error('记忆表格更新过程中发生错误:', error);
+            return false;
+        }
+    }
+
+    // 调用记忆表格更新API
+    async callMemoryUpdateAPI(prompt) {
+        if (!window.chatAPI || !window.apiSettings) {
+            throw new Error('API配置未找到');
+        }
+
+        try {
+            // 构建API请求消息
+            const messages = [
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ];
+
+            // 调用聊天API
+            const response = await window.chatAPI.sendMessage(messages, {
+                ...window.apiSettings,
+                temperature: 0.3 // 使用较低的temperature确保更一致的输出
+            });
+
+            return response.trim();
+        } catch (error) {
+            console.error('记忆更新API调用失败:', error);
+            throw error;
+        }
+    }
+
+    // 手动触发记忆表格更新（供外部调用）
+    async manualTriggerMemoryUpdate(contact = null) {
+        const targetContact = contact || this.getCurrentContact();
+        if (!targetContact) {
+            if (window.showToast) {
+                window.showToast('请先选择一个聊天');
+            }
+            return false;
+        }
+
+        return await this.triggerMemoryUpdate(targetContact);
+    }
+
+    // 重置联系人的消息计数
+    resetMessageCount(contactId) {
+        if (this.contactMemoryTracking.has(contactId)) {
+            const tracking = this.contactMemoryTracking.get(contactId);
+            tracking.messageCount = 0;
+        }
+    }
+
+    // 获取联系人的消息统计
+    getContactMessageStats(contactId) {
+        if (this.contactMemoryTracking.has(contactId)) {
+            return { ...this.contactMemoryTracking.get(contactId) };
+        }
+        return {
+            lastProcessedMessageIndex: -1,
+            messageCount: 0
+        };
+    }
 }
 
 // 创建全局记忆表管理器实例
@@ -348,6 +519,23 @@ window.toggleMemoryEditMode = function() {
 
 window.renderMemoryTable = function(markdown) {
     return window.memoryTableManager.renderMemoryTable(markdown);
+};
+
+// 暴露记忆表格相关方法
+window.checkAndTriggerMemoryUpdate = function(contact) {
+    return window.memoryTableManager.checkAndTriggerMemoryUpdate(contact);
+};
+
+window.manualTriggerMemoryUpdate = function(contact = null) {
+    return window.memoryTableManager.manualTriggerMemoryUpdate(contact);
+};
+
+window.getContactMessageStats = function(contactId) {
+    return window.memoryTableManager.getContactMessageStats(contactId);
+};
+
+window.resetMessageCount = function(contactId) {
+    return window.memoryTableManager.resetMessageCount(contactId);
 };
 
 // 暴露默认模板
