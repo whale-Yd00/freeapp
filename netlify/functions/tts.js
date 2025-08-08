@@ -1,10 +1,4 @@
-// netlify/functions/tts.js
-
-// 这是一个Netlify云函数，用于代理对ElevenLabs API的请求
-// 它可以安全地在服务器端处理API Key，避免在前端暴露
-
-// 引入node-fetch库来发送HTTP请求
-// 在Netlify环境中，你需要通过npm或yarn安装这个依赖: npm install node-fetch
+// ElevenLabs TTS API 代理函数
 const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
@@ -25,20 +19,18 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // ElevenLabs API的URL
     const apiUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
 
-    // 配置请求参数
     const options = {
       method: 'POST',
       headers: {
         'Accept': 'audio/mpeg',
         'Content-Type': 'application/json',
-        'xi-api-key': apiKey, // 将用户的API Key放在请求头中
+        'xi-api-key': apiKey
       },
       body: JSON.stringify({
         text: text,
-        model_id: 'eleven_multilingual_v2', // 你可以根据需要选择不同的模型
+        model_id: 'eleven_multilingual_v2'
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -46,10 +38,8 @@ exports.handler = async (event, context) => {
       }),
     };
 
-    // 发送请求到ElevenLabs API
     const response = await fetch(apiUrl, options);
 
-    // 如果API返回错误，则将错误信息回传给前端
     if (!response.ok) {
       const errorBody = await response.json();
       console.error('ElevenLabs API Error:', errorBody);
@@ -59,11 +49,8 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // 获取音频数据
     const audioBuffer = await response.buffer();
 
-    // 将音频数据以Base64编码的形式返回给前端
-    // 这是Netlify Function返回二进制数据的标准方式
     return {
       statusCode: 200,
       headers: {
@@ -74,7 +61,6 @@ exports.handler = async (event, context) => {
     };
 
   } catch (error) {
-    // 捕获任何在执行过程中发生的错误
     console.error('Function Error:', error);
     return {
       statusCode: 500,

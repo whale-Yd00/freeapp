@@ -324,7 +324,7 @@ let isLoadingMoreMessages = false;
 let isMultiSelectMode = false;
 let selectedMessages = new Set();
 
-// 【新增】语音播放相关全局变量
+// 语音播放相关全局变量
 let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
 let currentPlayingElement = null; // 跟踪当前播放的语音元素
 
@@ -355,7 +355,7 @@ async function init() {
         }
     }, 1000);
 
-    // 【新增】为全局voiceAudio对象绑定事件
+    // 为全局voiceAudio对象绑定事件
     voiceAudio.onended = () => {
         if (currentPlayingElement) {
             currentPlayingElement.classList.remove('playing');
@@ -488,7 +488,7 @@ async function loadDataFromDB() {
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
-            // 【新增】为旧联系人数据添加 voiceId 默认值
+            // 为旧联系人数据添加 voiceId 默认值
             if (contact.voiceId === undefined) contact.voiceId = '';
             window.memoryTableManager.initContactMemoryTable(contact);
             if (contact.messages) {
@@ -502,7 +502,7 @@ async function loadDataFromDB() {
         const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
-        // 【新增】为旧API设置数据添加 elevenLabsApiKey 默认值
+        // 为旧API设置数据添加 elevenLabsApiKey 默认值
         if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
@@ -1940,7 +1940,7 @@ function closeModal(modalId) {
         document.getElementById('contactAvatar').value = '';
         document.getElementById('contactPersonality').value = '';
         document.getElementById('customPrompts').value = '';
-        // 【新增】重置语音ID输入框
+        // 重置语音ID输入框
         document.getElementById('contactVoiceId').value = '';
     }
 }
@@ -1948,7 +1948,7 @@ function closeModal(modalId) {
 function showAddContactModal() {
     editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
-    // 【新增】清空语音ID输入框
+    // 清空语音ID输入框
     document.getElementById('contactVoiceId').value = '';
     showModal('addContactModal');
 }
@@ -1961,8 +1961,7 @@ function showEditContactModal() {
     document.getElementById('contactAvatar').value = currentContact.avatar || '';
     document.getElementById('contactPersonality').value = currentContact.personality;
     document.getElementById('customPrompts').value = currentContact.customPrompts || '';
-    // 【新增】加载当前联系人的语音ID
-    // 后续操作：你需要在 index.html 的 addContactModal 中添加 id="contactVoiceId" 的输入框
+    // 加载当前联系人的语音ID
     document.getElementById('contactVoiceId').value = currentContact.voiceId || '';
     showModal('addContactModal');
     toggleSettingsMenu();
@@ -2050,8 +2049,7 @@ async function saveContact(event) {
         avatar: document.getElementById('contactAvatar').value,
         personality: document.getElementById('contactPersonality').value,
         customPrompts: document.getElementById('customPrompts').value,
-        // 【新增】保存语音ID
-        // 后续操作：你需要在 index.html 的 addContactModal 中添加 id="contactVoiceId" 的输入框
+        // 保存语音ID
         voiceId: document.getElementById('contactVoiceId').value.trim()
     };
     if (editingContact) {
@@ -2637,12 +2635,6 @@ async function callAPI(contact, turnContext = []) {
         messages.push(...messageHistory);
 
         // 3. 调用API
-        console.log('准备调用API:', {
-            url: apiSettings.url ? apiSettings.url.substring(0, 50) + '...' : 'not set',
-            model: apiSettings.model,
-            messagesCount: messages.length,
-            timestamp: new Date().toISOString()
-        });
         
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
@@ -2653,12 +2645,6 @@ async function callAPI(contact, turnContext = []) {
             (apiSettings.timeout || 60) * 1000
         );
         
-        console.log('API调用完成:', {
-            hasData: !!data,
-            dataKeys: data ? Object.keys(data) : null,
-            response: data ? JSON.stringify(data) : null,
-            timestamp: new Date().toISOString()
-        });
 
         // 4. 处理响应
         if (!data) {
@@ -2691,11 +2677,6 @@ async function callAPI(contact, turnContext = []) {
             throw new Error('AI回复内容为空，请稍后重试');
         }
         
-        console.log('提取的原始回复内容:', {
-            fullResponseLength: fullResponseText.length,
-            fullResponse: fullResponseText,
-            timestamp: new Date().toISOString()
-        });
         
         const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
         
@@ -2752,18 +2733,6 @@ async function callAPI(contact, turnContext = []) {
             }
         }
         
-        console.log('处理完成的回复内容:', {
-            originalRepliesCount: replies.length,
-            processedRepliesCount: processedReplies.length,
-            processedReplies: processedReplies.map((reply, index) => ({
-                index,
-                type: reply.type,
-                content: reply.content
-            })),
-            hasMemoryTable: !!newMemoryTable,
-            memoryTablePreview: newMemoryTable ? JSON.stringify(newMemoryTable).substring(0, 200) + '...' : null,
-            timestamp: new Date().toISOString()
-        });
         
         return { replies: processedReplies, newMemoryTable };
 
@@ -3759,7 +3728,7 @@ function deleteSelectedMessages() {
 }
 
 
-// 【【【【【新增：ElevenLabs 语音播放功能】】】】】
+// ElevenLabs 语音播放功能
 /**
  * 播放或停止语音消息
  * @param {HTMLElement} playerElement - 被点击的播放器元素
@@ -3802,8 +3771,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.add('loading');
         playButton.textContent = '...'; // 加载指示
 
-        // 调用 Netlify function 来获取语音
-        // 后续操作：你需要创建一个名为 'tts' 的 Netlify function
+        // 调用 TTS API
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -3845,7 +3813,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playButton.textContent = '❚❚'; // 暂停图标
 
     } catch (error) {
-        console.error('播放语音消息失败:', error);
+        console.error('语音播放失败:', error);
         showToast(`语音播放错误: ${error.message}`);
         playerElement.classList.remove('loading');
         playButton.textContent = '▶';

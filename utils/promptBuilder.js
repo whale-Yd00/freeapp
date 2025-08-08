@@ -102,7 +102,7 @@ class PromptBuilder {
         systemPrompt += `--- [你的特殊能力与使用规则] ---\n`;
         systemPrompt += this._buildRedPacketInstructions();
         systemPrompt += this._buildEmojiInstructions(emojis);
-        systemPrompt += this._buildVoiceInstructions(); // 新增的语音指令
+        systemPrompt += this._buildVoiceInstructions();
         
         // 添加输出格式规则
         systemPrompt += this._buildOutputFormatInstructions();
