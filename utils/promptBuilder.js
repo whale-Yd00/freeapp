@@ -102,7 +102,7 @@ class PromptBuilder {
         systemPrompt += `--- [你的特殊能力与使用规则] ---\n`;
         systemPrompt += this._buildRedPacketInstructions();
         systemPrompt += this._buildEmojiInstructions(emojis);
-        systemPrompt += this._buildVoiceInstructions();
+        systemPrompt += this._buildVoiceInstructions(contact, apiSettings);
         
         // 添加输出格式规则
         systemPrompt += this._buildOutputFormatInstructions();
@@ -530,7 +530,12 @@ ${userReply}
     }
 
     // 私有方法：构建语音指令
-    _buildVoiceInstructions() {
+    _buildVoiceInstructions(contact, apiSettings) {
+        // 如果没有语音ID或者没有ElevenLabs API Key，则不提供语音能力
+        if (!contact?.voiceId || !apiSettings?.elevenLabsApiKey) {
+            return '';
+        }
+        
         return `\n\n**能力三：发送语音**\n`
              + `你拥有一项特殊能力：发送语音消息。当你认为通过声音更能表达情绪、强调重点、唱歌、讲笑话或模仿特定语气时，你可以选择发送语音。\n\n`
              + `**使用格式：**\n`
