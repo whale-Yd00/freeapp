@@ -30,7 +30,9 @@ class APIService {
                     ...options
                 };
                 
-                const response = await fetch('/api/', {
+                // 【【【【【修改点 1】】】】】
+                // 将请求路径修改为 /api/proxy/ 以匹配 netlify.toml 中的规则
+                const response = await fetch('/api/proxy/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -70,7 +72,9 @@ class APIService {
             apiKey: apiKey,
         };
 
-        const response = await fetch('/api-test/', {
+        // 【【【【【修改点 2】】】】】
+        // 将请求路径修改为 /api/test-connection 以匹配 netlify.toml 中的规则
+        const response = await fetch('/api/test-connection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
