@@ -531,9 +531,9 @@ ${userReply}
 
     // 私有方法：构建语音指令
     _buildVoiceInstructions(contact, apiSettings) {
-        // 如果没有语音ID或者没有ElevenLabs API Key，则不提供语音能力
-        if (!contact?.voiceId || !apiSettings?.elevenLabsApiKey) {
-            return '';
+        // 如果没有语音ID或者没有正确配置Minimax的凭证，则不提供语音能力
+         if (!contact?.voiceId || !apiSettings?.minimaxGroupId || !apiSettings?.minimaxApiKey) {
+             return '';
         }
         
         return `\n\n**能力三：发送语音**\n`
