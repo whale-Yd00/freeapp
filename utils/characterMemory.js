@@ -131,6 +131,14 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 判断是否为特殊消息类型（不计入用户消息数量）
+     */
+    isSpecialMessageType(message) {
+        // 排除emoji和红包类型的消息
+        return message.type === 'emoji' || message.type === 'red_packet';
+    }
+
+    /**
      * 统计从最后处理位置开始的用户消息数量
      */
     getNewUserMessageCount(contact) {
@@ -155,11 +163,14 @@ class CharacterMemoryManager {
             const message = contact.messages[i];
             console.log(`[记忆调试] 检查消息 ${i}:`, {
                 role: message.role,
+                type: message.type,
                 content: message.content?.substring(0, 50),
-                isUser: message.role === 'user'
+                isUser: message.role === 'user',
+                isSpecial: this.isSpecialMessageType(message),
+                shouldCount: message.role === 'user' && !this.isSpecialMessageType(message)
             });
             
-            if (message.role === 'user') {
+            if (message.role === 'user' && !this.isSpecialMessageType(message)) {
                 userMessageCount++;
             }
         }
@@ -622,10 +633,10 @@ class CharacterMemoryManager {
      */
     async checkMemoryUpdateNeeded(contact, currentContact) {
         const currentMemory = await this.getCharacterMemory(contact.id);
-        const recentContext = this.buildRecentContext(currentContact);
+        const userTextContext = this.buildUserTextContext(currentContact);
         
         // 构建判断提示词
-        const prompt = this.buildMemoryCheckPrompt(currentMemory, recentContext, contact);
+        const prompt = this.buildMemoryCheckPrompt(currentMemory, userTextContext, contact);
         
         try {
             // 使用相同的API设置，但降低temperature
@@ -797,6 +808,34 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 构建用户文本输入上下文（仅用于记忆判断）
+     */
+    buildUserTextContext(contact) {
+        if (!contact.messages || contact.messages.length === 0) {
+            return '暂无用户输入';
+        }
+
+        const lastProcessedIndex = this.lastProcessedMessageIndex.get(contact.id) || -1;
+        const userTexts = [];
+        
+        // 从最后处理位置开始，收集用户的文本输入
+        for (let i = lastProcessedIndex + 1; i < contact.messages.length; i++) {
+            const message = contact.messages[i];
+            
+            // 只包含用户的普通文本消息，排除emoji和红包
+            if (message.role === 'user' && !this.isSpecialMessageType(message)) {
+                userTexts.push(message.content);
+            }
+        }
+        
+        if (userTexts.length === 0) {
+            return '暂无新的用户文本输入';
+        }
+        
+        return userTexts.join('\n');
+    }
+
+    /**
      * 构建最近对话上下文
      */
     buildRecentContext(contact) {
@@ -839,18 +878,19 @@ class CharacterMemoryManager {
     /**
      * 构建记忆检查提示词
      */
-    buildMemoryCheckPrompt(currentMemory, recentContext, contact) {
-        return `你是一个记忆分析助手。请判断以下对话内容是否需要更新角色记忆。
+    buildMemoryCheckPrompt(currentMemory, userTextInput, contact) {
+        return `你是一个记忆分析助手。请判断用户的新输入是否需要更新角色记忆。
 
 当前角色记忆：
 ${currentMemory || '暂无记忆'}
 
-最近对话内容：
-${recentContext}
+用户的新输入：
+${userTextInput}
 
 判断标准：
-1. 当前对话是否涉及到传入记忆中没有的内容？
-2. 当前事件是否涉及到用户本身的形象，或现实生活中的事件？（例如：用户正在接受心理治疗、用户正在准备演讲比赛、用户喜欢你称呼他为...等）
+1. 用户输入是否涉及到当前记忆中没有的重要信息？
+2. 用户输入是否涉及到用户本身的形象、生活状态、个人情况？（例如：用户正在接受心理治疗、用户正在准备演讲比赛、用户喜欢你称呼他为...等）
+3. 用户输入是否包含值得记住的事件、约定或重要细节？
 
 请仅回答"满足"或"不满足"，不要其他解释。`;
     }
