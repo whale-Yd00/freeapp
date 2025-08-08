@@ -28,6 +28,7 @@ class CharacterMemoryManager {
         if (window.isIndexedDBReady && window.db) {
             console.log('[记忆调试] 数据库已准备好，开始加载数据');
             await this.loadConversationCounters();
+            await this.loadLastProcessedMessageIndex();
             await this.getGlobalMemory();
         } else {
             console.log('[记忆调试] 数据库未准备好，跳过数据加载');
@@ -228,6 +229,68 @@ class CharacterMemoryManager {
     }
 
     /**
+     * 从IndexedDB加载最后处理的消息索引
+     */
+    async loadLastProcessedMessageIndex() {
+        console.log('[记忆调试] 尝试加载最后处理的消息索引', {
+            isIndexedDBReady: window.isIndexedDBReady,
+            hasDb: !!window.db
+        });
+        
+        if (!window.isIndexedDBReady || !window.db) {
+            console.log('[记忆调试] IndexedDB未准备好，跳过加载消息索引');
+            return;
+        }
+
+        try {
+            // 检查数据库中是否存在memoryProcessedIndex表
+            if (!window.db.objectStoreNames.contains('memoryProcessedIndex')) {
+                console.log('[记忆调试] memoryProcessedIndex表不存在，使用默认值');
+                return;
+            }
+
+            const transaction = window.db.transaction(['memoryProcessedIndex'], 'readonly');
+            const store = transaction.objectStore('memoryProcessedIndex');
+            const allData = await this.promisifyRequest(store.getAll());
+            
+            if (allData && allData.length > 0) {
+                // 将数组转换为Map
+                allData.forEach(record => {
+                    this.lastProcessedMessageIndex.set(record.contactId, record.lastIndex);
+                });
+                console.log('[记忆调试] 已加载消息索引:', this.lastProcessedMessageIndex);
+            } else {
+                console.log('[记忆调试] 消息索引数据为空，使用默认值');
+            }
+        } catch (error) {
+            console.error('[记忆调试] 加载消息索引失败:', error);
+        }
+    }
+
+    /**
+     * 保存最后处理的消息索引到IndexedDB
+     */
+    async saveLastProcessedMessageIndex(contactId, lastIndex) {
+        if (!window.isIndexedDBReady || !window.db) {
+            console.warn('IndexedDB未准备好，无法保存消息索引');
+            return;
+        }
+
+        try {
+            const transaction = window.db.transaction(['memoryProcessedIndex'], 'readwrite');
+            const store = transaction.objectStore('memoryProcessedIndex');
+            await this.promisifyRequest(store.put({ 
+                contactId: contactId, 
+                lastIndex: lastIndex,
+                lastUpdated: new Date().toISOString()
+            }));
+            console.log(`联系人 ${contactId} 的消息索引已保存: ${lastIndex}`);
+        } catch (error) {
+            console.error('保存消息索引失败:', error);
+        }
+    }
+
+    /**
      * 获取角色记忆
      */
     async getCharacterMemory(contactId) {
@@ -379,13 +442,21 @@ class CharacterMemoryManager {
             return;
         }
 
-        // 使用新的触发条件：用户发送2条消息就触发
+        // 根据联系人类型设置不同的触发条件
         const newUserMessageCount = this.getNewUserMessageCount(currentContact);
-        const shouldCheck = forceCheck || newUserMessageCount >= 2;
+        let triggerThreshold;
+        if (currentContact?.type === 'group') {
+            triggerThreshold = 1; // 群聊：1条用户消息触发
+        } else {
+            triggerThreshold = 3; // 私聊：3条用户消息触发
+        }
+        const shouldCheck = forceCheck || newUserMessageCount >= triggerThreshold;
         
         console.log('[记忆调试] 触发条件检查', {
             contactId,
+            contactType: currentContact?.type,
             newUserMessageCount,
+            triggerThreshold,
             forceCheck,
             shouldCheck,
             lastProcessedIndex: this.lastProcessedMessageIndex.get(currentContact?.id),
@@ -416,7 +487,7 @@ class CharacterMemoryManager {
             
             // 无论是否更新记忆，都标记当前消息已处理
             console.log('[记忆调试] 标记消息已处理:', currentContact?.id);
-            this.markMessagesProcessed(currentContact);
+            await this.markMessagesProcessed(currentContact);
         } catch (error) {
             console.error('[记忆调试] 检查更新记忆时发生错误:', error);
         }
@@ -425,10 +496,14 @@ class CharacterMemoryManager {
     /**
      * 标记消息已处理
      */
-    markMessagesProcessed(contact) {
+    async markMessagesProcessed(contact) {
         if (contact && contact.messages && contact.messages.length > 0) {
-            this.lastProcessedMessageIndex.set(contact.id, contact.messages.length - 1);
-            console.log(`标记联系人 ${contact.id} 的消息已处理到索引 ${contact.messages.length - 1}`);
+            const newIndex = contact.messages.length - 1;
+            this.lastProcessedMessageIndex.set(contact.id, newIndex);
+            console.log(`标记联系人 ${contact.id} 的消息已处理到索引 ${newIndex}`);
+            
+            // 异步保存到数据库，避免阻塞
+            this.saveLastProcessedMessageIndex(contact.id, newIndex);
         }
     }
 

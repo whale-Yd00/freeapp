@@ -408,6 +408,9 @@ function openDB() {
             if (!db.objectStoreNames.contains('globalMemory')) {
                 db.createObjectStore('globalMemory', { keyPath: 'id' });
             }
+            if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
+                db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
+            }
         };
 
         request.onsuccess = event => {
