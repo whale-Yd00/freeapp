@@ -4068,12 +4068,14 @@ function loadGlobalMemories() {
 // 加载角色选择器
 function loadCharacterSelector() {
     const characterSelector = document.getElementById('characterSelector');
+    console.log('角色选择器元素:', characterSelector);
     if (!characterSelector) {
         console.error('角色选择器元素未找到');
         return;
     }
     
     characterSelector.innerHTML = '<option value="">选择角色...</option>';
+    console.log('已重置角色选择器内容');
     
     // 确保contacts数组存在
     if (!window.contacts || !Array.isArray(window.contacts)) {
@@ -4081,12 +4083,17 @@ function loadCharacterSelector() {
         return;
     }
     
+    console.log('开始遍历contacts数组，长度:', window.contacts.length);
+    
     let aiContactCount = 0;
     let totalContactCount = 0;
     window.contacts.forEach(contact => {
         totalContactCount++;
         console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
+        console.log(`  - 类型检查: contact.type === 'private' = ${contact.type === 'private'}`);
+        console.log(`  - 类型值调试: '${contact.type}' (长度: ${contact.type?.length})`);
         if (contact.type === 'private') {
+            console.log(`  - 添加联系人 ${contact.name} 到选择器`);
             const option = document.createElement('option');
             option.value = contact.id;
             option.textContent = contact.name;
