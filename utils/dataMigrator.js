@@ -26,6 +26,127 @@ class IndexedDBManager {
     }
 
     /**
+     * 检查并自动升级现有数据库
+     */
+    async autoUpgradeDatabase() {
+        try {
+            console.log('正在检查数据库版本...');
+            
+            // 先检查现有数据库版本（不进行升级）
+            const currentVersion = await this.getCurrentDatabaseVersion();
+            
+            if (currentVersion < this.dbVersion) {
+                console.log(`检测到旧版本数据库 (版本 ${currentVersion})，开始自动升级到版本 ${this.dbVersion}`);
+                
+                // 导出现有数据
+                const exportedData = await this.exportDatabase();
+                console.log('现有数据导出完成');
+                
+                // 关闭现有连接
+                if (this.db) {
+                    this.db.close();
+                    this.db = null;
+                }
+                
+                // 删除旧数据库，重新创建新版本
+                await this.deleteDatabase();
+                console.log('旧数据库已删除');
+                
+                // 重新初始化新版本数据库
+                await this.initDB();
+                console.log('新版本数据库已创建');
+                
+                // 迁移数据
+                const migratedData = await this.migrateData(exportedData);
+                console.log('数据迁移完成');
+                
+                // 导入迁移后的数据
+                await this.importDatabase(migratedData, { 
+                    overwrite: true,
+                    validateVersion: false,
+                    enableMigration: false  // 数据已经迁移过了
+                });
+                console.log('数据导入完成');
+                
+                // 显示升级成功消息
+                if (typeof showToast === 'function') {
+                    showToast(`数据库已自动从版本 ${currentVersion} 升级到版本 ${this.dbVersion}`);
+                } else {
+                    console.log(`数据库已自动从版本 ${currentVersion} 升级到版本 ${this.dbVersion}`);
+                }
+                
+                return { upgraded: true, fromVersion: currentVersion, toVersion: this.dbVersion };
+            } else {
+                console.log(`数据库版本正常 (版本 ${currentVersion})`);
+                return { upgraded: false, currentVersion };
+            }
+            
+        } catch (error) {
+            console.error('自动升级数据库时出错:', error);
+            // 如果升级失败，仍然尝试正常初始化
+            await this.initDB();
+            throw error;
+        }
+    }
+
+    /**
+     * 获取当前数据库版本（不进行升级）
+     */
+    async getCurrentDatabaseVersion() {
+        return new Promise((resolve, reject) => {
+            // 先尝试打开数据库，不指定版本
+            const request = indexedDB.open(this.dbName);
+            
+            request.onsuccess = () => {
+                const db = request.result;
+                const version = db.version;
+                db.close();
+                resolve(version);
+            };
+            
+            request.onerror = () => {
+                console.log('数据库不存在，将创建新数据库');
+                resolve(0); // 数据库不存在，返回版本0
+            };
+            
+            request.onupgradeneeded = () => {
+                // 取消升级操作
+                const db = request.result;
+                const version = db.version;
+                db.close();
+                resolve(version);
+            };
+        });
+    }
+
+    /**
+     * 删除数据库
+     */
+    async deleteDatabase() {
+        return new Promise((resolve, reject) => {
+            const deleteRequest = indexedDB.deleteDatabase(this.dbName);
+            
+            deleteRequest.onsuccess = () => {
+                console.log('数据库删除成功');
+                resolve();
+            };
+            
+            deleteRequest.onerror = () => {
+                console.error('数据库删除失败:', deleteRequest.error);
+                reject(deleteRequest.error);
+            };
+            
+            deleteRequest.onblocked = () => {
+                console.warn('数据库删除被阻塞，可能有其他连接未关闭');
+                // 等待一段时间后重试
+                setTimeout(() => {
+                    resolve(); // 即使被阻塞也继续
+                }, 1000);
+            };
+        });
+    }
+
+    /**
      * 初始化数据库连接
      */
     async initDB() {
@@ -820,20 +941,47 @@ window.enhanceApiSettingsModal = function() {
 window.DatabaseManager = {
     
     /**
-     * 初始化数据库 - 使用现有的db实例
+     * 初始化数据库 - 使用现有的db实例并检查版本升级
      */
     async init() {
         try {
-            // 如果已经有现有的db实例，直接使用
+            // 如果已经有现有的db实例，先检查版本
             if (window.db && window.isIndexedDBReady) {
                 dbManager.db = window.db;
                 dbManager.dbVersion = window.db.version;
-                return { success: true };
+                
+                // 检查是否需要升级
+                if (window.db.version < dbManager.dbVersion) {
+                    console.log('检测到已有数据库版本较低，需要升级');
+                    // 重置状态以便进行升级
+                    window.db.close();
+                    window.db = null;
+                    window.isIndexedDBReady = false;
+                    dbManager.db = null;
+                    
+                    // 执行自动升级
+                    const upgradeResult = await dbManager.autoUpgradeDatabase();
+                    
+                    // 更新全局变量
+                    window.db = dbManager.db;
+                    window.isIndexedDBReady = true;
+                    
+                    return { success: true, upgraded: upgradeResult.upgraded, upgradeResult };
+                } else {
+                    return { success: true, upgraded: false };
+                }
             } else {
-                await dbManager.initDB();
-                return { success: true };
+                // 执行自动升级检查
+                const upgradeResult = await dbManager.autoUpgradeDatabase();
+                
+                // 更新全局变量
+                window.db = dbManager.db;
+                window.isIndexedDBReady = true;
+                
+                return { success: true, upgraded: upgradeResult.upgraded, upgradeResult };
             }
         } catch (error) {
+            console.error('数据库初始化失败:', error);
             return { success: false, error: error.message };
         }
     },
