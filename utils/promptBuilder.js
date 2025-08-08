@@ -102,7 +102,7 @@ class PromptBuilder {
         systemPrompt += `--- [你的特殊能力与使用规则] ---\n`;
         systemPrompt += this._buildRedPacketInstructions();
         systemPrompt += this._buildEmojiInstructions(emojis);
-        systemPrompt += this._buildVoiceInstructions(contact, apiSettings);
+        systemPrompt += this._buildVoiceInstructions(); // 使用更新后的语音指令
         
         // 添加输出格式规则
         systemPrompt += this._buildOutputFormatInstructions();
@@ -529,27 +529,28 @@ ${userReply}
              + `可用表情列表:\n${availableEmojisString || '无可用表情'}`;
     }
 
-    // 私有方法：构建语音指令
-    _buildVoiceInstructions(contact, apiSettings) {
-        // 如果没有语音ID或者没有ElevenLabs API Key，则不提供语音能力
-        if (!contact?.voiceId || !apiSettings?.elevenLabsApiKey) {
-            return '';
-        }
-        
-        return `\n\n**能力三：发送语音**\n`
-             + `你拥有一项特殊能力：发送语音消息。当你认为通过声音更能表达情绪、强调重点、唱歌、讲笑话或模仿特定语气时，你可以选择发送语音。\n\n`
+    // 私有方法：构建语音指令 (*** 这是修改后的版本 ***)
+    _buildVoiceInstructions() {
+        return `\n\n**能力三：发送语音 (包含语音标注)**\n`
+             + `你拥有一项特殊能力：发送语音消息。当你认为通过声音更能表达情绪、强调重点、唱歌或模仿特定语气时，你可以选择发送语音。\n\n`
              + `**使用格式：**\n`
              + `若要发送语音，你必须严格按照以下格式回复，将 \`[语音]:\` 放在你回复内容的最前面：\n`
-             + `\`[语音]: 你好呀，今天过得怎么样？\`\n\n`
-             + `**使用场景举例：**\n`
-             + `- 当你想表达特别开心或激动的情绪时。\n`
-             + `- 当你想用温柔或严肃的语气说话时。\n`
-             + `- 当你想给用户唱一小段歌时。\n`
-             + `- 当你想模仿某个角色的声音时。\n\n`
-             + `**注意：**\n`
-             + `- **不要**滥用此功能，只在必要或能增强角色扮演效果时使用。\n`
-             + `- \`[语音]:\` 标签本身不会被用户看到，系统会自动将其转换为语音播放器。\n`
-             + `- 如果你不想发送语音，就正常回复，**不要**添加 \`[语音]:\` 标签。`;
+             + `\`[语音]: [标注] 你的语音内容...\`\n\n`
+             + `**语音标注 (重要):**\n`
+             + `为了让你的语音更具表现力，你在发送语音时，**必须**在语音内容前加上一个最符合当前情绪或场景的“语音标注”。这能让你的声音听起来更生动。\n\n`
+             + `**可用标注列表：**\n`
+             + `1.  **情感 (Emotion):** \`[happy]\` (开心), \`[sad]\` (悲伤), \`[angry]\` (愤怒), \`[excited]\` (兴奋), \`[surprised]\` (惊讶), \`[nervous]\` (紧张), \`[mischievous]\` (淘气)。\n`
+             + `2.  **非语言声音 (Non-verbal Sounds):** \`[laughs]\` (笑声), \`[sighs]\` (叹气), \`[crying]\` (哭泣), \`[gasp]\` (倒吸气)。\n`
+             + `3.  **说话风格 (Delivery Style):** \`[whispers]\` (耳语), \`[shouts]\` (喊叫), \`[calm]\` (平静)。\n\n`
+             + `**使用示例：**\n`
+             + `-  **表达开心:** \`[语音]: [happy] 真的吗？那太棒了！\`\n`
+             + `-  **表达悲伤并叹气:** \`[语音]: [sad] 我知道了... [sighs]\`\n`
+             + `-  **小声说秘密:** \`[语音]: [whispers] 我悄悄告诉你一件事，你可别说出去。\`\n`
+             + `-  **唱歌:** \`[语音]: [happy] 祝你生日快乐~ 祝你生日快乐~\`\n\n`
+             + `**重要规则：**\n`
+             + `- **必须**在决定发送语音时才使用 \`[语音]:\` 和语音标注。\n`
+             + `- 每次语音**只选择最主要**的一种或两种标注，不要堆砌。\n`
+             + `- 如果你不想发送语音，就正常回复，**绝对不要**添加 \`[语音]:\` 或任何语音标注。这些标注 **严禁** 用于普通文本消息。`;
     }
 
 
