@@ -357,11 +357,12 @@
                         <textarea class="form-textarea" id="contactPersonality" required placeholder="描述AI的性格、背景、说话风格等"></textarea>
                     </div>
                     
+                    <!-- 【修改点 2】: 更新联系人设置中的语音ID提示 -->
                     <div class="form-group">
-                        <label class="form-label">ElevenLabs 语音ID（可选）</label>
+                        <label class="form-label">Minimax 语音ID（可选）</label>
                         <input type="text" class="form-input" id="contactVoiceId" placeholder="可选 - 填写后角色会拥有语音能力">
                         <div class="context-info" style="margin-top: 4px;">
-                            在 <a href="https://elevenlabs.io/app/voice-library" target="_blank" rel="noopener noreferrer">此处</a> 创建或克隆声音！
+                            在 <a href="https://www.minimaxi.com/voice-clone" target="_blank" rel="noopener noreferrer">Minimax官网</a> 克隆或创建声音！
                         </div>
                     </div>
                     
@@ -462,11 +463,16 @@
                         </div>
                     </div>
                     
+                    <!-- 【修改点 1】: 替换 ElevenLabs 设置为 Minimax 设置 -->
                     <div class="form-group">
-                        <label class="form-label">ElevenLabs API Key</label>
-                        <input type="password" class="form-input" id="elevenLabsApiKey" placeholder="在此输入你的ElevenLabs API Key">
+                        <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
+                        <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
+                    </div>
+                    <div class="form-group">
+                        <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
+                        <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
                         <div class="context-info" style="margin-top: 4px;">
-                            在 <a href="https://elevenlabs.io/" target="_blank" rel="noopener noreferrer">ElevenLabs</a> 注册账号后在 <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener noreferrer">此处</a> 创建Unrestricted Key
+                            用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
                         </div>
                     </div>
                     

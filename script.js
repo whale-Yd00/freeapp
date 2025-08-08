@@ -275,6 +275,8 @@ async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
 let contacts = [];
 let currentContact = null;
 let editingContact = null;
+
+// 【修改点 1】: 更新 apiSettings 结构以适应 Minimax
 let apiSettings = {
     url: '',
     key: '',
@@ -282,8 +284,11 @@ let apiSettings = {
     secondaryModel: 'sync_with_primary',
     contextMessageCount: 10,
     timeout: 60,
-    elevenLabsApiKey: ''
+    // 移除了 elevenLabsApiKey，换成 Minimax 的凭证
+    minimaxGroupId: '',
+    minimaxApiKey: ''
 };
+
 let emojis = [];
 let backgrounds = {};
 let userProfile = {
@@ -502,8 +507,14 @@ async function loadDataFromDB() {
         const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
-        // 为旧API设置数据添加 elevenLabsApiKey 默认值
-        if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
+        
+        // 【修改点 2】: 从旧的 elevenLabsApiKey 迁移数据，并设置新字段的默认值
+        if (savedApiSettings.elevenLabsApiKey && !savedApiSettings.minimaxApiKey) {
+            apiSettings.minimaxApiKey = savedApiSettings.elevenLabsApiKey;
+        }
+        if (apiSettings.minimaxGroupId === undefined) apiSettings.minimaxGroupId = '';
+        if (apiSettings.minimaxApiKey === undefined) apiSettings.minimaxApiKey = '';
+
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
         backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
@@ -1968,10 +1979,13 @@ function showEditContactModal() {
 }
 
 function showApiSettingsModal() {
+    // 【修改点 3】: 加载 Minimax 的设置
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
     document.getElementById('apiTimeout').value = apiSettings.timeout || 60;
-    document.getElementById('elevenLabsApiKey').value = apiSettings.elevenLabsApiKey;
+    // 假设你的HTML中输入框的ID是 minimaxGroupId 和 minimaxApiKey
+    document.getElementById('minimaxGroupId').value = apiSettings.minimaxGroupId;
+    document.getElementById('minimaxApiKey').value = apiSettings.minimaxApiKey;
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
@@ -2315,9 +2329,9 @@ function renderMessages(isInitialLoad = false) {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
         
-        // 【【【【【修改点 2】】】】】
-        // 修改判断条件：检查 forceVoice 标志
-        if (msg.forceVoice && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
+        // 【修改点 5】: 修改语音播放逻辑以兼容 Minimax
+        // 检查 forceVoice 标志, contact.voiceId 和 Minimax 的凭证
+        if (msg.forceVoice && currentContact.voiceId && apiSettings.minimaxGroupId && apiSettings.minimaxApiKey) {
             const bubble = msgDiv.querySelector('.message-bubble');
             if (bubble) {
                 const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
@@ -2455,7 +2469,6 @@ async function sendMessage() {
                 let messageContent = response.content;
                 let forceVoice = false;
 
-                // 【【【【【修改点 1】】】】】
                 // 检查并处理AI的语音指令
                 if (messageContent.startsWith('[语音]:')) {
                     forceVoice = true;
@@ -2532,7 +2545,6 @@ async function sendGroupMessage() {
                 let messageContent = response.content;
                 let forceVoice = false;
 
-                // 【【【【【修改点 1, 群聊部分】】】】】
                 if (messageContent.startsWith('[语音]:')) {
                     forceVoice = true;
                     messageContent = messageContent.substring(4).trim();
@@ -2838,7 +2850,11 @@ async function saveApiSettings(event) {
     apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
     apiSettings.timeout = parseInt(document.getElementById('apiTimeout').value) || 60;
-    apiSettings.elevenLabsApiKey = document.getElementById('elevenLabsApiKey').value.trim();
+    
+    // 【修改点 4】: 保存 Minimax 的设置
+    // 假设你的HTML中输入框的ID是 minimaxGroupId 和 minimaxApiKey
+    apiSettings.minimaxGroupId = document.getElementById('minimaxGroupId').value.trim();
+    apiSettings.minimaxApiKey = document.getElementById('minimaxApiKey').value.trim();
     
     await saveDataToDB();
     closeModal('apiSettingsModal');
@@ -3729,16 +3745,17 @@ function deleteSelectedMessages() {
 }
 
 
-// ElevenLabs 语音播放功能
+// 【修改点 6】: 更新整个语音播放功能以适配 Minimax
 /**
- * 播放或停止语音消息
+ * 播放或停止语音消息 (Minimax Version)
  * @param {HTMLElement} playerElement - 被点击的播放器元素
  * @param {string} text - 需要转换为语音的文本
- * @param {string} voiceId - ElevenLabs 的语音ID
+ * @param {string} voiceId - Minimax 的声音ID
  */
 async function playVoiceMessage(playerElement, text, voiceId) {
-    if (!apiSettings.elevenLabsApiKey) {
-        showToast('请在设置中填写 ElevenLabs API Key');
+    // 检查 Minimax 所需的凭证
+    if (!apiSettings.minimaxGroupId || !apiSettings.minimaxApiKey) {
+        showToast('请在设置中填写 Minimax Group ID 和 API Key');
         return;
     }
     if (!voiceId) {
@@ -3772,7 +3789,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.add('loading');
         playButton.textContent = '...'; // 加载指示
 
-        // 调用 TTS API
+        // 调用我们适配了 Minimax 的 TTS API
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -3781,7 +3798,8 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             body: JSON.stringify({
                 text: text,
                 voiceId: voiceId,
-                apiKey: apiSettings.elevenLabsApiKey
+                apiKey: apiSettings.minimaxApiKey, // 发送 Minimax API Key
+                groupId: apiSettings.minimaxGroupId // 发送 Minimax Group ID
             })
         });
 
