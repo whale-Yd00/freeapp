@@ -2269,24 +2269,36 @@ function renderMessages(isInitialLoad = false) {
             const packet = JSON.parse(msg.content);
             contentHtml = `<div class="message-content red-packet" onclick="showToast('红包金额: ${packet.amount}')"><div class="red-packet-body"><svg class="red-packet-icon" viewBox="0 0 1024 1024"><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32zM731.2 565.2H603.9c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8zM419.8 565.2H292.5c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8z" fill="#FEFEFE"></path><path d="M872.4 240H151.6c-17.7 0-32 14.3-32 32v64h784v-64c0-17.7-14.3-32-32-32z" fill="#FCD4B3"></path><path d="M512 432c-48.6 0-88 39.4-88 88s39.4 88 88 88 88-39.4 88-88-39.4-88-88-88z m0 152c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64-64z" fill="#FCD4B3"></path><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32z m-32 552H215.6V368h624.8v488z" fill="#F37666"></path><path d="M512 128c-112.5 0-204 91.5-204 204s91.5 204 204 204 204-91.5 204-204-91.5-204-204-204z m0 384c-99.4 0-180-80.6-180-180s80.6-180 180-180 180 80.6 180 180-80.6 180-180 180z" fill="#F37666"></path><path d="M512 456c-35.3 0-64 28.7-64 64s28.7 64 64 64 64 28.7 64 64-28.7-64-64-64z m16.4 76.4c-2.3 2.3-5.4 3.6-8.5 3.6h-15.8c-3.1 0-6.2-1.3-8.5-3.6s-3.6-5.4-3.6-8.5v-27.8c0-6.6 5.4-12 12-12h16c6.6 0 12 5.4 12 12v27.8c0.1 3.1-1.2 6.2-3.5 8.5z" fill="#F37666"></path></svg><div class="red-packet-text"><div>${packet.message || '恭喜发财，大吉大利！'}</div><div>领取红包</div></div></div><div class="red-packet-footer">AI红包</div></div>`;
         } else {
-            let processedContent = msg.content;
+            // *** 这是修改后的代码块 ***
+            // This block handles 'text' type messages, including voice messages
+            let displayContent = msg.content;
+
+            // If it's a voice message, strip the annotations for display purposes only.
+            if (msg.forceVoice) {
+                // This regex removes any [...] tags and trims whitespace.
+                displayContent = displayContent.replace(/\[[^\]]+\]/g, ' ').trim();
+            }
+
+            // Now, process the displayContent for emojis etc.
             const emojiTagRegex = /\[(?:emoji|发送了表情)[:：]([^\]]+)\]/g;
-            const standaloneEmojiMatch = processedContent.trim().match(/^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/);
+            const standaloneEmojiMatch = displayContent.trim().match(/^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/);
+
             if (standaloneEmojiMatch) {
                  const emojiName = standaloneEmojiMatch[1];
                  const foundEmoji = emojis.find(e => e.meaning === emojiName);
                  if(foundEmoji) {
                     contentHtml = `<img src="${foundEmoji.url}" class="message-emoji">`;
                  } else {
-                    contentHtml = `<div class="message-content">${processedContent}</div>`;
+                    // If it's a stripped annotation that looks like an emoji tag, just display it as text.
+                    contentHtml = `<div class="message-content">${displayContent}</div>`;
                  }
             } else {
-                processedContent = processedContent.replace(/\n/g, '<br>');
-                processedContent = processedContent.replace(emojiTagRegex, (match, name) => {
+                displayContent = displayContent.replace(/\n/g, '<br>');
+                displayContent = displayContent.replace(emojiTagRegex, (match, name) => {
                     const foundEmoji = emojis.find(e => e.meaning === name);
                     return foundEmoji ? `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">` : match;
                 });
-                contentHtml = `<div class="message-content">${processedContent}</div>`;
+                contentHtml = `<div class="message-content">${displayContent}</div>`;
             }
         }
 
@@ -2315,8 +2327,7 @@ function renderMessages(isInitialLoad = false) {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
         
-        // 【【【【【修改点 2】】】】】
-        // 修改判断条件：检查 forceVoice 标志
+        // 检查 forceVoice 标志来添加播放器
         if (msg.forceVoice && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
             const bubble = msgDiv.querySelector('.message-bubble');
             if (bubble) {
@@ -2455,7 +2466,6 @@ async function sendMessage() {
                 let messageContent = response.content;
                 let forceVoice = false;
 
-                // 【【【【【修改点 1】】】】】
                 // 检查并处理AI的语音指令
                 if (messageContent.startsWith('[语音]:')) {
                     forceVoice = true;
@@ -2532,7 +2542,6 @@ async function sendGroupMessage() {
                 let messageContent = response.content;
                 let forceVoice = false;
 
-                // 【【【【【修改点 1, 群聊部分】】】】】
                 if (messageContent.startsWith('[语音]:')) {
                     forceVoice = true;
                     messageContent = messageContent.substring(4).trim();
