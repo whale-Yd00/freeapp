@@ -365,7 +365,7 @@ async function init() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 6);
+        const request = indexedDB.open('WhaleLLTDB', 7);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
