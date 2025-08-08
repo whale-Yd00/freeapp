@@ -42,7 +42,8 @@ let apiSettings = {
     key: '',
     model: '',
     secondaryModel: 'sync_with_primary', // 新增：次要模型
-    contextMessageCount: 10
+    contextMessageCount: 10,
+    elevenLabsApiKey: '' // 【新增】ElevenLabs API Key
 };
 let emojis = [];
 let backgrounds = {};
@@ -84,6 +85,10 @@ let isLoadingMoreMessages = false;
 let isMultiSelectMode = false;
 let selectedMessages = new Set();
 
+// 【新增】语音播放相关全局变量
+let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
+let currentPlayingElement = null; // 跟踪当前播放的语音元素
+
 
 // --- 初始化 ---
 async function init() {
@@ -110,6 +115,26 @@ async function init() {
             }, 5000);
         }
     }, 1000);
+
+    // 【新增】为全局voiceAudio对象绑定事件
+    voiceAudio.onended = () => {
+        if (currentPlayingElement) {
+            currentPlayingElement.classList.remove('playing');
+            const playButton = currentPlayingElement.querySelector('.play-button');
+            if (playButton) playButton.textContent = '▶';
+            currentPlayingElement = null;
+        }
+    };
+    voiceAudio.onerror = () => {
+        showToast('音频文件加载失败');
+        if (currentPlayingElement) {
+             currentPlayingElement.classList.remove('playing', 'loading');
+             const playButton = currentPlayingElement.querySelector('.play-button');
+             if (playButton) playButton.textContent = '▶';
+             currentPlayingElement = null;
+        }
+    };
+
 
     // Check for update announcements
     const unreadAnnouncements = await announcementManager.getUnread();
@@ -224,6 +249,8 @@ async function loadDataFromDB() {
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
+            // 【新增】为旧联系人数据添加 voiceId 默认值
+            if (contact.voiceId === undefined) contact.voiceId = '';
             window.memoryTableManager.initContactMemoryTable(contact);
             if (contact.messages) {
                 contact.messages.forEach(msg => {
@@ -236,6 +263,8 @@ async function loadDataFromDB() {
         const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
+        // 【新增】为旧API设置数据添加 elevenLabsApiKey 默认值
+        if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
         backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
@@ -1667,12 +1696,16 @@ function closeModal(modalId) {
         document.getElementById('contactAvatar').value = '';
         document.getElementById('contactPersonality').value = '';
         document.getElementById('customPrompts').value = '';
+        // 【新增】重置语音ID输入框
+        document.getElementById('contactVoiceId').value = '';
     }
 }
 
 function showAddContactModal() {
     editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
+    // 【新增】清空语音ID输入框
+    document.getElementById('contactVoiceId').value = '';
     showModal('addContactModal');
 }
 
@@ -1684,6 +1717,9 @@ function showEditContactModal() {
     document.getElementById('contactAvatar').value = currentContact.avatar || '';
     document.getElementById('contactPersonality').value = currentContact.personality;
     document.getElementById('customPrompts').value = currentContact.customPrompts || '';
+    // 【新增】加载当前联系人的语音ID
+    // 后续操作：你需要在 index.html 的 addContactModal 中添加 id="contactVoiceId" 的输入框
+    document.getElementById('contactVoiceId').value = currentContact.voiceId || '';
     showModal('addContactModal');
     toggleSettingsMenu();
 }
@@ -1691,6 +1727,9 @@ function showEditContactModal() {
 function showApiSettingsModal() {
     document.getElementById('apiUrl').value = apiSettings.url;
     document.getElementById('apiKey').value = apiSettings.key;
+    // 【新增】加载 ElevenLabs API Key
+    // 后续操作：你需要在 index.html 的 apiSettingsModal 中添加 id="elevenLabsApiKey" 的输入框
+    document.getElementById('elevenLabsApiKey').value = apiSettings.elevenLabsApiKey;
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
@@ -1767,7 +1806,10 @@ async function saveContact(event) {
         name: document.getElementById('contactName').value,
         avatar: document.getElementById('contactAvatar').value,
         personality: document.getElementById('contactPersonality').value,
-        customPrompts: document.getElementById('customPrompts').value
+        customPrompts: document.getElementById('customPrompts').value,
+        // 【新增】保存语音ID
+        // 后续操作：你需要在 index.html 的 addContactModal 中添加 id="contactVoiceId" 的输入框
+        voiceId: document.getElementById('contactVoiceId').value.trim()
     };
     if (editingContact) {
         Object.assign(editingContact, contactData);
@@ -1936,20 +1978,15 @@ function renderMessages(isInitialLoad = false) {
     const chatMessages = document.getElementById('chatMessages');
     const allMessages = currentContact.messages;
 
-    // 确定要渲染的消息
     if (isInitialLoad) {
         currentlyDisplayedMessageCount = Math.min(allMessages.length, MESSAGES_PER_PAGE);
     }
     const messagesToRender = allMessages.slice(allMessages.length - currentlyDisplayedMessageCount);
 
-    // 保存滚动位置
     const oldScrollHeight = chatMessages.scrollHeight;
-    const oldScrollTop = chatMessages.scrollTop;
-
-    // 清空并重新渲染
+    
     chatMessages.innerHTML = '';
 
-    // 如果还有更多消息，显示"加载更多"按钮
     if (allMessages.length > currentlyDisplayedMessageCount) {
         const loadMoreDiv = document.createElement('div');
         loadMoreDiv.className = 'load-more-messages';
@@ -2012,7 +2049,6 @@ function renderMessages(isInitialLoad = false) {
             }
         }
 
-        // 添加已编辑标识
         if (msg.edited) {
             const editedTag = `<span style="color: #999; font-size: 12px; margin-left: 5px;">已编辑</span>`;
             if (msg.type === 'emoji') {
@@ -2037,20 +2073,49 @@ function renderMessages(isInitialLoad = false) {
         } else {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
+        
+        // 【修改】如果消息是AI发送的文本，且配置了语音，则注入播放器
+        if (msg.role === 'assistant' && msg.type === 'text' && currentContact.voiceId && apiSettings.elevenLabsApiKey) {
+            const bubble = msgDiv.querySelector('.message-bubble');
+            if (bubble) {
+                const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
+                const voicePlayer = document.createElement('div');
+                voicePlayer.className = 'voice-player';
+                voicePlayer.id = `voice-player-${messageUniqueId}`;
+                
+                // 使用匿名函数包装，确保传递正确的参数
+                voicePlayer.onclick = () => playVoiceMessage(voicePlayer, msg.content, currentContact.voiceId);
+                
+                voicePlayer.innerHTML = `
+                    <div class="play-button">▶</div>
+                    <div class="waveform">
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
+                    </div>
+                    <div class="duration"></div>
+                `;
+                // 将播放器插入到气泡的开头
+                bubble.prepend(voicePlayer);
+                
+                const textContentDiv = bubble.querySelector('.message-content');
+                if (textContentDiv) {
+                    textContentDiv.classList.add('has-voice-player');
+                }
+            }
+        }
 
-        // 在多选模式下添加点击事件
+
         if (isMultiSelectMode) {
             msgDiv.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 toggleMessageSelection(originalIndex);
             });
-            // 如果消息已被选中，添加选中样式
             if (selectedMessages.has(originalIndex)) {
                 msgDiv.classList.add('message-selected');
             }
         } else {
-            // 正常模式下的长按事件
             let msgPressTimer;
             msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
             msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
@@ -2061,13 +2126,14 @@ function renderMessages(isInitialLoad = false) {
         chatMessages.appendChild(msgDiv);
     });
 
-    // 调整滚动位置
     if (isInitialLoad) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     } else {
-        chatMessages.scrollTop = chatMessages.scrollHeight - oldScrollHeight;
+        const newScrollHeight = chatMessages.scrollHeight;
+        chatMessages.scrollTop = newScrollHeight - oldScrollHeight;
     }
 }
+
 
 function loadMoreMessages() {
     if (isLoadingMoreMessages) return;
@@ -2434,6 +2500,9 @@ async function saveApiSettings(event) {
     apiSettings.model = document.getElementById('primaryModelSelect').value;
     apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
     apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
+    // 【新增】保存 ElevenLabs API Key
+    // 后续操作：你需要在 index.html 的 apiSettingsModal 中添加 id="elevenLabsApiKey" 的输入框
+    apiSettings.elevenLabsApiKey = document.getElementById('elevenLabsApiKey').value.trim();
     
     await saveDataToDB();
     closeModal('apiSettingsModal');
@@ -3292,4 +3361,99 @@ function deleteSelectedMessages() {
             showToast('删除失败：' + error.message);
         }
     });
+}
+
+
+// 【【【【【新增：ElevenLabs 语音播放功能】】】】】
+/**
+ * 播放或停止语音消息
+ * @param {HTMLElement} playerElement - 被点击的播放器元素
+ * @param {string} text - 需要转换为语音的文本
+ * @param {string} voiceId - ElevenLabs 的语音ID
+ */
+async function playVoiceMessage(playerElement, text, voiceId) {
+    if (!apiSettings.elevenLabsApiKey) {
+        showToast('请在设置中填写 ElevenLabs API Key');
+        return;
+    }
+    if (!voiceId) {
+        showToast('该角色未设置语音ID');
+        return;
+    }
+
+    const wasPlaying = playerElement === currentPlayingElement && !voiceAudio.paused;
+
+    // 停止任何当前正在播放的音频
+    if (currentPlayingElement) {
+        voiceAudio.pause();
+        voiceAudio.currentTime = 0;
+        const oldPlayButton = currentPlayingElement.querySelector('.play-button');
+        if (oldPlayButton) oldPlayButton.textContent = '▶';
+        currentPlayingElement.classList.remove('playing', 'loading');
+    }
+
+    // 如果点击的是正在播放的元素，则仅停止它
+    if (wasPlaying) {
+        currentPlayingElement = null;
+        return;
+    }
+
+    // 设置新的播放目标
+    currentPlayingElement = playerElement;
+    const playButton = playerElement.querySelector('.play-button');
+    const durationEl = playerElement.querySelector('.duration');
+
+    try {
+        playerElement.classList.add('loading');
+        playButton.textContent = '...'; // 加载指示
+
+        // 调用 Netlify function 来获取语音
+        // 后续操作：你需要创建一个名为 'tts' 的 Netlify function
+        const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: text,
+                voiceId: voiceId,
+                apiKey: apiSettings.elevenLabsApiKey
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: '语音生成失败，请检查服务器日志' }));
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const audioBlob = await response.blob();
+        if (audioBlob.type !== 'audio/mpeg') {
+             throw new Error('返回的不是有效的音频文件');
+        }
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        voiceAudio.src = audioUrl;
+
+        // 获取音频时长
+        voiceAudio.onloadedmetadata = () => {
+            if (isFinite(voiceAudio.duration)) {
+                const minutes = Math.floor(voiceAudio.duration / 60);
+                const seconds = Math.floor(voiceAudio.duration % 60).toString().padStart(2, '0');
+                durationEl.textContent = `${minutes}:${seconds}`;
+            }
+        };
+
+        await voiceAudio.play();
+
+        playerElement.classList.remove('loading');
+        playerElement.classList.add('playing');
+        playButton.textContent = '❚❚'; // 暂停图标
+
+    } catch (error) {
+        console.error('播放语音消息失败:', error);
+        showToast(`语音播放错误: ${error.message}`);
+        playerElement.classList.remove('loading');
+        playButton.textContent = '▶';
+        currentPlayingElement = null;
+    }
 }

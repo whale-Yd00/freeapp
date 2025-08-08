@@ -7,13 +7,19 @@
 
 # 这是处理聊天请求的规则
 [[redirects]]
-  from = "/api/*"
+  from = "/api/proxy-api/*" # 稍微修改路径以避免冲突
   to = "/.netlify/functions/proxy-api/:splat"
   status = 200
 
-# 【【【【【新增内容在这里】】】】】
-# 这是我们为“测试连接”按钮新增的规则
+# 这是为“测试连接”按钮新增的规则
 [[redirects]]
-  from = "/api-test/*"
+  from = "/api/test-connection/*" # 稍微修改路径以避免冲突
   to = "/.netlify/functions/test-connection/:splat"
+  status = 200
+
+# 【【【【【新增内容在这里】】】】】
+# 这是为语音合成(TTS)功能新增的规则
+[[redirects]]
+  from = "/api/tts"
+  to = "/.netlify/functions/tts"
   status = 200
