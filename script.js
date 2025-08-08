@@ -3924,7 +3924,7 @@ class MemoryManager {
 const memoryManager = new MemoryManager();
 
 // 显示添加记忆模态框
-function showAddMemoryModal() {
+async function showAddMemoryModal() {
     const modal = document.getElementById('addMemoryModal');
     const memoryType = document.getElementById('memoryType');
     const characterSelectGroup = document.getElementById('characterSelectGroup');
@@ -3933,19 +3933,28 @@ function showAddMemoryModal() {
     // 根据当前标签设置记忆类型
     memoryType.value = memoryManager.currentMemoryType;
     
+    // 如果数据还没准备好，等待一下
+    if (!window.contacts || !Array.isArray(window.contacts) || window.contacts.length === 0) {
+        console.log('数据未准备好，等待加载...');
+        await waitForDataReady();
+    }
+    
     // 填充角色选择器
     memoryCharacterSelect.innerHTML = '<option value="">选择角色...</option>';
     
     // 确保contacts数组存在
     if (window.contacts && Array.isArray(window.contacts)) {
+        let aiCount = 0;
         window.contacts.forEach(contact => {
             if (contact.type === 'AI') {
                 const option = document.createElement('option');
                 option.value = contact.id;
                 option.textContent = contact.name;
                 memoryCharacterSelect.appendChild(option);
+                aiCount++;
             }
         });
+        console.log(`模态框中已加载 ${aiCount} 个AI角色`);
     } else {
         console.warn('contacts数组不可用，无法填充角色选择器');
     }
@@ -4029,7 +4038,17 @@ function switchMemoryTab(type) {
     if (type === 'global') {
         loadGlobalMemories();
     } else {
+        // 切换到角色记忆时重新加载角色选择器
         loadCharacterSelector();
+        
+        // 如果角色选择器为空，说明数据可能还没加载完成
+        const characterSelector = document.getElementById('characterSelector');
+        if (characterSelector && characterSelector.options.length <= 1) {
+            console.log('角色选择器为空，尝试重新等待数据加载...');
+            waitForDataReady().then(() => {
+                loadCharacterSelector();
+            });
+        }
     }
 }
 
@@ -4063,7 +4082,10 @@ function loadCharacterSelector() {
     }
     
     let aiContactCount = 0;
+    let totalContactCount = 0;
     window.contacts.forEach(contact => {
+        totalContactCount++;
+        console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
         if (contact.type === 'AI') {
             const option = document.createElement('option');
             option.value = contact.id;
@@ -4073,7 +4095,7 @@ function loadCharacterSelector() {
         }
     });
     
-    console.log(`已加载 ${aiContactCount} 个AI角色到选择器`);
+    console.log(`已加载 ${aiContactCount} 个AI角色到选择器，总联系人数: ${totalContactCount}`);
 }
 
 // 加载角色记忆
@@ -4297,6 +4319,25 @@ async function loadExistingMemories() {
     }
 }
 
+// 等待数据加载完成的函数
+async function waitForDataReady() {
+    let attempts = 0;
+    const maxAttempts = 20; // 最多等待10秒
+    
+    while (attempts < maxAttempts) {
+        if (window.contacts && Array.isArray(window.contacts) && window.isIndexedDBReady) {
+            console.log(`数据准备完成，contacts数组长度: ${window.contacts.length}`);
+            return true;
+        }
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log(`等待数据加载中... 尝试 ${attempts}/${maxAttempts}`);
+    }
+    
+    console.warn('等待数据加载超时，继续初始化记忆管理页面');
+    return false;
+}
+
 // 页面显示时初始化记忆管理
 document.addEventListener('DOMContentLoaded', function() {
     // 当显示记忆管理页面时初始化
@@ -4304,7 +4345,10 @@ document.addEventListener('DOMContentLoaded', function() {
     window.showPage = function(pageIdToShow) {
         originalShowPage(pageIdToShow);
         if (pageIdToShow === 'memoryManagementPage') {
-            setTimeout(initMemoryManagementPage, 100);
+            // 等待数据准备完成后再初始化
+            waitForDataReady().then(() => {
+                initMemoryManagementPage();
+            });
         }
     };
 });
