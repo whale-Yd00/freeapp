@@ -3946,7 +3946,7 @@ async function showAddMemoryModal() {
     if (window.contacts && Array.isArray(window.contacts)) {
         let aiCount = 0;
         window.contacts.forEach(contact => {
-            if (contact.type === 'AI') {
+            if (contact.type === 'private') {
                 const option = document.createElement('option');
                 option.value = contact.id;
                 option.textContent = contact.name;
@@ -4086,7 +4086,7 @@ function loadCharacterSelector() {
     window.contacts.forEach(contact => {
         totalContactCount++;
         console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
-        if (contact.type === 'AI') {
+        if (contact.type === 'private') {
             const option = document.createElement('option');
             option.value = contact.id;
             option.textContent = contact.name;
@@ -4291,7 +4291,7 @@ async function loadExistingMemories() {
         // 加载角色记忆
         if (window.contacts && Array.isArray(window.contacts)) {
             for (const contact of window.contacts) {
-                if (contact.type === 'AI') {
+                if (contact.type === 'private') {
                     const existingCharacterMemory = await getExistingCharacterMemory(contact.id);
                     if (existingCharacterMemory && existingCharacterMemory.trim()) {
                         // 如果存在角色记忆但本地没有，创建一个条目
