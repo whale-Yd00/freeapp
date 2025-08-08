@@ -2669,6 +2669,7 @@ async function callAPI(contact, turnContext = []) {
             if (data.choices && data.choices[0] && data.choices[0].finish_reason === 'content_filter') {
                 throw new Error('AI模型没有生成回复，可能是内容被过滤，请检查输入或稍后重试');
             }
+            console.error('API响应格式不支持:', data);
             throw new Error('API响应格式不支持，无法提取回复内容');
         }
 
