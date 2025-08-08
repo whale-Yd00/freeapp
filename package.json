@@ -10,7 +10,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "node-fetch": "^2.6.7",
-    "@netlify/blobs": "^6.5.0"
+    "node-fetch": "^2.6.7"
   }
 }

@@ -1,8 +1,23 @@
+// Simple data transfer function without Netlify Blobs
+// Uses a simple in-memory store with expiration (note: this won't persist across function cold starts)
 
-// 导入Netlify的Blobs功能，这是我们的临时仓库
-import { getDeployStore } from '@netlify/blobs';
+// In-memory storage for shared data
+const dataStore = new Map();
+
+// Clean up expired entries
+function cleanupExpired() {
+  const now = Date.now();
+  for (const [key, value] of dataStore.entries()) {
+    if (value.expires < now) {
+      dataStore.delete(key);
+    }
+  }
+}
 
 export const handler = async (event) => {
+  // Clean up expired entries on each request
+  cleanupExpired();
+  
   // 设置CORS，允许你的Vercel应用访问这个函数
   const headers = {
     'Access-Control-Allow-Origin': '*', // 为了简单起见，允许所有来源。生产环境建议换成你的Vercel域名
@@ -18,20 +33,18 @@ export const handler = async (event) => {
     };
   }
 
-  // 获取我们的临时仓库，给它起个名字叫 'shared-data'
-  const store = getDeployStore('shared-data');
-
   // --- 情况一：收到数据，存起来 (POST请求) ---
   if (event.httpMethod === 'POST') {
     try {
       const dataToStore = JSON.parse(event.body);
       // 生成一个独一无二的、别人猜不到的ID作为取件码
       const uniqueId = crypto.randomUUID();
-
-      // 把数据存进仓库，用ID作为钥匙
+      
+      // 把数据存进内存仓库，用ID作为钥匙
       // 数据只存15分钟，过期作废，非常安全！
-      await store.setJSON(uniqueId, dataToStore, {
-          metadata: { expires: Date.now() + 15 * 60 * 1000 } // 15分钟后过期
+      dataStore.set(uniqueId, {
+        data: dataToStore,
+        expires: Date.now() + 15 * 60 * 1000 // 15分钟后过期
       });
 
       // 把取件码返回给前端
@@ -54,18 +67,17 @@ export const handler = async (event) => {
   if (event.httpMethod === 'GET') {
     try {
       // 从URL里拿到取件码
-      const { id } = event.queryStringParameters;
+      const { id } = event.queryStringParameters || {};
       if (!id) {
         throw new Error('没有提供ID。');
       }
 
       // 根据取件码去仓库里找数据
-      const storedData = await store.get(id, { type: 'json' });
-      const metadata = await store.getMetadata(id);
+      const storedItem = dataStore.get(id);
 
       // 如果数据不存在，或者已经过期了，就告诉他找不到了
-      if (!storedData || (metadata?.expires && Date.now() > metadata.expires)) {
-        if(storedData) await store.delete(id); // 如果是过期的，就顺手删掉
+      if (!storedItem || Date.now() > storedItem.expires) {
+        if (storedItem) dataStore.delete(id); // 如果是过期的，就顺手删掉
         return {
           statusCode: 404,
           headers,
@@ -74,13 +86,13 @@ export const handler = async (event) => {
       }
       
       // 重要！数据一旦被取走，立刻销毁，防止二次使用
-      await store.delete(id);
+      dataStore.delete(id);
 
       // 把取到的数据交出去
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ success: true, data: storedData }),
+        body: JSON.stringify({ success: true, data: storedItem.data }),
       };
     } catch (error) {
       console.error('Error retrieving data:', error);
