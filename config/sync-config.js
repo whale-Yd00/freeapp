@@ -19,8 +19,8 @@ class SyncConfig {
             if (hostname.includes('.netlify.app') || hostname.includes('netlify')) {
                 // 使用Netlify Functions代理（无需配置环境变量）
                 return '/.netlify/functions';
-                // 直接调用Vercel有CORS问题：
-                // return 'https://freeapp-git-sync-tosd0.vercel.app';
+                // 生产环境Vercel域名：
+                // return 'https://chat.whale-llt.top';
             }
             
             // 本地开发环境

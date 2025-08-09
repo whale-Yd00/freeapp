@@ -32,9 +32,9 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // 硬编码的Vercel API URL（无需环境变量）
+        // 生产环境Vercel API URL（无需环境变量）
         const apiEndpoint = event.queryStringParameters?.endpoint || 'upload';
-        const vercelUrl = `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`;
+        const vercelUrl = `https://chat.whale-llt.top/api/sync/${apiEndpoint}`;
         
         console.log('🎯 转发目标:', vercelUrl);
         console.log('📦 请求体长度:', event.body?.length || 0);
