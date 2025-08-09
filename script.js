@@ -785,12 +785,26 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1) {
+    console.log('=== 开始生成论坛帖子 ===');
+    console.log('输入参数:', { contactId, relations, relationDescription, hashtag, count });
+    
     const contact = contacts.find(c => c.id === contactId);
+    console.log('找到的联系人:', contact);
+    
     if (!contact) {
+        console.error('未找到联系人，contactId:', contactId, '所有联系人:', contacts);
         showToast('未找到指定的聊天对象');
         return;
     }
+    
+    console.log('当前API设置:', { 
+        url: apiSettings.url, 
+        model: apiSettings.model, 
+        hasKey: !!apiSettings.key 
+    });
+    
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        console.error('API配置不完整:', apiSettings);
         showToast('请先在设置中配置API');
         return;
     }
@@ -801,6 +815,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
     loadingIndicator.textContent = '正在生成论坛内容...';
     container.prepend(loadingIndicator);
 
+    console.log('正在构建系统提示词...');
     const systemPrompt = window.promptBuilder.buildWeiboPrompt(
         contactId, 
         relations, 
@@ -812,6 +827,8 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         contacts,
         emojis
     );
+    console.log('系统提示词长度:', systemPrompt.length, '字符');
+    console.log('系统提示词内容(前500字符):', systemPrompt.substring(0, 500));
 
     try {
         const payload = {
@@ -822,7 +839,10 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         };
 
         const apiUrl = `${apiSettings.url}/chat/completions`;
+        console.log('准备发送API请求到:', apiUrl);
+        console.log('请求载荷:', JSON.stringify(payload, null, 2));
 
+        console.log('发送API请求...');
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 
@@ -832,45 +852,99 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             body: JSON.stringify(payload)
         });
 
+        console.log('收到API响应:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
+        });
+
         if (!response.ok) {
-            throw new Error(`API请求失败: ${response.status} - ${await response.text()}`);
+            const errorText = await response.text();
+            console.error('API请求失败，错误详情:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText: errorText
+            });
+            throw new Error(`API请求失败: ${response.status} - ${errorText}`);
         }
 
+        console.log('解析API响应JSON...');
         const data = await response.json();
+        console.log('API返回的完整数据:', JSON.stringify(data, null, 2));
+        
         let jsonText = data.choices[0].message.content;
+        console.log('提取的消息内容:', jsonText);
         
         if (!jsonText) {
+            console.error('AI返回的内容为空');
             throw new Error("AI未返回有效内容");
         }
         
+        console.log('原始JSON文本:', jsonText);
+        
         // 自动清理AI可能返回的多余代码块
+        const originalJsonText = jsonText;
         jsonText = jsonText.trim();
         if (jsonText.startsWith('```json')) {
             jsonText = jsonText.substring(7).trim(); // 移除 ```json 和可能的前导空格
+            console.log('移除了```json前缀');
         }
         if (jsonText.endsWith('```')) {
             jsonText = jsonText.slice(0, -3).trim(); // 移除末尾的 ``` 和可能的尾随空格
+            console.log('移除了```后缀');
+        }
+        
+        if (originalJsonText !== jsonText) {
+            console.log('清理后的JSON文本:', jsonText);
         }
 
-        const weiboData = JSON.parse(jsonText);
+        console.log('尝试解析JSON...');
+        let weiboData;
+        try {
+            weiboData = JSON.parse(jsonText);
+            console.log('JSON解析成功，数据结构:', weiboData);
+        } catch (parseError) {
+            console.error('JSON解析失败:', parseError);
+            console.error('尝试解析的文本:', jsonText);
+            throw new Error(`JSON解析失败: ${parseError.message}`);
+        }
 
         // --- 时间戳注入 ---
+        console.log('开始注入时间戳...');
         const now = Date.now();
         // 主楼时间设为2-5分钟前
         const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
         let lastCommentTime = postCreatedAt.getTime();
+        
+        console.log('生成的帖子数量:', weiboData.posts ? weiboData.posts.length : '无posts字段');
 
-        weiboData.posts.forEach(post => {
-            post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
-            if (post.comments && Array.isArray(post.comments)) {
-                post.comments.forEach(comment => {
-                    // 回复时间在主楼和现在之间，且比上一条晚一点
-                    const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
-                    lastCommentTime = newCommentTimestamp;
-                    comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
+        if (weiboData.posts && Array.isArray(weiboData.posts)) {
+            weiboData.posts.forEach((post, index) => {
+                post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
+                console.log(`帖子${index + 1}:`, { 
+                    content: post.content ? post.content.substring(0, 50) + '...' : '无内容',
+                    timestamp: post.timestamp,
+                    commentsCount: post.comments ? post.comments.length : 0
                 });
-            }
-        });
+                
+                if (post.comments && Array.isArray(post.comments)) {
+                    post.comments.forEach((comment, commentIndex) => {
+                        // 回复时间在主楼和现在之间，且比上一条晚一点
+                        const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
+                        lastCommentTime = newCommentTimestamp;
+                        comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
+                        console.log(`  评论${commentIndex + 1}:`, {
+                            author: comment.author,
+                            content: comment.content ? comment.content.substring(0, 30) + '...' : '无内容',
+                            timestamp: comment.timestamp
+                        });
+                    });
+                }
+            });
+        } else {
+            console.error('weiboData.posts不是数组或不存在:', weiboData);
+        }
         // --- 时间戳注入结束 ---
         
         const newPost = {
@@ -883,16 +957,40 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             createdAt: postCreatedAt.toISOString()
         };
 
+        console.log('准备保存新帖子:', {
+            id: newPost.id,
+            contactId: newPost.contactId,
+            relations: newPost.relations,
+            hashtag: newPost.hashtag,
+            createdAt: newPost.createdAt,
+            dataStructure: {
+                hasWeiboPosts: !!newPost.data.posts,
+                postsCount: newPost.data.posts ? newPost.data.posts.length : 0
+            }
+        });
+
+        console.log('保存帖子到数据库...');
         await saveWeiboPost(newPost);
+        console.log('帖子保存成功，添加到内存数组...');
         weiboPosts.push(newPost); // Update in-memory array
+        console.log('当前内存中的帖子数量:', weiboPosts.length);
+        
+        console.log('重新渲染所有帖子...');
         renderAllWeiboPosts();
+        console.log('=== 论坛帖子生成完成 ===');
         showToast('帖子已刷新！');
 
     } catch (error) {
-        console.error('生成论坛失败:', error);
+        console.error('=== 生成论坛失败 ===');
+        console.error('错误类型:', error.name);
+        console.error('错误消息:', error.message);
+        console.error('错误堆栈:', error.stack);
+        console.error('完整错误对象:', error);
         showToast('生成论坛失败: ' + error.message);
     } finally {
+        console.log('清理加载指示器...');
         loadingIndicator.remove();
+        console.log('=== generateWeiboPosts 函数执行结束 ===');
     }
 }
 
