@@ -273,7 +273,10 @@ async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
 
 // --- 全局状态 ---
 let contacts = [];
+// 确保暴露到全局对象
+window.contacts = contacts;
 let currentContact = null;
+window.currentContact = currentContact;
 let editingContact = null;
 
 // 【修改点 1】: 更新 apiSettings 结构以适应 Minimax
@@ -288,7 +291,8 @@ let apiSettings = {
     minimaxGroupId: '',
     minimaxApiKey: ''
 };
-
+// 确保暴露到全局对象
+window.apiSettings = apiSettings;
 let emojis = [];
 let backgrounds = {};
 let userProfile = {
@@ -296,6 +300,9 @@ let userProfile = {
     avatar: '',
     personality: '' 
 };
+
+// 将 userProfile 绑定到全局作用域
+window.userProfile = userProfile;
 let moments = [];
 let weiboPosts = [];
 
@@ -431,12 +438,60 @@ async function init() {
 
 
 // --- IndexedDB 核心函数 ---
+
+// 静默升级数据库以添加 emojiImages 存储
+async function upgradeToAddEmojiImages() {
+    return new Promise((resolve, reject) => {
+        // 关闭当前连接
+        if (db) {
+            db.close();
+        }
+        
+        // 以更高版本号重新打开数据库，触发升级
+        const upgradeRequest = indexedDB.open('WhaleLLTDB', 8);
+        
+        upgradeRequest.onupgradeneeded = event => {
+            const upgradeDb = event.target.result;
+            console.log('正在升级数据库以添加 emojiImages 存储...');
+            
+            // 创建缺失的 emojiImages 存储
+            if (!upgradeDb.objectStoreNames.contains('emojiImages')) {
+                upgradeDb.createObjectStore('emojiImages', { keyPath: 'tag' });
+                console.log('emojiImages 存储已创建');
+            }
+        };
+        
+        upgradeRequest.onsuccess = event => {
+            db = event.target.result;
+            window.db = db;
+            isIndexedDBReady = true;
+            window.isIndexedDBReady = true;
+            
+            console.log('数据库升级完成，emojiImages 存储已创建');
+            if (typeof showToast === 'function') {
+                showToast('数据库已自动升级，表情图片功能已启用');
+            }
+            resolve();
+        };
+        
+        upgradeRequest.onerror = event => {
+            console.error('数据库升级失败:', event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 5);
+        const request = indexedDB.open('WhaleLLTDB', 8);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
+            const oldVersion = event.oldVersion;
+            const newVersion = event.newVersion;
+            
+            console.log(`数据库升级: 从版本 ${oldVersion} 到版本 ${newVersion}`);
+            
             // 音乐播放器相关的ObjectStore
             if (!db.objectStoreNames.contains('songs')) {
                 db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
@@ -451,6 +506,7 @@ function openDB() {
             if (!db.objectStoreNames.contains('emojis')) {
                 db.createObjectStore('emojis', { keyPath: 'id' });
             }
+            // 版本5新增：表情图片分离存储
             if (!db.objectStoreNames.contains('emojiImages')) {
                 db.createObjectStore('emojiImages', { keyPath: 'tag' });
             }
@@ -469,11 +525,56 @@ function openDB() {
             if (!db.objectStoreNames.contains('hashtagCache')) {
                 db.createObjectStore('hashtagCache', { keyPath: 'id' });
             }
+            // 角色记忆相关的ObjectStore
+            if (!db.objectStoreNames.contains('characterMemories')) {
+                db.createObjectStore('characterMemories', { keyPath: 'contactId' });
+            }
+            if (!db.objectStoreNames.contains('conversationCounters')) {
+                db.createObjectStore('conversationCounters', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('globalMemory')) {
+                db.createObjectStore('globalMemory', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
+                db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
+            }
+            
+            // 标记需要进行数据优化（针对版本4、5用户）
+            if (oldVersion <= 5 && newVersion >= 7) {
+                // 设置标记，在数据库连接成功后触发优化
+                window._needsEmojiOptimization = true;
+                console.log('标记需要进行表情数据优化');
+            }
         };
 
         request.onsuccess = event => {
             db = event.target.result;
             isIndexedDBReady = true; // 标记IndexedDB已准备就绪
+            
+            // 确保暴露到全局对象
+            window.db = db;
+            window.isIndexedDBReady = isIndexedDBReady;
+            
+            
+            // 检查是否需要进行表情数据优化
+            if (window._needsEmojiOptimization) {
+                console.log('检测到需要进行表情数据优化，准备执行...');
+                setTimeout(() => {
+                    performEmojiOptimization();
+                }, 1000); // 延迟1秒确保所有数据加载完成
+                window._needsEmojiOptimization = false;
+            }
+            
+            // 数据库准备好后，初始化记忆管理器数据
+            if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
+                setTimeout(async () => {
+                    await window.characterMemoryManager.loadConversationCounters();
+                    await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                    await window.characterMemoryManager.getGlobalMemory();
+                    window.characterMemoryManager.isInitialized = true;
+                }, 100); // 稍微延迟确保所有设置都完成
+            }
+            
             resolve(db);
         };
 
@@ -485,18 +586,168 @@ function openDB() {
     });
 }
 
+// 表情数据结构优化函数（版本4、5用户升级到7时自动执行）
+async function performEmojiOptimization() {
+    try {
+        console.log('开始执行表情数据结构优化...');
+        
+        if (!isIndexedDBReady) {
+            console.error('数据库未准备就绪，无法执行优化');
+            return;
+        }
+        
+        // 获取当前数据
+        const transaction = db.transaction(['contacts', 'emojis', 'emojiImages'], 'readonly');
+        const contactsStore = transaction.objectStore('contacts');
+        const emojisStore = transaction.objectStore('emojis');
+        const emojiImagesStore = transaction.objectStore('emojiImages');
+        
+        const contacts = await promisifyRequest(contactsStore.getAll()) || [];
+        const emojis = await promisifyRequest(emojisStore.getAll()) || [];
+        const existingEmojiImages = await promisifyRequest(emojiImagesStore.getAll()) || [];
+        
+        if (contacts.length === 0 || emojis.length === 0) {
+            console.log('没有数据需要优化，跳过');
+            return;
+        }
+        
+        let processedCount = 0;
+        const base64UrlPattern = /data:image\/[^;]+;base64,[A-Za-z0-9+\/=]+/g;
+        const newEmojiImages = [];
+        const updatedEmojis = [...emojis];
+        const updatedContacts = [];
+        
+        // 遍历所有联系人的消息
+        for (const contact of contacts) {
+            const updatedContact = { ...contact };
+            let contactUpdated = false;
+            
+            if (contact.messages && Array.isArray(contact.messages)) {
+                updatedContact.messages = [];
+                
+                for (const message of contact.messages) {
+                    const updatedMessage = { ...message };
+                    
+                    if (message.content && typeof message.content === 'string') {
+                        const matches = message.content.match(base64UrlPattern);
+                        if (matches) {
+                            for (const base64Url of matches) {
+                                // 查找对应的表情
+                                const emoji = updatedEmojis.find(e => e.url === base64Url);
+                                if (emoji && emoji.meaning) {
+                                    // 检查是否已存在相同的表情图片
+                                    const existingImage = existingEmojiImages.find(img => img.tag === emoji.meaning) ||
+                                                        newEmojiImages.find(img => img.tag === emoji.meaning);
+                                    
+                                    if (!existingImage) {
+                                        newEmojiImages.push({
+                                            tag: emoji.meaning,
+                                            data: base64Url
+                                        });
+                                    }
+                                    
+                                    // 更新表情数据结构
+                                    if (!emoji.tag) {
+                                        emoji.tag = emoji.meaning;
+                                    }
+                                    if (emoji.url) {
+                                        delete emoji.url;
+                                    }
+                                    
+                                    // 替换消息中的格式
+                                    updatedMessage.content = updatedMessage.content.replace(
+                                        base64Url,
+                                        `[emoji:${emoji.meaning}]`
+                                    );
+                                    
+                                    processedCount++;
+                                    contactUpdated = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    updatedContact.messages.push(updatedMessage);
+                }
+            }
+            
+            if (contactUpdated) {
+                updatedContacts.push(updatedContact);
+            }
+        }
+        
+        // 保存优化后的数据
+        if (processedCount > 0) {
+            const writeTransaction = db.transaction(['contacts', 'emojis', 'emojiImages'], 'readwrite');
+            
+            // 更新表情图片数据
+            if (newEmojiImages.length > 0) {
+                const emojiImagesStore = writeTransaction.objectStore('emojiImages');
+                for (const emojiImage of newEmojiImages) {
+                    await promisifyRequest(emojiImagesStore.put(emojiImage));
+                }
+            }
+            
+            // 更新表情元数据
+            const emojisStore = writeTransaction.objectStore('emojis');
+            for (const emoji of updatedEmojis) {
+                if (emoji.tag) { // 只更新有tag的表情
+                    await promisifyRequest(emojisStore.put(emoji));
+                }
+            }
+            
+            // 更新联系人消息
+            const contactsStore = writeTransaction.objectStore('contacts');
+            for (const contact of updatedContacts) {
+                await promisifyRequest(contactsStore.put(contact));
+            }
+            
+            console.log(`表情数据结构优化完成！`);
+            console.log(`- 处理了 ${processedCount} 个表情引用`);
+            console.log(`- 创建了 ${newEmojiImages.length} 个新的表情图片记录`);
+            console.log(`- 更新了 ${updatedContacts.length} 个联系人的消息`);
+            
+            // 显示提示
+            if (typeof showToast === 'function') {
+                showToast(`表情数据优化完成！处理了 ${processedCount} 个表情`, 'success');
+            }
+            
+            // 重新加载数据以确保界面同步
+            await loadDataFromDB();
+        } else {
+            console.log('没有需要优化的表情数据');
+        }
+        
+    } catch (error) {
+        console.error('表情数据优化失败:', error);
+        if (typeof showToast === 'function') {
+            showToast('表情数据优化失败: ' + error.message, 'error');
+        }
+    }
+}
+
 async function loadDataFromDB() {
     if (!isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法加载数据。');
         return;
     }
     try {
-        // 检查是否存在新的emojiImages存储
-        const storeNames = ['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache'];
+        const storeNames = [
+        'contacts', 
+        'apiSettings', 
+        'emojis', 
+        'backgrounds', 
+        'userProfile', 
+        'moments', 
+        'weiboPosts', 
+        'hashtagCache'
+        ];
+
+        // 先检查存不存在 emojiImages
         if (db.objectStoreNames.contains('emojiImages')) {
             storeNames.push('emojiImages');
         } else {
-            console.warn('数据库版本较旧，缺少emojiImages存储。建议刷新页面以升级数据库。');
+            console.warn('数据库版本未包含 emojiImages 存储，建议更新页面以升级数据库。');
         }
         
         const transaction = db.transaction(storeNames, 'readonly');
@@ -510,6 +761,9 @@ async function loadDataFromDB() {
         const weiboPostsStore = transaction.objectStore('weiboPosts');
         
         contacts = (await promisifyRequest(contactsStore.getAll())) || [];
+        // 更新全局引用
+        window.contacts = contacts;
+        
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
             if (contact.type === undefined) contact.type = 'private';
@@ -535,6 +789,10 @@ async function loadDataFromDB() {
         if (apiSettings.minimaxGroupId === undefined) apiSettings.minimaxGroupId = '';
         if (apiSettings.minimaxApiKey === undefined) apiSettings.minimaxApiKey = '';
 
+        // 为旧API设置数据添加 elevenLabsApiKey 默认值
+        if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
+        // 更新全局引用
+        window.apiSettings = apiSettings;
 
         emojis = (await promisifyRequest(emojisStore.getAll())) || [];
         backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
@@ -550,6 +808,13 @@ async function loadDataFromDB() {
         const hashtagCacheStore = transaction.objectStore('hashtagCache');
         const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'))) || {};
         hashtagCache = savedHashtagCache;
+
+        // 重新初始化角色记忆管理器的数据（现在数据库已准备好）
+        
+        if (window.characterMemoryManager) {
+            await window.characterMemoryManager.loadConversationCounters();
+            await window.characterMemoryManager.getGlobalMemory();
+        }
 
     } catch (error) {
         console.error('从IndexedDB加载数据失败:', error);
@@ -662,7 +927,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage'];
 
 function showPage(pageIdToShow) {
     // Hide all main pages and the chat page
@@ -1245,6 +1510,12 @@ function showReplyBox(postHtmlId) {
         postData.comments.push(userComment);
         renderAllWeiboPosts(); // Re-render to show the user's comment
         showReplyBox(postHtmlId); // Keep the reply box open
+
+        // 检查并更新全局记忆（用户回复内容）
+        if (window.characterMemoryManager) {
+            const forumContent = `用户回复论坛：\n原帖：${postData.post_content}\n用户回复：${replyContent}`;
+            window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent);
+        }
 
         try {
             const mentionRegex = /@(\S+)/;
@@ -2124,10 +2395,13 @@ async function saveEmojiImage(tag, base64Data) {
         console.warn('IndexedDB 未准备好，无法保存表情图片。');
         return;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
@@ -2143,10 +2417,13 @@ async function getEmojiImage(tag) {
         console.warn('IndexedDB 未准备好，无法获取表情图片。');
         return null;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return null;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readonly');
         const store = transaction.objectStore('emojiImages');
@@ -2163,10 +2440,13 @@ async function deleteEmojiImage(tag) {
         console.warn('IndexedDB 未准备好，无法删除表情图片。');
         return;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
@@ -2561,6 +2841,7 @@ function getGroupAvatarContent(group) {
 // --- 聊天核心逻辑 ---
 async function openChat(contact) {
     currentContact = contact;
+    window.currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
     document.getElementById('chatTitle').textContent = contact.name;
     showPage('chatPage');
@@ -2593,6 +2874,7 @@ function closeChatPage() {
     const chatMessagesEl = document.getElementById('chatMessages');
     chatMessagesEl.onscroll = null; // 移除监听器
     currentContact = null;
+    window.currentContact = null;
     toggleEmojiPanel(true);
     toggleSettingsMenu(true);
     toggleMemoryPanel(true);
@@ -2807,12 +3089,17 @@ async function sendMessage() {
             await sendGroupMessage();
         } else {
             showTypingIndicator();
-            const { replies, newMemoryTable } = await callAPI(currentContact);
+            const { replies } = await callAPI(currentContact);
             hideTypingIndicator();
-            if (newMemoryTable) {
-                currentContact.memoryTableContent = newMemoryTable;
-                await saveDataToDB();
-            }
+            
+            // 异步更新记忆表格（不阻塞后续流程）
+            setTimeout(async () => {
+                try {
+                    await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
+                } catch (error) {
+                    console.warn('记忆表格更新失败:', error);
+                }
+            }, 1000);
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
@@ -2845,6 +3132,16 @@ async function sendMessage() {
                 renderMessages(true); // 重新渲染并滚动到底部
                 renderContactList();
                 await saveDataToDB();
+            }
+            // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
+            
+            if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
+                try {
+                    await window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
+                } catch (error) {
+                    console.error('检查更新记忆失败:', error);
+                }
+            } else {
             }
         }
     } catch (error) {
@@ -2883,12 +3180,17 @@ async function sendGroupMessage() {
         if (!member || member.type === 'group') continue;
         showTypingIndicator(member);
         try {
-            const { replies, newMemoryTable } = await callAPI(member, turnContext);
+            const { replies } = await callAPI(member, turnContext);
             hideTypingIndicator();
-            if (newMemoryTable) {
-                window.memoryTableManager.updateContactMemoryTable(currentContact, newMemoryTable);
-                await saveDataToDB();
-            }
+            
+            // 异步更新记忆表格（不阻塞后续流程）
+            setTimeout(async () => {
+                try {
+                    await window.memoryTableManager.updateMemoryTableWithSecondaryModel(member);
+                } catch (error) {
+                    console.warn('记忆表格更新失败:', error);
+                }
+            }, 1000);
             if (!replies || replies.length === 0) continue;
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
@@ -2920,6 +3222,14 @@ async function sendGroupMessage() {
                 renderMessages(true); // 重新渲染并滚动到底部
                 renderContactList();
                 await saveDataToDB();
+            }
+            // 为群聊中的每个成员检查记忆更新
+            if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
+                try {
+                    await window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
+                } catch (error) {
+                    console.error('群聊成员记忆更新失败:', error);
+                }
             }
         } catch (error) {
             console.error(`群聊消息发送错误 - ${member.name}:`, error);
@@ -2973,7 +3283,7 @@ function hideTypingIndicator() {
 async function callAPI(contact, turnContext = []) {
     try {
         // 1. 构建系统提示词
-        const systemPrompt = window.promptBuilder.buildChatPrompt(
+        const systemPrompt = await window.promptBuilder.buildChatPrompt(
             contact, 
             userProfile, 
             currentContact, 
@@ -3042,13 +3352,7 @@ async function callAPI(contact, turnContext = []) {
         }
         
         
-        const { memoryTable: newMemoryTable, cleanedResponse } = window.memoryTableManager.extractMemoryTableFromResponse(fullResponseText);
-        
-        if (!newMemoryTable) {
-            console.warn("AI回复中未找到<memory_table>。");
-        }
-        
-        let chatRepliesText = cleanedResponse;
+        let chatRepliesText = fullResponseText;
 
         // 处理回复分割
         if (!chatRepliesText.includes('|||')) {
@@ -3099,7 +3403,7 @@ async function callAPI(contact, turnContext = []) {
         }
         
         
-        return { replies: processedReplies, newMemoryTable };
+        return { replies: processedReplies };
 
     } catch (error) {
         console.error('callAPI错误详情:', {
@@ -3345,12 +3649,17 @@ async function sendEmoji(emoji) {
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) { showToast('请先设置API'); return; }
     showTypingIndicator();
     try {
-        const { replies, newMemoryTable } = await callAPI(currentContact);
+        const { replies } = await callAPI(currentContact);
         hideTypingIndicator();
-        if (newMemoryTable) {
-            window.memoryTableManager.updateContactMemoryTable(currentContact, newMemoryTable);
-            await saveDataToDB();
-        }
+        
+        // 异步更新记忆表格（不阻塞后续流程）
+        setTimeout(async () => {
+            try {
+                await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
+            } catch (error) {
+                console.warn('记忆表格更新失败:', error);
+            }
+        }, 1000);
         if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
         for (const response of replies) {
             await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
@@ -3406,6 +3715,13 @@ async function clearMessages() {
         renderMessages(true); // 重新渲染
         renderContactList();
         await saveDataToDB();
+        
+        // 清空该角色的记忆数据
+        if (window.clearCharacterMemory) {
+            await window.clearCharacterMemory(currentContact.id);
+            console.log(`[清空聊天] 已清空角色 ${currentContact.id} 的记忆数据`);
+        }
+        
         showToast('已清空聊天记录');
         toggleSettingsMenu(true);
     });
@@ -3420,6 +3736,9 @@ async function deleteMessage(messageIndex) {
         showToast('无效的消息索引或未选择聊天');
         return;
     }
+    
+    // 保存被删除的消息，用于记忆更新
+    const deletedMessage = currentContact.messages[messageIndex];
     
     currentContact.messages.splice(messageIndex, 1);
 
@@ -3441,6 +3760,16 @@ async function deleteMessage(messageIndex) {
     renderMessages(false); // 重新渲染，但不滚动到底部
     renderContactList();
     await saveDataToDB();
+    
+    // 检查并更新记忆
+    if (window.checkAndUpdateMemoryAfterDeletion && deletedMessage) {
+        try {
+            await window.checkAndUpdateMemoryAfterDeletion(currentContact.id, [deletedMessage], currentContact);
+        } catch (error) {
+            console.error('删除消息后更新记忆失败:', error);
+        }
+    }
+    
     showToast('消息已删除');
 }
 
@@ -3489,10 +3818,18 @@ async function deleteContact(contactId) {
         // 如果删除的是当前正在聊天的对象，需要重置currentContact
         if (currentContact && currentContact.id === contactId) {
             currentContact = null;
+    window.currentContact = null;
         }
 
         renderContactList(); // 重新渲染联系人列表
         await saveDataToDB(); // 重新保存contacts数组到IndexedDB，确保数据同步
+        
+        // 清空该角色的记忆数据
+        if (window.clearCharacterMemory) {
+            await window.clearCharacterMemory(contactId);
+            console.log(`[删除联系人] 已清空角色 ${contactId} 的记忆数据`);
+        }
+        
         showToast('聊天对象已删除');
     } catch (error) {
         console.error('删除联系人/群聊失败:', error);
@@ -3885,6 +4222,12 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
     renderAllWeiboPosts();
     showToast('帖子发布成功！');
 
+    // 检查并更新全局记忆（用户发帖内容）
+    if (window.characterMemoryManager) {
+        const forumContent = `用户发帖：\n标题：${relationTag}\n内容：${postContent}${imageDescription ? '\n图片描述：' + imageDescription : ''}`;
+        window.characterMemoryManager.checkAndUpdateGlobalMemory(forumContent);
+    }
+
     // 如果没有配置API，就只显示帖子，不生成评论
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
         showToast('未配置API，仅发布帖子，无评论生成');
@@ -4108,6 +4451,14 @@ function deleteSelectedMessages() {
             // 将选中的索引转换为数组并排序（从大到小，避免删除时索引变化）
             const sortedIndexes = Array.from(selectedMessages).sort((a, b) => b - a);
             
+            // 保存被删除的消息，用于记忆更新
+            const deletedMessages = [];
+            for (const messageIndex of sortedIndexes) {
+                if (messageIndex < currentContact.messages.length) {
+                    deletedMessages.push(currentContact.messages[messageIndex]);
+                }
+            }
+            
             // 逐个删除消息
             for (const messageIndex of sortedIndexes) {
                 if (messageIndex < currentContact.messages.length) {
@@ -4138,6 +4489,15 @@ function deleteSelectedMessages() {
             renderContactList();
             await saveDataToDB();
             
+            // 检查并更新记忆
+            if (window.checkAndUpdateMemoryAfterDeletion && deletedMessages.length > 0) {
+                try {
+                    await window.checkAndUpdateMemoryAfterDeletion(currentContact.id, deletedMessages, currentContact);
+                } catch (error) {
+                    console.error('批量删除消息后更新记忆失败:', error);
+                }
+            }
+            
             showToast(`已成功删除 ${selectedCount} 条消息`);
             
         } catch (error) {
@@ -4147,7 +4507,942 @@ function deleteSelectedMessages() {
     });
 }
 
+// === 记忆管理系统 ===
+class MemoryManager {
+    constructor() {
+        this.globalMemories = JSON.parse(localStorage.getItem('globalMemories') || '[]');
+        this.characterMemories = JSON.parse(localStorage.getItem('characterMemories') || '{}');
+        this.currentMemoryType = 'global';
+        this.currentCharacter = null;
+        this.selectedMemoryId = null;
+    }
 
+    // 保存到localStorage
+    save() {
+        localStorage.setItem('globalMemories', JSON.stringify(this.globalMemories));
+        localStorage.setItem('characterMemories', JSON.stringify(this.characterMemories));
+    }
+
+    // 添加全局记忆
+    async addGlobalMemory(content) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
+        const memory = {
+            id: Date.now().toString(),
+            content: cleanedContent,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        this.globalMemories.push(memory);
+        this.save();
+        
+        // 同步到现有的全局记忆系统
+        const allGlobalContent = this.globalMemories.map(m => m.content).join('\n');
+        await saveExistingGlobalMemory(allGlobalContent);
+        
+        return memory;
+    }
+
+    // 添加角色记忆
+    async addCharacterMemory(characterId, content) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
+        if (!this.characterMemories[characterId]) {
+            this.characterMemories[characterId] = [];
+        }
+        const memory = {
+            id: Date.now().toString(),
+            content: cleanedContent,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        this.characterMemories[characterId].push(memory);
+        this.save();
+        
+        // 同步到现有的角色记忆系统
+        const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n');
+        await saveExistingCharacterMemory(characterId, allCharacterContent);
+        
+        return memory;
+    }
+
+    // 更新记忆
+    async updateMemory(memoryId, content, isCharacter = false, characterId = null) {
+        // 清理内容，只保留有效的markdown列表项
+        const cleanedContent = this.cleanAndValidateMemoryContent(content);
+        
+        if (!cleanedContent) {
+            throw new Error('无效的记忆格式！请使用 "- 记忆内容" 的格式');
+        }
+        
+        if (isCharacter && characterId) {
+            const memories = this.characterMemories[characterId] || [];
+            const memory = memories.find(m => m.id === memoryId);
+            if (memory) {
+                memory.content = cleanedContent;
+                memory.updatedAt = new Date().toISOString();
+                this.save();
+                
+                // 同步到现有的角色记忆系统
+                const allCharacterContent = this.characterMemories[characterId].map(m => m.content).join('\n');
+                await saveExistingCharacterMemory(characterId, allCharacterContent);
+                
+                return memory;
+            }
+        } else {
+            const memory = this.globalMemories.find(m => m.id === memoryId);
+            if (memory) {
+                memory.content = cleanedContent;
+                memory.updatedAt = new Date().toISOString();
+                this.save();
+                
+                // 同步到现有的全局记忆系统
+                const allGlobalContent = this.globalMemories.map(m => m.content).join('\n');
+                await saveExistingGlobalMemory(allGlobalContent);
+                
+                return memory;
+            }
+        }
+        return null;
+    }
+
+    // 删除记忆
+    async deleteMemory(memoryId, isCharacter = false, characterId = null) {
+        if (isCharacter && characterId) {
+            const memories = this.characterMemories[characterId] || [];
+            const index = memories.findIndex(m => m.id === memoryId);
+            if (index !== -1) {
+                memories.splice(index, 1);
+                this.save();
+                
+                // 同步到现有的角色记忆系统
+                const allCharacterContent = memories.length > 0 ? 
+                    memories.map(m => m.content).join('\n\n') : '';
+                await saveExistingCharacterMemory(characterId, allCharacterContent);
+                
+                return true;
+            }
+        } else {
+            const index = this.globalMemories.findIndex(m => m.id === memoryId);
+            if (index !== -1) {
+                this.globalMemories.splice(index, 1);
+                this.save();
+                
+                // 同步到现有的全局记忆系统
+                const allGlobalContent = this.globalMemories.length > 0 ? 
+                    this.globalMemories.map(m => m.content).join('\n\n') : '';
+                await saveExistingGlobalMemory(allGlobalContent);
+                
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 获取全局记忆
+    getGlobalMemories() {
+        return this.globalMemories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    // 获取角色记忆
+    getCharacterMemories(characterId) {
+        return (this.characterMemories[characterId] || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    // 清理和验证记忆内容，只保留有效的markdown列表项
+    cleanAndValidateMemoryContent(content) {
+        if (!content || typeof content !== 'string') {
+            return '';
+        }
+        
+        const lines = content.split('\n');
+        const validLines = [];
+        
+        lines.forEach(line => {
+            const trimmedLine = line.trim();
+            // 只保留以 "- " 开头的行
+            if (trimmedLine.startsWith('- ') && trimmedLine.length > 2) {
+                validLines.push(trimmedLine);
+            }
+        });
+        
+        return validLines.join('\n');
+    }
+    
+    // 将记忆内容分解为单独的记忆项列表
+    parseMemoryItems(content) {
+        const cleanContent = this.cleanAndValidateMemoryContent(content);
+        if (!cleanContent) return [];
+        
+        return cleanContent.split('\n').map(line => {
+            // 移除前面的 "- " 得到纯内容
+            return line.replace(/^- /, '').trim();
+        }).filter(item => item.length > 0);
+    }
+    
+    // 从记忆项列表重建markdown内容
+    buildMemoryContent(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            return '';
+        }
+        
+        return items.map(item => `- ${item.trim()}`).join('\n');
+    }
+    
+    // 解析Markdown到HTML（仅支持列表）
+    parseMarkdown(content) {
+        const cleanContent = this.cleanAndValidateMemoryContent(content);
+        if (!cleanContent) return '';
+        
+        const lines = cleanContent.split('\n');
+        const listItems = lines.map(line => {
+            const item = line.replace(/^- /, '');
+            return `<li>${this.escapeHtml(item)}</li>`;
+        }).join('');
+        
+        return listItems ? `<ul>${listItems}</ul>` : '';
+    }
+    
+    // HTML转义
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+// 初始化记忆管理器
+const memoryManager = new MemoryManager();
+
+// 显示添加记忆模态框
+async function showAddMemoryModal() {
+    const modal = document.getElementById('addMemoryModal');
+    const memoryType = document.getElementById('memoryType');
+    const characterSelectGroup = document.getElementById('characterSelectGroup');
+    const memoryCharacterSelect = document.getElementById('memoryCharacterSelect');
+    
+    // 默认设置为全局记忆类型
+    memoryType.value = 'global';
+    
+    // 如果数据还没准备好，等待一下
+    if (!window.contacts || !Array.isArray(window.contacts) || window.contacts.length === 0) {
+        console.log('数据未准备好，等待加载...');
+        await waitForDataReady();
+    }
+    
+    // 填充角色选择器
+    memoryCharacterSelect.innerHTML = '<option value="">选择角色...</option>';
+    
+    // 确保contacts数组存在
+    if (window.contacts && Array.isArray(window.contacts)) {
+        let aiCount = 0;
+        console.log('开始在模态框中加载AI角色，contacts长度:', window.contacts.length);
+        
+        window.contacts.forEach(contact => {
+            console.log(`检查联系人: ${contact.name}, 类型: ${contact.type}`);
+            if (contact.type === 'private') {
+                console.log(`添加AI角色: ${contact.name}`);
+                const option = document.createElement('option');
+                option.value = contact.id;
+                option.textContent = contact.name;
+                memoryCharacterSelect.appendChild(option);
+                aiCount++;
+            }
+        });
+        console.log(`模态框中已加载 ${aiCount} 个AI角色`);
+        
+        if (aiCount === 0) {
+            console.warn('没有找到任何AI角色，可能数据有问题');
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = '暂无可用角色';
+            option.disabled = true;
+            memoryCharacterSelect.appendChild(option);
+        }
+    } else {
+        console.warn('contacts数组不可用，无法填充角色选择器');
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '数据加载中...';
+        option.disabled = true;
+        memoryCharacterSelect.appendChild(option);
+    }
+    
+    // 初始化时确保隐藏角色选择（因为默认是全局记忆）
+    characterSelectGroup.classList.add('hidden');
+    
+    showModal('addMemoryModal');
+}
+
+// 处理记忆类型改变
+function handleMemoryTypeChange() {
+    const memoryType = document.getElementById('memoryType').value;
+    const characterSelectGroup = document.getElementById('characterSelectGroup');
+    
+    if (memoryType === 'character') {
+        characterSelectGroup.classList.remove('hidden');
+    } else {
+        characterSelectGroup.classList.add('hidden');
+    }
+}
+
+// 处理添加记忆
+async function handleAddMemory(event) {
+    event.preventDefault();
+    
+    const memoryType = document.getElementById('memoryType').value;
+    let memoryContent = document.getElementById('memoryContent').value.trim();
+    const memoryCharacterSelect = document.getElementById('memoryCharacterSelect').value;
+    
+    // 自动为每行添加 - 前缀
+    if (memoryContent) {
+        const lines = memoryContent.split('\n');
+        const formattedLines = lines.map(line => {
+            const trimmedLine = line.trim();
+            if (trimmedLine && !trimmedLine.startsWith('- ')) {
+                return '- ' + trimmedLine;
+            }
+            return trimmedLine;
+        }).filter(line => line.length > 0);
+        memoryContent = formattedLines.join('\n');
+    }
+    
+    if (!memoryContent) {
+        showToast('请输入记忆内容');
+        return;
+    }
+    
+    if (memoryType === 'character' && !memoryCharacterSelect) {
+        console.error('角色记忆但未选择角色:', { memoryType, memoryCharacterSelect });
+        showToast('请选择角色');
+        return;
+    }
+    
+    // 验证选择的角色是否存在（角色记忆模式）
+    if (memoryType === 'character') {
+        const selectedContact = window.contacts && window.contacts.find(c => c.id === memoryCharacterSelect);
+        if (!selectedContact) {
+            console.error('选择的角色不存在:', memoryCharacterSelect);
+            showToast('选择的角色不存在，请重新选择');
+            return;
+        }
+        console.log('准备为角色添加记忆:', selectedContact.name);
+    }
+    
+    try {
+        if (memoryType === 'global') {
+            await memoryManager.addGlobalMemory(memoryContent);
+            showToast('全局记忆添加成功');
+            if (memoryManager.currentMemoryType === 'global') {
+                loadGlobalMemories();
+            }
+        } else {
+            await memoryManager.addCharacterMemory(memoryCharacterSelect, memoryContent);
+            showToast('角色记忆添加成功');
+            if (memoryManager.currentMemoryType === 'character' && memoryManager.currentCharacter === memoryCharacterSelect) {
+                loadCharacterMemories();
+            }
+        }
+        
+        closeModal('addMemoryModal');
+        document.getElementById('memoryContent').value = '';
+    } catch (error) {
+        console.error('添加记忆失败:', error);
+        showToast('添加记忆失败');
+    }
+}
+
+// 切换记忆标签
+function switchMemoryTab(type) {
+    const globalTab = document.querySelector('.memory-tab:first-child');
+    const characterTab = document.querySelector('.memory-tab:last-child');
+    const globalSection = document.getElementById('globalMemorySection');
+    const characterSection = document.getElementById('characterMemorySection');
+    
+    // 更新标签样式
+    globalTab.classList.toggle('active', type === 'global');
+    characterTab.classList.toggle('active', type === 'character');
+    
+    // 显示对应内容
+    globalSection.classList.toggle('hidden', type !== 'global');
+    characterSection.classList.toggle('hidden', type !== 'character');
+    
+    memoryManager.currentMemoryType = type;
+    
+    if (type === 'global') {
+        loadGlobalMemories();
+    } else {
+        // 切换到角色记忆时重新加载角色选择器
+        loadCharacterSelector();
+        
+        // 如果角色选择器为空，说明数据可能还没加载完成
+        const characterSelector = document.getElementById('characterSelector');
+        if (characterSelector && characterSelector.options.length <= 1) {
+            console.log('角色选择器为空，尝试重新等待数据加载...');
+            waitForDataReady().then(() => {
+                loadCharacterSelector();
+            });
+        }
+    }
+}
+
+// 加载全局记忆
+function loadGlobalMemories() {
+    const memoryList = document.getElementById('globalMemoryList');
+    const memories = memoryManager.getGlobalMemories();
+    
+    if (memories.length === 0) {
+        memoryList.innerHTML = '<div class="memory-empty">暂无全局记忆</div>';
+        return;
+    }
+    
+    memoryList.innerHTML = memories.map(memory => createMemoryItem(memory, false)).join('');
+}
+
+// 加载角色选择器
+function loadCharacterSelector() {
+    const characterSelector = document.getElementById('characterSelector');
+    console.log('角色选择器元素:', characterSelector);
+    if (!characterSelector) {
+        console.error('角色选择器元素未找到');
+        return;
+    }
+    
+    characterSelector.innerHTML = '<option value="">选择角色...</option>';
+    console.log('已重置角色选择器内容');
+    
+    // 确保contacts数组存在
+    if (!window.contacts || !Array.isArray(window.contacts)) {
+        console.warn('contacts数组不可用，无法加载角色');
+        return;
+    }
+    
+    console.log('开始遍历contacts数组，长度:', window.contacts.length);
+    
+    let aiContactCount = 0;
+    let totalContactCount = 0;
+    window.contacts.forEach(contact => {
+        totalContactCount++;
+        console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
+        console.log(`  - 类型检查: contact.type === 'private' = ${contact.type === 'private'}`);
+        console.log(`  - 类型值调试: '${contact.type}' (长度: ${contact.type?.length})`);
+        if (contact.type === 'private') {
+            console.log(`  - 添加联系人 ${contact.name} 到选择器`);
+            const option = document.createElement('option');
+            option.value = contact.id;
+            option.textContent = contact.name;
+            characterSelector.appendChild(option);
+            aiContactCount++;
+        }
+    });
+    
+    console.log(`已加载 ${aiContactCount} 个AI角色到选择器，总联系人数: ${totalContactCount}`);
+    
+    // 如果没有加载到任何角色，强制刷新一次
+    if (aiContactCount === 0 && totalContactCount > 0) {
+        console.log('没有找到AI角色，可能数据加载有问题，尝试重新检查contacts...');
+        setTimeout(() => {
+            loadCharacterSelector();
+        }, 1000);
+    }
+}
+
+// 加载角色记忆
+function loadCharacterMemories() {
+    const characterSelector = document.getElementById('characterSelector');
+    const memoryList = document.getElementById('characterMemoryList');
+    
+    if (!characterSelector) {
+        console.error('角色选择器未找到');
+        return;
+    }
+    
+    const characterId = characterSelector.value;
+    console.log('选择的角色ID:', characterId);
+    
+    if (!characterId) {
+        memoryList.innerHTML = '<div class="memory-empty">请先选择角色</div>';
+        return;
+    }
+    
+    // 验证选择的角色是否存在
+    const selectedContact = window.contacts && window.contacts.find(c => c.id === characterId);
+    if (!selectedContact) {
+        console.error('选择的角色不存在:', characterId);
+        memoryList.innerHTML = '<div class="memory-empty">选择的角色不存在，请重新选择</div>';
+        return;
+    }
+    
+    console.log('找到角色:', selectedContact.name);
+    
+    memoryManager.currentCharacter = characterId;
+    const memories = memoryManager.getCharacterMemories(characterId);
+    
+    if (memories.length === 0) {
+        memoryList.innerHTML = '<div class="memory-empty">该角色暂无记忆</div>';
+        return;
+    }
+    
+    memoryList.innerHTML = memories.map(memory => createMemoryItem(memory, true, characterId)).join('');
+}
+
+// 创建记忆项HTML - 改为单条模式
+function createMemoryItem(memory, isCharacter, characterId = null) {
+    const date = new Date(memory.createdAt).toLocaleDateString();
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
+    
+    // 为每个记忆项创建单独的卡片
+    return memoryItems.map((item, index) => {
+        const itemId = `${memory.id}-${index}`;
+        
+        return `
+            <div class="memory-item single-item" data-id="${itemId}" data-memory-id="${memory.id}" data-item-index="${index}">
+                <div class="memory-single-content">
+                    <div class="memory-text">${memoryManager.escapeHtml(item)}</div>
+                    <div class="memory-meta">
+                        <span class="memory-date">${date}</span>
+                        <div class="memory-actions">
+                            <button class="memory-btn" onclick="editSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">修改</button>
+                            <button class="memory-btn delete" onclick="deleteSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">删除</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// 编辑单个记忆项
+function editSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
+    if (itemIndex >= memoryItems.length) {
+        showToast('记忆项未找到');
+        return;
+    }
+    
+    const currentItem = memoryItems[itemIndex];
+    
+    // 设置编辑上下文信息
+    memoryManager.singleMemoryEditContext = {
+        memoryId,
+        itemIndex,
+        isCharacter,
+        characterId,
+        memoryItems
+    };
+    
+    // 使用自定义模态窗口进行编辑
+    const editSingleContentTextarea = document.getElementById('editSingleMemoryContent');
+    editSingleContentTextarea.value = currentItem;
+    
+    showModal('editSingleMemoryModal');
+}
+
+// 删除单个记忆项
+async function deleteSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
+    if (!confirm('确定要删除这条记忆吗？')) {
+        return;
+    }
+    
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const memoryItems = memoryManager.parseMemoryItems(memory.content);
+    if (itemIndex >= memoryItems.length) {
+        showToast('记忆项未找到');
+        return;
+    }
+    
+    // 删除指定项
+    memoryItems.splice(itemIndex, 1);
+    
+    if (memoryItems.length === 0) {
+        // 如果没有记忆项了，删除整个记忆
+        await memoryManager.deleteMemory(memoryId, isCharacter, characterId);
+    } else {
+        // 更新记忆内容
+        const updatedContent = memoryManager.buildMemoryContent(memoryItems);
+        await updateSingleMemory(memoryId, updatedContent, isCharacter, characterId);
+    }
+    
+    // 刷新显示
+    if (isCharacter) {
+        loadCharacterMemories();
+    } else {
+        loadGlobalMemories();
+    }
+    
+    showToast('记忆删除成功');
+}
+
+// 更新单个记忆的辅助函数
+async function updateSingleMemory(memoryId, content, isCharacter, characterId) {
+    try {
+        const updated = await memoryManager.updateMemory(memoryId, content, isCharacter, characterId);
+        if (updated) {
+            // 刷新显示
+            if (isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+            showToast('记忆更新成功');
+        } else {
+            showToast('记忆更新失败');
+        }
+    } catch (error) {
+        console.error('更新记忆失败:', error);
+        showToast('记忆更新失败: ' + error.message);
+    }
+}
+
+// 编辑记忆
+function editMemory(memoryId, isCharacter, characterId) {
+    memoryManager.selectedMemoryId = memoryId;
+    
+    let memory;
+    if (isCharacter && characterId) {
+        const memories = memoryManager.getCharacterMemories(characterId);
+        memory = memories.find(m => m.id === memoryId);
+    } else {
+        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+    }
+    
+    if (!memory) {
+        showToast('记忆未找到');
+        return;
+    }
+    
+    const editContentTextarea = document.getElementById('editMemoryContent');
+    editContentTextarea.value = memory.content;
+    
+    // 存储编辑上下文
+    memoryManager.editingContext = {
+        isCharacter,
+        characterId
+    };
+    
+    showModal('editMemoryModal');
+}
+
+// 处理编辑记忆
+async function handleEditMemory(event) {
+    event.preventDefault();
+    
+    const newContent = document.getElementById('editMemoryContent').value.trim();
+    const memoryId = memoryManager.selectedMemoryId;
+    const context = memoryManager.editingContext || {};
+    
+    if (!newContent) {
+        showToast('请输入记忆内容');
+        return;
+    }
+    
+    if (!memoryId) {
+        showToast('记忆ID丢失');
+        return;
+    }
+    
+    try {
+        const updated = await memoryManager.updateMemory(memoryId, newContent, context.isCharacter, context.characterId);
+        if (updated) {
+            showToast('记忆更新成功');
+            closeModal('editMemoryModal');
+            
+            // 刷新显示
+            if (context.isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+        } else {
+            showToast('记忆更新失败');
+        }
+    } catch (error) {
+        console.error('更新记忆失败:', error);
+        showToast('记忆更新失败');
+    }
+}
+
+// 处理编辑单个记忆项
+async function handleEditSingleMemory(event) {
+    event.preventDefault();
+    
+    const newContent = document.getElementById('editSingleMemoryContent').value.trim();
+    const context = memoryManager.singleMemoryEditContext;
+    
+    if (!newContent) {
+        showToast('请输入记忆内容');
+        return;
+    }
+    
+    if (!context) {
+        showToast('编辑上下文丢失');
+        return;
+    }
+    
+    try {
+        // 更新记忆项
+        context.memoryItems[context.itemIndex] = newContent;
+        const updatedContent = memoryManager.buildMemoryContent(context.memoryItems);
+        
+        // 更新记忆
+        await updateSingleMemory(context.memoryId, updatedContent, context.isCharacter, context.characterId);
+        
+        showToast('记忆项更新成功');
+        closeModal('editSingleMemoryModal');
+        
+        // 清理上下文
+        memoryManager.singleMemoryEditContext = null;
+        
+        // 刷新显示
+        if (context.isCharacter) {
+            loadCharacterMemories();
+        } else {
+            loadGlobalMemories();
+        }
+    } catch (error) {
+        console.error('更新记忆项失败:', error);
+        showToast('记忆项更新失败');
+    }
+}
+
+// 删除记忆
+async function deleteMemory(memoryId, isCharacter, characterId) {
+    const confirmMessage = '确定要删除这条记忆吗？';
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        const deleted = await memoryManager.deleteMemory(memoryId, isCharacter, characterId);
+        if (deleted) {
+            showToast('记忆删除成功');
+            
+            // 刷新显示
+            if (isCharacter) {
+                loadCharacterMemories();
+            } else {
+                loadGlobalMemories();
+            }
+        } else {
+            showToast('记忆删除失败');
+        }
+    } catch (error) {
+        console.error('删除记忆失败:', error);
+        showToast('记忆删除失败');
+    }
+}
+
+// 初始化记忆管理页面
+async function initMemoryManagementPage() {
+    console.log('初始化记忆管理页面');
+    
+    // 确保数据已经加载
+    if (!window.contacts || !Array.isArray(window.contacts) || window.contacts.length === 0) {
+        console.log('数据未准备好，等待加载完成...');
+        const dataReady = await waitForDataReady();
+        if (!dataReady) {
+            console.warn('数据加载超时，但继续初始化页面');
+        }
+    }
+    
+    try {
+        // 从现有系统加载数据
+        await loadExistingMemories();
+        
+        // 默认加载全局记忆
+        loadGlobalMemories();
+        loadCharacterSelector();
+        
+        // 检查角色选择器是否成功加载
+        setTimeout(() => {
+            const characterSelector = document.getElementById('characterSelector');
+            if (characterSelector && characterSelector.options.length <= 1) {
+                console.log('角色选择器仍为空，尝试重新加载...');
+                loadCharacterSelector();
+            }
+        }, 500);
+        
+    } catch (error) {
+        console.error('初始化记忆管理页面失败:', error);
+        // 即使加载失败也显示界面
+        loadGlobalMemories();
+        loadCharacterSelector();
+    }
+}
+
+// 从现有记忆系统加载数据
+async function loadExistingMemories() {
+    console.log('从现有记忆系统加载数据');
+    
+    try {
+        // 加载全局记忆
+        const existingGlobalMemory = await getExistingGlobalMemory();
+        if (existingGlobalMemory && existingGlobalMemory.trim()) {
+            // 清理现有记忆内容
+            const cleanedGlobalMemory = memoryManager.cleanAndValidateMemoryContent(existingGlobalMemory);
+            
+            if (cleanedGlobalMemory && memoryManager.globalMemories.length === 0) {
+                const globalMemoryItem = {
+                    id: 'existing-global',
+                    content: cleanedGlobalMemory,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                memoryManager.globalMemories = [globalMemoryItem];
+                memoryManager.save();
+                
+                // 如果清理后的内容与原内容不同，更新到现有系统
+                if (cleanedGlobalMemory !== existingGlobalMemory) {
+                    await saveExistingGlobalMemory(cleanedGlobalMemory);
+                    console.log('全局记忆已清理并更新');
+                }
+            }
+        }
+        
+        // 加载角色记忆
+        if (window.contacts && Array.isArray(window.contacts)) {
+            for (const contact of window.contacts) {
+                if (contact.type === 'private') {
+                    const existingCharacterMemory = await getExistingCharacterMemory(contact.id);
+                    if (existingCharacterMemory && existingCharacterMemory.trim()) {
+                        // 清理现有角色记忆内容
+                        const cleanedCharacterMemory = memoryManager.cleanAndValidateMemoryContent(existingCharacterMemory);
+                        
+                        if (cleanedCharacterMemory && (!memoryManager.characterMemories[contact.id] || memoryManager.characterMemories[contact.id].length === 0)) {
+                            const characterMemoryItem = {
+                                id: `existing-${contact.id}`,
+                                content: cleanedCharacterMemory,
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString()
+                            };
+                            if (!memoryManager.characterMemories[contact.id]) {
+                                memoryManager.characterMemories[contact.id] = [];
+                            }
+                            memoryManager.characterMemories[contact.id] = [characterMemoryItem];
+                            memoryManager.save();
+                            
+                            // 如果清理后的内容与原内容不同，更新到现有系统
+                            if (cleanedCharacterMemory !== existingCharacterMemory) {
+                                await saveExistingCharacterMemory(contact.id, cleanedCharacterMemory);
+                                console.log(`角色 ${contact.name} 的记忆已清理并更新`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log('现有记忆数据加载完成');
+    } catch (error) {
+        console.error('加载现有记忆数据失败:', error);
+    }
+}
+
+// 等待数据加载完成的函数
+async function waitForDataReady() {
+    let attempts = 0;
+    const maxAttempts = 20; // 最多等待10秒
+    
+    while (attempts < maxAttempts) {
+        if (window.contacts && Array.isArray(window.contacts) && window.isIndexedDBReady) {
+            console.log(`数据准备完成，contacts数组长度: ${window.contacts.length}`);
+            return true;
+        }
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 500));
+        console.log(`等待数据加载中... 尝试 ${attempts}/${maxAttempts}`);
+    }
+    
+    console.warn('等待数据加载超时，继续初始化记忆管理页面');
+    return false;
+}
+
+// 页面显示时初始化记忆管理
+document.addEventListener('DOMContentLoaded', function() {
+    // 当显示记忆管理页面时初始化
+    const originalShowPage = showPage;
+    window.showPage = function(pageIdToShow) {
+        originalShowPage(pageIdToShow);
+        if (pageIdToShow === 'memoryManagementPage') {
+            console.log('切换到记忆管理页面，开始初始化...');
+            // 等待数据准备完成后再初始化
+            waitForDataReady().then((dataReady) => {
+                if (dataReady) {
+                    console.log('数据准备就绪，初始化记忆管理页面');
+                } else {
+                    console.warn('数据准备超时，但仍尝试初始化页面');
+                }
+                initMemoryManagementPage();
+            });
+        }
+    };
+});
+
+// 集成现有的记忆系统 - 添加接口函数
+async function getExistingGlobalMemory() {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.getGlobalMemory();
+    }
+    return '';
+}
+
+async function getExistingCharacterMemory(characterId) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.getCharacterMemory(characterId);
+    }
+    return null;
+}
+
+async function saveExistingGlobalMemory(content) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.saveGlobalMemory(content);
+    }
+    return false;
+}
+
+async function saveExistingCharacterMemory(characterId, content) {
+    if (window.characterMemoryManager) {
+        return await window.characterMemoryManager.saveCharacterMemory(characterId, content);
+    }
+    return false;
+}
+
+// ElevenLabs 语音播放功能
 /**
  * [MODIFIED] 播放或停止语音消息 - 直接从前端调用 Minimax API
  * @param {HTMLElement} playerElement - 被点击的播放器元素
