@@ -634,9 +634,13 @@
                         <div id="imageSystemStatus" class="context-info" style="margin-bottom: 10px;">
                             检查中...
                         </div>
-                        <div style="display: flex; gap: 10px;">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                             <button type="button" class="form-button secondary" onclick="checkImageSystemStatus()">检查状态</button>
                             <button type="button" class="form-button" onclick="upgradeImageSystem()" id="upgradeImageBtn">升级系统</button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button type="button" class="form-button secondary" onclick="cleanupMessageImages()" id="cleanupMessagesBtn">清理消息图片</button>
+                            <button type="button" class="form-button secondary" onclick="showImageSystemStats()">查看统计</button>
                         </div>
                     </div>
                 </div>

@@ -2889,6 +2889,135 @@ async function upgradeImageSystem() {
     }
 }
 
+/**
+ * 手动清理消息中的base64图片
+ */
+async function cleanupMessageImages() {
+    const cleanupBtn = document.getElementById('cleanupMessagesBtn');
+    
+    if (!window.imageUpgrader) {
+        showToast('升级器未初始化');
+        return;
+    }
+
+    try {
+        // 禁用按钮，显示进度
+        if (cleanupBtn) {
+            cleanupBtn.disabled = true;
+            cleanupBtn.textContent = '清理中...';
+        }
+
+        // 确认对话框
+        const confirmed = await new Promise(resolve => {
+            showConfirmDialog(
+                '清理消息图片', 
+                '即将扫描所有聊天记录，将其中的base64图片转换为文件引用格式。\n\n这将:\n• 优化消息存储空间\n• 提升消息加载性能\n• 统一图片管理方式\n\n确定要继续吗？', 
+                () => resolve(true),
+                () => resolve(false)
+            );
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        // 执行清理
+        console.log('用户手动触发消息图片清理...');
+        const result = await window.imageUpgrader.cleanupMessageImages();
+        
+        if (result.success) {
+            if (result.processedMessages > 0) {
+                showToast(`✅ 清理完成！处理了 ${result.processedMessages} 条消息`);
+                console.log(`✅ 消息清理完成: ${result.processedMessages} 条消息`);
+            } else {
+                showToast('ℹ️ 没有发现需要处理的base64图片');
+                console.log('ℹ️ 消息清理完成，无需处理的图片');
+            }
+        } else {
+            showToast('❌ 清理失败: ' + (result.error || '未知错误'));
+            console.error('❌ 消息清理失败:', result.error);
+        }
+        
+    } catch (error) {
+        console.error('手动消息清理失败:', error);
+        showToast('❌ 清理失败: ' + error.message);
+    } finally {
+        // 恢复按钮状态
+        if (cleanupBtn) {
+            cleanupBtn.disabled = false;
+            cleanupBtn.textContent = '清理消息图片';
+        }
+    }
+}
+
+/**
+ * 显示图片存储系统统计信息
+ */
+async function showImageSystemStats() {
+    if (!window.imageManager) {
+        showToast('图片管理器未初始化');
+        return;
+    }
+
+    try {
+        const stats = await window.imageManager.getStorageStats();
+        const upgradeStats = await window.imageUpgrader?.getUpgradeStats();
+        
+        if (!stats) {
+            showToast('无法获取统计信息');
+            return;
+        }
+
+        const statsDetails = [
+            `📊 存储统计信息`,
+            ``,
+            `📁 总文件数: ${stats.totalFiles}`,
+            `💾 总存储大小: ${(stats.totalSize / 1024 / 1024).toFixed(2)} MB`,
+            ``
+        ];
+
+        if (stats.byType) {
+            statsDetails.push(`📋 按类型分类:`);
+            for (const [type, typeStats] of Object.entries(stats.byType)) {
+                const typeNameMap = {
+                    'emoji': '表情包',
+                    'background': '背景图片',
+                    'avatar': '头像',
+                    'unknown': '其他'
+                };
+                const typeName = typeNameMap[type] || type;
+                statsDetails.push(`  • ${typeName}: ${typeStats.count} 个文件，${(typeStats.size / 1024).toFixed(1)} KB`);
+            }
+        }
+
+        if (upgradeStats) {
+            statsDetails.push(``);
+            statsDetails.push(`🔄 升级状态: ${upgradeStats.version}`);
+            if (upgradeStats.upgradeableImages > 0) {
+                statsDetails.push(`⚠️  待处理图片: ${upgradeStats.upgradeableImages} 个`);
+            }
+        }
+
+        // 创建一个临时的消息框显示统计信息
+        const statsMessage = statsDetails.join('\n');
+        
+        // 使用确认对话框显示统计信息
+        showConfirmDialog(
+            '图片存储系统统计', 
+            statsMessage, 
+            () => {}, // 确定按钮回调
+            null, // 取消按钮
+            '确定' // 只显示确定按钮
+        );
+
+        console.log('图片存储统计:', stats);
+        
+    } catch (error) {
+        console.error('获取统计信息失败:', error);
+        showToast('获取统计信息失败');
+    }
+}
+
 // === 图片存储系统测试函数 ===
 async function testImageStorageSystem() {
     if (!window.imageManager) {
