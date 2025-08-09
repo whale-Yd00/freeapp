@@ -2,6 +2,11 @@ import { Database } from '../../lib/db.js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
+    // 处理OPTIONS预检请求
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    
     // 只允许POST请求
     if (req.method !== 'POST') {
         return res.status(405).json({ error: '只允许POST请求' });
