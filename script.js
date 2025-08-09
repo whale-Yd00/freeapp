@@ -3745,13 +3745,12 @@ function deleteSelectedMessages() {
 
 
 /**
- * [修正后的函数] 播放或停止语音消息 (Minimax Version)
+ * [最终修正版] 播放或停止语音消息
  * @param {HTMLElement} playerElement - 被点击的播放器元素
  * @param {string} text - 需要转换为语音的文本
  * @param {string} voiceId - Minimax 的声音ID
  */
 async function playVoiceMessage(playerElement, text, voiceId) {
-    // 检查 Minimax 所需的凭证
     if (!apiSettings.minimaxGroupId || !apiSettings.minimaxApiKey) {
         showToast('请在设置中填写 Minimax Group ID 和 API Key');
         return;
@@ -3763,7 +3762,6 @@ async function playVoiceMessage(playerElement, text, voiceId) {
 
     const wasPlaying = playerElement === currentPlayingElement && !voiceAudio.paused;
 
-    // 停止任何当前正在播放的音频
     if (currentPlayingElement) {
         voiceAudio.pause();
         voiceAudio.currentTime = 0;
@@ -3772,27 +3770,22 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         currentPlayingElement.classList.remove('playing', 'loading');
     }
 
-    // 如果点击的是正在播放的元素，则仅停止它
     if (wasPlaying) {
         currentPlayingElement = null;
         return;
     }
 
-    // 设置新的播放目标
     currentPlayingElement = playerElement;
     const playButton = playerElement.querySelector('.play-button');
     const durationEl = playerElement.querySelector('.duration');
 
     try {
         playerElement.classList.add('loading');
-        playButton.textContent = '...'; // 加载指示
+        playButton.textContent = '...';
 
-        // 调用 TTS API 端点
         const response = await fetch('/api/tts', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 text: text,
                 voiceId: voiceId,
@@ -3801,41 +3794,27 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             })
         });
 
-        // --- 增强的错误处理 ---
         if (!response.ok) {
             let errorMsg = `语音服务错误 (状态码: ${response.status})`;
             try {
-                // 尝试解析后端返回的JSON错误信息
                 const errorData = await response.json();
                 if (errorData && errorData.error) {
                     errorMsg += `: ${errorData.error}`;
                 }
             } catch (e) {
-                // 如果后端返回的不是JSON（比如一个HTML错误页），则直接显示文本
                 errorMsg += `: ${await response.text()}`;
             }
             throw new Error(errorMsg);
         }
 
-        // --- 增强的响应处理 ---
-        let audioBlob;
-        const contentType = response.headers.get('content-type');
+        // Netlify/Vercel 会自动解码base64，我们直接接收二进制的blob
+        const audioBlob = await response.blob();
+        
+        if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
+            console.error("服务器未返回有效的音频。Content-Type:", audioBlob.type);
+            throw new Error(`服务器返回了非预期的内容类型: ${audioBlob.type}`);
+        }
 
-        // 明确检查返回的是否是音频类型
-        if (contentType && contentType.includes('audio/')) {
-            console.log("服务器返回了音频文件，类型为:", contentType);
-            audioBlob = await response.blob();
-        } else {
-            // 如果返回的不是音频，这本身就是一个问题
-            const responseText = await response.text();
-            console.error("服务器未返回有效的音频。Content-Type:", contentType, "返回内容:", responseText);
-            throw new Error(`服务器返回了非预期的内容类型: ${contentType}`);
-        }
-        
-        if (!audioBlob || audioBlob.size === 0) {
-            throw new Error('未能生成有效的音频数据 (Blob为空)');
-        }
-        
         const audioUrl = URL.createObjectURL(audioBlob);
         
         voiceAudio.src = audioUrl;
@@ -3845,8 +3824,6 @@ async function playVoiceMessage(playerElement, text, voiceId) {
                 const minutes = Math.floor(voiceAudio.duration / 60);
                 const seconds = Math.floor(voiceAudio.duration % 60).toString().padStart(2, '0');
                 durationEl.textContent = `${minutes}:${seconds}`;
-            } else {
-                durationEl.textContent = '...';
             }
         };
 
@@ -3862,34 +3839,5 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.remove('loading');
         playButton.textContent = '▶';
         currentPlayingElement = null;
-    }
-}
-
-/**
- * 将 Base64 字符串转换为 Blob 对象。
- * @param {string} b64Data - Base64 编码的数据。
- * @param {string} contentType - 内容类型，例如 'audio/mpeg'。
- * @param {number} sliceSize - 处理时每个切片的大小。
- * @returns {Blob}
- */
-function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
-    try {
-        const byteCharacters = atob(b64Data);
-        const byteArrays = [];
-
-        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {
-                byteNumbers[i] = slice.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-        }
-
-        return new Blob(byteArrays, { type: contentType });
-    } catch (e) {
-        console.error("Base64 解码失败:", e);
-        return null; // 返回null表示解码失败
     }
 }
