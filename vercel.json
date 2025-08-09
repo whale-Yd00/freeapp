@@ -6,7 +6,7 @@
   },
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/sync/(.*)",
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
