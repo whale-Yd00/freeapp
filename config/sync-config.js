@@ -17,10 +17,10 @@ class SyncConfig {
             
             // Netlify部署检测
             if (hostname.includes('.netlify.app') || hostname.includes('netlify')) {
-                // 优先尝试直接调用Vercel API（如果CORS已修复）
-                return 'https://freeapp-git-sync-tosd0.vercel.app';
-                // 如果还有CORS问题，取消上面的注释，使用下面的代理方式：
-                // return '/.netlify/functions';
+                // 使用Netlify Functions代理（CORS问题解决方案）
+                return '/.netlify/functions';
+                // 直接调用有CORS问题，暂时禁用：
+                // return 'https://freeapp-git-sync-tosd0.vercel.app';
             }
             
             // 本地开发环境
