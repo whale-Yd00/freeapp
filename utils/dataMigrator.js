@@ -980,71 +980,26 @@ window.DatabaseManager = {
     },
     
     /**
-     * 导出数据到剪贴板
+     * 导出数据到剪贴板（直接显示让用户手动复制）
      */
     async exportToClipboard() {
         try {
             const data = await dbManager.exportDatabase();
             const dataStr = JSON.stringify(data, null, 2);
             
-            // 尝试使用现代的Clipboard API
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                try {
-                    await navigator.clipboard.writeText(dataStr);
-                    return { success: true, message: '数据已复制到剪贴板！' };
-                } catch (clipboardError) {
-                    console.warn('现代剪贴板API失败，尝试备用方案:', clipboardError);
-                    // 如果现代API失败，尝试备用方案
-                    return this.fallbackCopyToClipboard(dataStr);
-                }
-            } else {
-                // 如果不支持现代API，直接使用备用方案
-                return this.fallbackCopyToClipboard(dataStr);
-            }
+            // 直接显示手动复制区域
+            this.showManualCopyArea(dataStr);
+            return { success: true, message: '数据已显示，请手动选择并复制' };
         } catch (error) {
-            console.error('复制到剪贴板失败:', error);
+            console.error('导出数据失败:', error);
             return { success: false, error: error.message };
-        }
-    },
-    
-    /**
-     * 备用剪贴板复制方案
-     */
-    fallbackCopyToClipboard(text) {
-        try {
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.top = "0";
-            textArea.style.left = "0";
-            textArea.style.position = "fixed";
-            textArea.style.opacity = "0";
-            
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            
-            const successful = document.execCommand('copy');
-            document.body.removeChild(textArea);
-            
-            if (successful) {
-                return { success: true, message: '数据已复制到剪贴板！' };
-            } else {
-                // 如果传统复制也失败，显示手动复制区域
-                this.showManualCopyFallback(text);
-                return { success: true, message: '请手动复制下方显示的数据', showManualCopy: true };
-            }
-        } catch (err) {
-            console.error('备用复制方案失败:', err);
-            // 如果所有复制方案都失败，显示手动复制区域
-            this.showManualCopyFallback(text);
-            return { success: true, message: '自动复制失败，请手动复制下方显示的数据', showManualCopy: true };
         }
     },
     
     /**
      * 显示手动复制区域
      */
-    showManualCopyFallback(text) {
+    showManualCopyArea(text) {
         if (typeof window.showManualCopyArea === 'function') {
             window.showManualCopyArea(text);
         } else {
