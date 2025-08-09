@@ -915,8 +915,9 @@ window.DatabaseManager = {
             // 清空头像base64数据以减少数据大小
             this.clearAvatarData(data);
             
-            // 调用上传API
-            const response = await fetch('/api/sync/upload', {
+            // 调用上传API - 使用配置的URL
+            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('upload') : '/api/sync/upload';
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -945,7 +946,8 @@ window.DatabaseManager = {
      */
     async downloadDataFromCloud(syncKey) {
         try {
-            const response = await fetch('/api/sync/download', {
+            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('download') : '/api/sync/download';
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

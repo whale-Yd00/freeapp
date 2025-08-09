@@ -1,6 +1,16 @@
 import { Database } from '../../lib/db.js';
 
 export default async function handler(req, res) {
+    // 设置CORS头，允许跨域请求
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // 处理预检请求
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+    
     // 只允许POST请求
     if (req.method !== 'POST') {
         return res.status(405).json({ error: '只允许POST请求' });

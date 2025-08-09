@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>同步密钥生成器</title>
+    <script src="config/sync-config.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -153,7 +154,8 @@
             }
 
             try {
-                const response = await fetch('/api/sync/manage', {
+                const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('manage') : '/api/sync/manage';
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -193,7 +195,8 @@
             }
 
             try {
-                const response = await fetch('/api/sync/manage', {
+                const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('manage') : '/api/sync/manage';
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -238,7 +241,8 @@
             }
 
             try {
-                const response = await fetch('/api/sync/manage', {
+                const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('manage') : '/api/sync/manage';
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
