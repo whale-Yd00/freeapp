@@ -1,7 +1,24 @@
-import { Database } from '../../lib/db.js';
-import crypto from 'crypto';
+// CJS 语法导入模块
+const { Database } = require('../../lib/db.js');
+const crypto = require('crypto');
 
-export default async function handler(req, res) {
+/**
+ * 从错误对象中提取可读的错误消息。
+ * @param {*} error - 错误对象或字符串。
+ * @returns {string} - 可读的错误消息。
+ */
+function getErrorMessage(error) {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'object' && error !== null && error.message) {
+        return error.message;
+    }
+    return String(error);
+}
+
+// CJS 语法导出模块
+module.exports = async function handler(req, res) {
     // 处理OPTIONS预检请求
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
@@ -15,59 +32,59 @@ export default async function handler(req, res) {
     try {
         const { action, syncKey, adminKey } = req.body;
 
-        // 简单的管理员验证（实际使用中应该使用更安全的方式）
         const expectedAdminKey = process.env.ADMIN_KEY;
         if (adminKey !== expectedAdminKey) {
             return res.status(403).json({ error: '无权限访问' });
         }
 
-        // 初始化数据库
         await Database.init();
+
+        let result, errorMessage;
 
         switch (action) {
             case 'create':
-                // 创建新的同步密钥
                 const newSyncKey = syncKey || generateSyncKey();
-                const createResult = await Database.createSyncKey(newSyncKey);
+                result = await Database.createSyncKey(newSyncKey);
                 
-                if (createResult.success) {
+                if (result.success) {
                     return res.status(200).json({
                         success: true,
                         syncKey: newSyncKey,
                         message: '同步密钥创建成功'
                     });
                 } else {
-                    return res.status(500).json({ error: '创建同步密钥失败: ' + createResult.error });
+                    errorMessage = getErrorMessage(result.error);
+                    return res.status(500).json({ error: '创建同步密钥失败: ' + errorMessage });
                 }
 
             case 'delete':
-                // 删除同步密钥和相关数据
                 if (!syncKey) {
                     return res.status(400).json({ error: '缺少syncKey参数' });
                 }
                 
-                const deleteResult = await Database.deleteUserData(syncKey);
+                result = await Database.deleteUserData(syncKey);
                 
-                if (deleteResult.success) {
+                if (result.success) {
                     return res.status(200).json({
                         success: true,
                         message: '同步密钥和数据删除成功'
                     });
                 } else {
-                    return res.status(500).json({ error: '删除失败: ' + deleteResult.error });
+                    errorMessage = getErrorMessage(result.error);
+                    return res.status(500).json({ error: '删除失败: ' + errorMessage });
                 }
 
             case 'stats':
-                // 获取统计信息
-                const statsResult = await Database.getStats();
+                result = await Database.getStats();
                 
-                if (statsResult.success) {
+                if (result.success) {
                     return res.status(200).json({
                         success: true,
-                        stats: statsResult.stats
+                        stats: result.stats
                     });
                 } else {
-                    return res.status(500).json({ error: '获取统计信息失败: ' + statsResult.error });
+                    errorMessage = getErrorMessage(result.error);
+                    return res.status(500).json({ error: '获取统计信息失败: ' + errorMessage });
                 }
 
             default:
@@ -76,7 +93,8 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error('管理API错误:', error);
-        return res.status(500).json({ error: '服务器内部错误' });
+        const errorMessage = getErrorMessage(error);
+        return res.status(500).json({ error: '服务器内部错误: ' + errorMessage });
     }
 }
 
