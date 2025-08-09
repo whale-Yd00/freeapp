@@ -2348,6 +2348,12 @@ async function renderEmojiContent(emojiContent, isInline = false) {
     return emojiContent; // 返回原内容
 }
 
+// 删除AI回复中的思维链标签
+function removeThinkingChain(text) {
+    // 删除 <think> ... </think> 标签及其内容
+    return text.replace(/<think\s*>[\s\S]*?<\/think\s*>/gi, '').trim();
+}
+
 async function processTextWithInlineEmojis(textContent) {
     const emojiTagRegex = /\[(?:emoji|发送了表情)[:：]([^\]]+)\]/g;
     const standaloneEmojiMatch = textContent.trim().match(/^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/);
@@ -3104,7 +3110,7 @@ async function sendMessage() {
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
                 
-                let messageContent = response.content;
+                let messageContent = removeThinkingChain(response.content);
                 let forceVoice = false;
 
                 // 检查并处理AI的语音指令
@@ -3195,7 +3201,7 @@ async function sendGroupMessage() {
             for (const response of replies) {
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
 
-                let messageContent = response.content;
+                let messageContent = removeThinkingChain(response.content);
                 let forceVoice = false;
 
                 if (messageContent.startsWith('[语音]:')) {
@@ -3663,7 +3669,7 @@ async function sendEmoji(emoji) {
         if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
         for (const response of replies) {
             await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-            const aiMessage = { role: 'assistant', content: response.content, type: response.type, time: new Date().toISOString(), senderId: currentContact.id };
+            const aiMessage = { role: 'assistant', content: removeThinkingChain(response.content), type: response.type, time: new Date().toISOString(), senderId: currentContact.id };
             currentContact.messages.push(aiMessage);
             if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                 currentlyDisplayedMessageCount++;
