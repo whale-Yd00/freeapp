@@ -64,7 +64,9 @@ class APIService {
                 
                 // 尝试解析JSON响应
                 try {
-                    return await response.json();
+                    const data = await response.json();
+                    console.log('API完整返回:', JSON.stringify(data, null, 2));
+                    return data;
                 } catch (parseError) {
                     throw new Error(`响应格式错误: 无法解析API返回的JSON数据`);
                 }
