@@ -3577,7 +3577,7 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
 
     } catch (error) {
         console.error('生成评论失败:', error);
-        showToast('评论生成失败: ' + error.message);
+        showToast('生成评论失败: ' + error.message);
     } finally {
         loadingIndicator.remove();
     }
@@ -3801,38 +3801,39 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             })
         });
 
+        // --- 增强的错误处理 ---
         if (!response.ok) {
-            // 尝试从响应体中获取有意义的错误信息
-            const errorData = await response.json().catch(() => ({ error: '语音生成失败，请检查服务器日志' }));
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            let errorMsg = `语音服务错误 (状态码: ${response.status})`;
+            try {
+                // 尝试解析后端返回的JSON错误信息
+                const errorData = await response.json();
+                if (errorData && errorData.error) {
+                    errorMsg += `: ${errorData.error}`;
+                }
+            } catch (e) {
+                // 如果后端返回的不是JSON（比如一个HTML错误页），则直接显示文本
+                errorMsg += `: ${await response.text()}`;
+            }
+            throw new Error(errorMsg);
         }
 
-        // --- NEW ROBUST LOGIC ---
+        // --- 增强的响应处理 ---
         let audioBlob;
         const contentType = response.headers.get('content-type');
 
+        // 明确检查返回的是否是音频类型
         if (contentType && contentType.includes('audio/')) {
-            // Case 1: Backend is correctly configured and sends a direct audio stream.
-            console.log("Handling response as direct audio blob.");
+            console.log("服务器返回了音频文件，类型为:", contentType);
             audioBlob = await response.blob();
-        } else if (contentType && contentType.includes('application/json')) {
-            // Case 2: Backend sends a JSON object with base64 data inside.
-            console.log("Handling response as JSON with base64 data.");
-            const responseData = await response.json();
-            if (!responseData.body) {
-                throw new Error('JSON响应中未找到 "body" 字段。');
-            }
-            audioBlob = b64toBlob(responseData.body, 'audio/mpeg');
         } else {
-            // Case 3 (Fallback): Assume the response is a raw base64 text string.
-            // This can happen with misconfigured serverless functions.
-            console.log("Handling response as raw base64 text.");
-            const b64Data = await response.text();
-            audioBlob = b64toBlob(b64Data, 'audio/mpeg');
+            // 如果返回的不是音频，这本身就是一个问题
+            const responseText = await response.text();
+            console.error("服务器未返回有效的音频。Content-Type:", contentType, "返回内容:", responseText);
+            throw new Error(`服务器返回了非预期的内容类型: ${contentType}`);
         }
         
         if (!audioBlob || audioBlob.size === 0) {
-            throw new Error('未能生成有效的音频数据。');
+            throw new Error('未能生成有效的音频数据 (Blob为空)');
         }
         
         const audioUrl = URL.createObjectURL(audioBlob);
@@ -3872,26 +3873,23 @@ async function playVoiceMessage(playerElement, text, voiceId) {
  * @returns {Blob}
  */
 function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
-    // 使用 atob 函数解码 Base64 字符串
-    const byteCharacters = atob(b64Data);
-    const byteArrays = [];
+    try {
+        const byteCharacters = atob(b64Data);
+        const byteArrays = [];
 
-    // 将解码后的字符串分片处理
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-        const slice = byteCharacters.slice(offset, offset + sliceSize);
-
-        // 获取每个字符的 Unicode 编码
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
         }
 
-        // 将 Unicode 编码转换为 8 位无符号整数数组
-        const byteArray = new Uint8Array(byteNumbers);
-        byteArrays.push(byteArray);
+        return new Blob(byteArrays, { type: contentType });
+    } catch (e) {
+        console.error("Base64 解码失败:", e);
+        return null; // 返回null表示解码失败
     }
-
-    // 使用处理后的数据创建 Blob 对象
-    const blob = new Blob(byteArrays, { type: contentType });
-    return blob;
 }
