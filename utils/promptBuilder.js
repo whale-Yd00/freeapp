@@ -576,7 +576,7 @@ ${userReply}
 - 发帖人：${authorName}
 - 话题标签：${relationTag}
 - 帖子内容：${postContent}
-- 图片描述：${imageDescription || '无'}`
+- 图片描述：${imageDescription || '无'}
 
 # 要求
 1. ${finalCommentPrompt}
