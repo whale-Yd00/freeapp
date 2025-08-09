@@ -192,55 +192,32 @@
                         </button>
                     </div>
                     
-                    <!-- 剪贴板操作 -->
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                        <button type="button" class="form-submit" onclick="exportToClipboard()" 
-                                style="flex: 1; background-color: #6f42c1;">
-                            📋 显示数据文本
-                        </button>
+                    <!-- 云同步功能 -->
+                    <div style="margin-bottom: 15px; padding: 15px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px;">
+                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #1565c0;">
+                            🌐 云端数据同步
+                        </div>
                         
-                        <button type="button" class="form-submit" onclick="showManualImportArea()" 
-                                style="flex: 1; background-color: #fd7e14;">
-                            📋 手动输入数据
-                        </button>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button type="button" class="form-submit" onclick="uploadDataToCloud()" 
+                                    style="flex: 1; background-color: #4caf50;">
+                                ☁️ 上传到云端
+                            </button>
+                            <button type="button" class="form-submit" onclick="downloadDataFromCloud()" 
+                                    style="flex: 1; background-color: #2196f3;">
+                                ⬇️ 从云端下载
+                            </button>
+                        </div>
+                        
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" id="syncKeyInput" placeholder="输入同步标识符" 
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        
+                        <div id="syncStatus" style="font-size: 12px; color: #666; text-align: center;"></div>
                     </div>
                     
                     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
-                    
-                    <!-- 手动复制区域 -->
-                    <div id="manualCopyArea" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
-                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #495057;">
-                            数据导出内容：
-                        </div>
-                        <textarea id="manualCopyTextArea" readonly style="width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; background: white;"></textarea>
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            <button type="button" class="form-submit" onclick="selectAllManualCopyText()" style="flex: 1; background-color: #6c757d; font-size: 12px; padding: 8px;">
-                                📋 全选文本
-                            </button>
-                            <button type="button" class="form-submit" onclick="hideManualCopyArea()" style="flex: 1; background-color: #dc3545; font-size: 12px; padding: 8px;">
-                                ❌ 关闭
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- 手动导入区域 -->
-                    <div id="manualImportArea" style="display: none; margin-top: 15px; padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
-                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #856404;">
-                            请粘贴要导入的数据：
-                        </div>
-                        <textarea id="manualImportTextArea" placeholder="请在此处粘贴JSON格式的数据库备份数据..." style="width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; background: white;"></textarea>
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            <button type="button" class="form-submit" onclick="processManualImport()" style="flex: 1; background-color: #fd7e14; font-size: 12px; padding: 8px;">
-                                ✅ 确认导入
-                            </button>
-                            <button type="button" class="form-submit" onclick="clearManualImportText()" style="flex: 1; background-color: #6c757d; font-size: 12px; padding: 8px;">
-                                🗑️ 清空内容
-                            </button>
-                            <button type="button" class="form-submit" onclick="hideManualImportArea()" style="flex: 1; background-color: #dc3545; font-size: 12px; padding: 8px;">
-                                ❌ 关闭
-                            </button>
-                        </div>
-                    </div>
                     
                     <!-- 导入说明 -->
                     <div class="import-warning" style="margin-top: 10px; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
