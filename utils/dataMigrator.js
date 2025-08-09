@@ -902,27 +902,86 @@ window.DatabaseManager = {
     },
     
     /**
-     * 导出数据到剪贴板（直接显示让用户手动复制）
-     * 排除大数据存储（如表情图片）
+     * 上传数据到云端
      */
-    async exportToClipboard() {
+    async uploadDataToCloud(syncKey) {
         try {
-            // 获取所有存储名称，排除不需要手动导出的存储
+            // 获取所有数据（排除图片等大文件）
             const allStores = Array.from(dbManager.db.objectStoreNames);
             const exportStores = allStores.filter(store => !dbManager.excludedFromManualExport.includes(store));
             
             const data = await dbManager.exportDatabase({ stores: exportStores });
             
-            // 清空所有avatar字段中的base64数据
+            // 清空头像base64数据以减少数据大小
             this.clearAvatarData(data);
             
-            const dataStr = JSON.stringify(data);
+            // 调用上传API - 使用配置的URL
+            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('upload') : '/api/sync/upload';
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    syncKey: syncKey,
+                    data: data
+                })
+            });
             
-            // 直接显示手动复制区域
-            this.showManualCopyArea(dataStr);
-            return { success: true, message: '数据已显示，请手动选择并复制' };
+            const result = await response.json();
+            
+            if (response.ok) {
+                return { success: true, message: '数据上传成功！' };
+            } else {
+                return { success: false, error: result.error || '上传失败' };
+            }
         } catch (error) {
-            console.error('导出数据失败:', error);
+            console.error('上传数据失败:', error);
+            return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 从云端下载数据
+     */
+    async downloadDataFromCloud(syncKey) {
+        try {
+            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('download') : '/api/sync/download';
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    syncKey: syncKey
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                // 验证下载的数据
+                const validation = dbManager.validateFileIntegrity(result.data);
+                if (!validation.valid) {
+                    return { success: false, error: validation.error };
+                }
+                
+                // 导入数据（覆盖模式）
+                const importResult = await dbManager.importDatabase(result.data, { 
+                    overwrite: true,
+                    validateVersion: false 
+                });
+                
+                return { 
+                    success: true, 
+                    message: `数据下载成功！导入了 ${importResult.importedStores?.length || 0} 个数据表`,
+                    result: importResult
+                };
+            } else {
+                return { success: false, error: result.error || '下载失败' };
+            }
+        } catch (error) {
+            console.error('下载数据失败:', error);
             return { success: false, error: error.message };
         }
     },
@@ -957,73 +1016,6 @@ window.DatabaseManager = {
                 }
             });
         }
-    },
-    
-    /**
-     * 显示手动复制区域
-     */
-    showManualCopyArea(text) {
-        if (typeof window.showManualCopyArea === 'function') {
-            window.showManualCopyArea(text);
-        } else {
-            console.error('showManualCopyArea 函数不存在');
-        }
-    },
-    
-    /**
-     * 从文本导入数据（用于手动输入）
-     */
-    async importFromText(textData) {
-        try {
-            if (!textData || !textData.trim()) {
-                throw new Error('输入的数据为空');
-            }
-            
-            let importData;
-            try {
-                importData = JSON.parse(textData);
-            } catch (parseError) {
-                throw new Error('输入的内容不是有效的JSON格式');
-            }
-            
-            // 检查文件合法性
-            const validationResult = dbManager.validateFileIntegrity(importData);
-            if (!validationResult.valid) {
-                return {
-                    success: false,
-                    error: validationResult.error,
-                    validation: validationResult
-                };
-            }
-            
-            // 验证数据
-            const validation = dbManager.validateImportData(importData);
-            
-            if (!validation.valid) {
-                return { 
-                    success: false, 
-                    error: '数据验证失败：' + validation.errors.join(', '),
-                    validation 
-                };
-            }
-            
-            // 导入数据（强制覆盖）
-            const result = await dbManager.importDatabase(importData, { 
-                overwrite: true,
-                validateVersion: true 
-            });
-            
-            return { 
-                success: true, 
-                message: `手动导入成功！导入了 ${result.importedStores?.length || 0} 个数据表`,
-                result,
-                validation 
-            };
-            
-        } catch (error) {
-            console.error('从文本导入失败:', error);
-            return { success: false, error: error.message };
-        }
     }
 };
 
@@ -1052,190 +1044,144 @@ if (typeof document !== 'undefined') {
     }
 }
 
-// 手动复制相关函数
-window.selectAllManualCopyText = function() {
-    const textarea = document.getElementById('manualCopyTextArea');
-    if (textarea) {
-        textarea.select();
-        textarea.setSelectionRange(0, 99999); // 兼容移动设备
+// 云同步相关函数
+window.uploadDataToCloud = async function() {
+    const syncKeyInput = document.getElementById('syncKeyInput');
+    const syncStatus = document.getElementById('syncStatus');
+    
+    if (!syncKeyInput || !syncKeyInput.value.trim()) {
+        if (typeof showToast === 'function') {
+            showToast('请输入同步标识符');
+        } else {
+            alert('请输入同步标识符');
+        }
+        return;
+    }
+    
+    const syncKey = syncKeyInput.value.trim();
+    
+    try {
+        syncStatus.textContent = '正在上传数据到云端...';
+        syncStatus.style.color = '#1565c0';
         
-        // 尝试复制选中的文本
-        try {
-            document.execCommand('copy');
+        const result = await window.DatabaseManager.uploadDataToCloud(syncKey);
+        
+        if (result.success) {
+            syncStatus.textContent = '上传成功！数据已保存到云端';
+            syncStatus.style.color = '#2e7d32';
+            
             if (typeof showToast === 'function') {
-                showToast('文本已选中并尝试复制');
+                showToast('数据上传成功！');
             }
-        } catch (err) {
+        } else {
+            syncStatus.textContent = '上传失败: ' + result.error;
+            syncStatus.style.color = '#d32f2f';
+            
             if (typeof showToast === 'function') {
-                showToast('文本已全选，请按Ctrl+C复制');
+                showToast('上传失败: ' + result.error);
             }
         }
-    }
-};
-
-window.hideManualCopyArea = function() {
-    const manualCopyArea = document.getElementById('manualCopyArea');
-    if (manualCopyArea) {
-        manualCopyArea.style.display = 'none';
-    }
-};
-
-window.showManualCopyArea = function(text) {
-    const manualCopyArea = document.getElementById('manualCopyArea');
-    const textarea = document.getElementById('manualCopyTextArea');
-    
-    if (manualCopyArea && textarea) {
-        textarea.value = text;
-        manualCopyArea.style.display = 'block';
-        
-        // 自动滚动到手动复制区域
-        setTimeout(() => {
-            manualCopyArea.scrollIntoView({ behavior: 'smooth' });
-            // 自动选中所有文本
-            textarea.select();
-            textarea.setSelectionRange(0, 99999);
-        }, 100);
-    }
-};
-
-// 手动导入相关函数
-window.showManualImportArea = function() {
-    const manualImportArea = document.getElementById('manualImportArea');
-    const textarea = document.getElementById('manualImportTextArea');
-    
-    if (manualImportArea && textarea) {
-        // 隐藏其他区域
-        const manualCopyArea = document.getElementById('manualCopyArea');
-        if (manualCopyArea) {
-            manualCopyArea.style.display = 'none';
-        }
-        
-        // 显示导入区域
-        manualImportArea.style.display = 'block';
-        textarea.value = '';
-        
-        // 自动滚动并聚焦
-        setTimeout(() => {
-            manualImportArea.scrollIntoView({ behavior: 'smooth' });
-            textarea.focus();
-        }, 100);
+    } catch (error) {
+        syncStatus.textContent = '上传出错: ' + error.message;
+        syncStatus.style.color = '#d32f2f';
         
         if (typeof showToast === 'function') {
-            showToast('请粘贴要导入的JSON数据');
+            showToast('上传出错: ' + error.message);
         }
+        console.error('云端上传失败:', error);
     }
 };
 
-window.hideManualImportArea = function() {
-    const manualImportArea = document.getElementById('manualImportArea');
-    if (manualImportArea) {
-        manualImportArea.style.display = 'none';
-    }
-};
-
-window.clearManualImportText = function() {
-    const textarea = document.getElementById('manualImportTextArea');
-    if (textarea) {
-        textarea.value = '';
-        textarea.focus();
-    }
-};
-
-window.processManualImport = async function() {
-    const textarea = document.getElementById('manualImportTextArea');
+window.downloadDataFromCloud = async function() {
+    const syncKeyInput = document.getElementById('syncKeyInput');
+    const syncStatus = document.getElementById('syncStatus');
     
-    if (!textarea) {
-        alert('未找到输入框');
+    if (!syncKeyInput || !syncKeyInput.value.trim()) {
+        if (typeof showToast === 'function') {
+            showToast('请输入同步标识符');
+        } else {
+            alert('请输入同步标识符');
+        }
         return;
     }
     
-    const inputText = textarea.value.trim();
+    const syncKey = syncKeyInput.value.trim();
     
-    if (!inputText) {
-        alert('请先粘贴要导入的数据');
-        textarea.focus();
+    const confirmMessage = '从云端下载数据将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
+    
+    if (!confirm(confirmMessage)) {
         return;
     }
     
-    const firstConfirmMessage = '手动导入数据将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
-    const secondConfirmMessage = '再次确认：此操作不可撤销！\n确定要用输入的数据覆盖当前所有数据吗？';
-    
-    // 使用原生 confirm 对话框避免嵌套问题
-    if (confirm(firstConfirmMessage)) {
-        if (confirm(secondConfirmMessage)) {
-            try {
-                if (typeof showToast === 'function') {
-                    showToast('正在处理导入数据...');
-                }
-                
-                const result = await window.DatabaseManager.importFromText(inputText);
-                
-                if (result.success) {
-                    // 隐藏导入区域
-                    window.hideManualImportArea();
-                    
-                    // 刷新统计信息
-                    if (typeof window.refreshDatabaseStats === 'function') {
-                        window.refreshDatabaseStats();
-                    }
-                    
-                    // 清空内存中的数据，确保数据同步
-                    if (typeof window.contacts !== 'undefined') {
-                        window.contacts = [];
-                    }
-                    if (typeof window.currentContact !== 'undefined') {
-                        window.currentContact = null;
-                    }
-                    if (typeof window.emojis !== 'undefined') {
-                        window.emojis = [];
-                    }
-                    if (typeof window.backgrounds !== 'undefined') {
-                        window.backgrounds = {};
-                    }
-                    if (typeof window.userProfile !== 'undefined') {
-                        window.userProfile = { name: '我的昵称', avatar: '', personality: '' };
-                    }
-                    if (typeof window.moments !== 'undefined') {
-                        window.moments = [];
-                    }
-                    if (typeof window.weiboPosts !== 'undefined') {
-                        window.weiboPosts = [];
-                    }
-                    
-                    // 显示成功消息
-                    const successMessage = `手动导入成功！\n导入了 ${result.result?.importedStores?.length || '多个'} 个数据表\n页面将自动刷新以更新显示`;
-                    
-                    if (typeof showToast === 'function') {
-                        showToast('导入成功！正在刷新页面以应用新数据...');
-                    }
-                    
-                    // 显示警告信息（如果有）
-                    if (result.validation && result.validation.warnings.length > 0) {
-                        alert('导入成功，但有以下警告，请及时截图:\n' + result.validation.warnings.join('\n') + '\n\n页面即将刷新');
-                    } else {
-                        alert(successMessage);
-                    }
-                    
-                    // 自动刷新页面
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 500);
-                } else {
-                    if (typeof showToast === 'function') {
-                        showToast('导入失败: ' + result.error);
-                    } else {
-                        alert('导入失败: ' + result.error);
-                    }
-                }
-            } catch (error) {
-                if (typeof showToast === 'function') {
-                    showToast('处理导入数据出错: ' + error.message);
-                } else {
-                    alert('处理导入数据出错: ' + error.message);
-                }
-                console.error('手动导入失败:', error);
+    try {
+        syncStatus.textContent = '正在从云端下载数据...';
+        syncStatus.style.color = '#1565c0';
+        
+        const result = await window.DatabaseManager.downloadDataFromCloud(syncKey);
+        
+        if (result.success) {
+            syncStatus.textContent = '下载成功！正在刷新页面...';
+            syncStatus.style.color = '#2e7d32';
+            
+            // 刷新统计信息
+            if (typeof window.refreshDatabaseStats === 'function') {
+                window.refreshDatabaseStats();
+            }
+            
+            // 清空内存数据
+            window.clearMemoryData();
+            
+            if (typeof showToast === 'function') {
+                showToast('下载成功！正在刷新页面...');
+            }
+            
+            alert(result.message + '\n页面将自动刷新以更新显示');
+            
+            // 自动刷新页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            syncStatus.textContent = '下载失败: ' + result.error;
+            syncStatus.style.color = '#d32f2f';
+            
+            if (typeof showToast === 'function') {
+                showToast('下载失败: ' + result.error);
             }
         }
+    } catch (error) {
+        syncStatus.textContent = '下载出错: ' + error.message;
+        syncStatus.style.color = '#d32f2f';
+        
+        if (typeof showToast === 'function') {
+            showToast('下载出错: ' + error.message);
+        }
+        console.error('云端下载失败:', error);
+    }
+};
+
+// 清空内存数据的辅助函数
+window.clearMemoryData = function() {
+    if (typeof window.contacts !== 'undefined') {
+        window.contacts = [];
+    }
+    if (typeof window.currentContact !== 'undefined') {
+        window.currentContact = null;
+    }
+    if (typeof window.emojis !== 'undefined') {
+        window.emojis = [];
+    }
+    if (typeof window.backgrounds !== 'undefined') {
+        window.backgrounds = {};
+    }
+    if (typeof window.userProfile !== 'undefined') {
+        window.userProfile = { name: '我的昵称', avatar: '', personality: '' };
+    }
+    if (typeof window.moments !== 'undefined') {
+        window.moments = [];
+    }
+    if (typeof window.weiboPosts !== 'undefined') {
+        window.weiboPosts = [];
     }
 };
 
