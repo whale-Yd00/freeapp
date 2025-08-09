@@ -1085,6 +1085,66 @@ body {
     background-color: #06a652;
 }
 
+/* 表单按钮样式 */
+.form-button {
+    padding: 8px 16px;
+    background-color: #07c160;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    flex: 1;
+}
+
+.form-button:active {
+    background-color: #06a652;
+}
+
+.form-button.secondary {
+    background-color: #f8f8f8;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.form-button.secondary:active {
+    background-color: #e8e8e8;
+}
+
+.form-button:disabled {
+    background-color: #ccc;
+    color: #888;
+    cursor: not-allowed;
+}
+
+/* 图片系统状态指示器 */
+.image-system-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.image-system-status.outdated {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.image-system-status.updated {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.image-system-status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
 /* 表情面板 */
 .emoji-panel {
     display: none;

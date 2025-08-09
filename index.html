@@ -626,6 +626,20 @@
                     </div>
                     <button type="submit" class="form-submit">保存</button>
                 </form>
+                
+                <!-- 图片存储系统升级区域 -->
+                <div class="form-section" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e7e7e7;">
+                    <div class="form-group">
+                        <label class="form-label">图片存储系统</label>
+                        <div id="imageSystemStatus" class="context-info" style="margin-bottom: 10px;">
+                            检查中...
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="form-button secondary" onclick="checkImageSystemStatus()">检查状态</button>
+                            <button type="button" class="form-button" onclick="upgradeImageSystem()" id="upgradeImageBtn">升级系统</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -910,6 +924,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="script.js"></script>
     <script src="js/api.js"></script>
+    <script src="utils/imageManager.js"></script>
+    <script src="utils/imageUpgrader.js"></script>
     <script src="utils/promptBuilder.js"></script>
     <script src="utils/memoryTable.js"></script>
     <script src="utils/dataMigrator.js"></script>

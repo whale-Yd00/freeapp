@@ -354,6 +354,59 @@ async function init() {
     }
     
     await loadDataFromDB(); // 从IndexedDB加载数据
+    
+    // 初始化图片管理器和升级系统
+    if (window.imageManager && window.imageUpgrader) {
+        const initResult = await window.imageManager.init();
+        if (initResult) {
+            console.log('图片管理器初始化成功');
+            
+            // 检查是否需要升级
+            const needsUpgrade = await window.imageUpgrader.needsUpgrade();
+            if (needsUpgrade) {
+                console.log('检测到需要升级图片存储系统...');
+                const upgradeSuccess = await window.imageUpgrader.performUpgrade();
+                
+                if (upgradeSuccess) {
+                    console.log('✅ 图片存储系统升级成功');
+                } else {
+                    console.warn('⚠️ 图片存储系统升级部分完成或失败，继续使用兼容模式');
+                    // 执行原有的数据迁移作为备选方案
+                    await migrateImageData();
+                }
+            } else {
+                console.log('图片存储系统已是最新版本');
+                // 仍然执行一次迁移检查，确保数据完整性
+                await migrateImageData();
+            }
+            
+            // 异步预加载表情（不阻塞初始化）
+            setTimeout(async () => {
+                try {
+                    const preloadedCount = await window.imageManager.preloadAllEmojis();
+                    if (preloadedCount > 0) {
+                        console.log(`已预加载 ${preloadedCount} 个表情图片`);
+                    }
+                    
+                    // 显示升级统计信息
+                    const upgradeStats = await window.imageUpgrader.getUpgradeStats();
+                    if (upgradeStats) {
+                        console.log('升级统计:', upgradeStats);
+                    }
+                    
+                    // 在开发模式下运行测试
+                    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                        console.log('检测到开发环境，运行系统测试...');
+                        await testImageStorageSystem();
+                    }
+                } catch (error) {
+                    console.warn('后台任务失败:', error);
+                }
+            }, 2000);
+        } else {
+            console.warn('图片管理器初始化失败，将使用旧的存储方式');
+        }
+    }
 
     renderContactList();
     updateUserProfileUI();
@@ -2391,6 +2444,19 @@ async function processTextWithInlineEmojis(textContent) {
     }
 }
 async function saveEmojiImage(tag, base64Data) {
+    // 优先使用新的图片管理器
+    if (window.imageManager) {
+        try {
+            const success = await window.imageManager.saveEmoji(tag, base64Data);
+            if (success) {
+                return;
+            }
+        } catch (error) {
+            console.warn('使用新图片管理器保存表情失败，回退到旧方式:', error);
+        }
+    }
+    
+    // 回退到旧的存储方式
     if (!isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法保存表情图片。');
         return;
@@ -2413,6 +2479,19 @@ async function saveEmojiImage(tag, base64Data) {
 }
 
 async function getEmojiImage(tag) {
+    // 优先使用新的图片管理器
+    if (window.imageManager) {
+        try {
+            const imageUrl = await window.imageManager.getEmoji(tag);
+            if (imageUrl) {
+                return imageUrl;
+            }
+        } catch (error) {
+            console.warn('使用新图片管理器获取表情失败，回退到旧方式:', error);
+        }
+    }
+    
+    // 回退到旧的存储方式
     if (!isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法获取表情图片。');
         return null;
@@ -2457,6 +2536,306 @@ async function deleteEmojiImage(tag) {
     }
 }
 
+// === 背景图片处理函数 ===
+async function getContactBackground(contactId) {
+    // 如果使用新的虚拟路径格式
+    if (backgrounds[contactId] && backgrounds[contactId].startsWith('virtual://')) {
+        if (window.imageManager) {
+            try {
+                return await window.imageManager.getBackground(contactId);
+            } catch (error) {
+                console.warn('使用新图片管理器获取背景失败:', error);
+            }
+        }
+    }
+    
+    // 使用原有的URL或base64数据
+    return backgrounds[contactId] || null;
+}
+
+async function setContactBackground(contactId, imageData) {
+    if (window.imageManager && imageData && imageData.startsWith('data:image/')) {
+        try {
+            const success = await window.imageManager.saveBackground(contactId, imageData);
+            if (success) {
+                // 更新backgrounds对象指向虚拟路径
+                backgrounds[contactId] = `virtual://images/backgrounds/bg_${contactId}.png`;
+                return true;
+            }
+        } catch (error) {
+            console.warn('使用新图片管理器保存背景失败，使用原有方式:', error);
+        }
+    }
+    
+    // 回退到原有方式（直接存储URL）
+    backgrounds[contactId] = imageData;
+    return true;
+}
+
+// === 数据迁移函数 ===
+/**
+ * 将现有的base64图片数据迁移到新的虚拟文件系统
+ */
+async function migrateImageData() {
+    if (!window.imageManager || !isIndexedDBReady) {
+        console.log('图片管理器未准备好，跳过数据迁移');
+        return;
+    }
+
+    try {
+        console.log('开始图片数据迁移...');
+        let migratedCount = 0;
+
+        // 迁移表情包图片
+        if (db.objectStoreNames.contains('emojiImages')) {
+            const transaction = db.transaction(['emojiImages'], 'readonly');
+            const store = transaction.objectStore('emojiImages');
+            const emojiImages = await new Promise((resolve, reject) => {
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result || []);
+                request.onerror = () => reject(request.error);
+            });
+
+            for (const emojiImage of emojiImages) {
+                if (emojiImage.tag && emojiImage.data) {
+                    // 检查是否已经迁移
+                    const existingImage = await window.imageManager.getEmoji(emojiImage.tag);
+                    if (!existingImage) {
+                        const success = await window.imageManager.saveEmoji(emojiImage.tag, emojiImage.data);
+                        if (success) {
+                            migratedCount++;
+                            console.log(`已迁移表情: ${emojiImage.tag}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 迁移背景图片
+        for (const [contactId, backgroundUrl] of Object.entries(backgrounds)) {
+            if (backgroundUrl && backgroundUrl.startsWith('data:image/')) {
+                // 检查是否已经迁移
+                const existingBg = await window.imageManager.getBackground(contactId);
+                if (!existingBg) {
+                    const success = await window.imageManager.saveBackground(contactId, backgroundUrl);
+                    if (success) {
+                        // 更新backgrounds对象，使其指向新的虚拟路径
+                        backgrounds[contactId] = `virtual://images/backgrounds/bg_${contactId}.png`;
+                        migratedCount++;
+                        console.log(`已迁移背景: 联系人${contactId}`);
+                    }
+                }
+            }
+        }
+
+        // 迁移联系人头像
+        for (const contact of contacts) {
+            if (contact.avatar && contact.avatar.startsWith('data:image/')) {
+                // 检查是否已经迁移
+                const existingAvatar = await window.imageManager.getAvatar(contact.id);
+                if (!existingAvatar) {
+                    const success = await window.imageManager.saveAvatar(contact.id, contact.avatar);
+                    if (success) {
+                        // 更新contact对象，使其指向新的虚拟路径
+                        contact.avatar = `virtual://images/avatars/avatar_${contact.id}.png`;
+                        migratedCount++;
+                        console.log(`已迁移头像: ${contact.name}`);
+                    }
+                }
+            }
+        }
+
+        if (migratedCount > 0) {
+            // 保存更新后的数据
+            await saveDataToDB();
+            console.log(`数据迁移完成，共迁移了 ${migratedCount} 个图片文件`);
+            
+            // 显示迁移统计信息
+            const stats = await window.imageManager.getStorageStats();
+            if (stats) {
+                console.log('存储统计:', stats);
+            }
+        } else {
+            console.log('没有需要迁移的图片数据');
+        }
+    } catch (error) {
+        console.error('图片数据迁移失败:', error);
+    }
+}
+
+// === 图片存储系统管理界面函数 ===
+/**
+ * 检查图片存储系统状态并更新UI
+ */
+async function checkImageSystemStatus() {
+    const statusEl = document.getElementById('imageSystemStatus');
+    const upgradeBtn = document.getElementById('upgradeImageBtn');
+    
+    if (!statusEl) return;
+    
+    try {
+        if (!window.imageUpgrader) {
+            statusEl.innerHTML = '<div class="image-system-status error">❌ 升级器未初始化</div>';
+            if (upgradeBtn) upgradeBtn.disabled = true;
+            return;
+        }
+
+        const stats = await window.imageUpgrader.getUpgradeStats();
+        if (!stats) {
+            statusEl.innerHTML = '<div class="image-system-status error">❌ 无法获取系统状态</div>';
+            return;
+        }
+
+        const needsUpgrade = stats.needsUpgrade;
+        const currentVersion = stats.version;
+        const upgradeableCount = stats.upgradeableImages;
+        const totalImages = stats.totalImages;
+
+        if (needsUpgrade) {
+            statusEl.innerHTML = `
+                <div class="image-system-status outdated">
+                    ⚠️ 系统需要升级 (当前版本: ${currentVersion})<br>
+                    发现 ${upgradeableCount} 个旧格式图片需要转换<br>
+                    新系统中已有 ${totalImages} 个图片文件
+                </div>
+            `;
+            if (upgradeBtn) {
+                upgradeBtn.disabled = false;
+                upgradeBtn.textContent = `升级系统 (${upgradeableCount}张图片)`;
+            }
+        } else {
+            statusEl.innerHTML = `
+                <div class="image-system-status updated">
+                    ✅ 系统已是最新版本 (${currentVersion})<br>
+                    当前存储 ${totalImages} 个图片文件
+                </div>
+            `;
+            if (upgradeBtn) {
+                upgradeBtn.disabled = true;
+                upgradeBtn.textContent = '已是最新版本';
+            }
+        }
+    } catch (error) {
+        console.error('检查图片系统状态失败:', error);
+        statusEl.innerHTML = '<div class="image-system-status error">❌ 检查状态失败</div>';
+    }
+}
+
+/**
+ * 手动触发图片存储系统升级
+ */
+async function upgradeImageSystem() {
+    const statusEl = document.getElementById('imageSystemStatus');
+    const upgradeBtn = document.getElementById('upgradeImageBtn');
+    
+    if (!window.imageUpgrader) {
+        showToast('升级器未初始化');
+        return;
+    }
+
+    try {
+        // 禁用按钮，显示进度
+        if (upgradeBtn) {
+            upgradeBtn.disabled = true;
+            upgradeBtn.textContent = '升级中...';
+        }
+        
+        if (statusEl) {
+            statusEl.innerHTML = '<div class="image-system-status">⏳ 正在升级图片存储系统，请稍候...</div>';
+        }
+
+        // 确认对话框
+        const confirmed = await new Promise(resolve => {
+            showConfirmDialog(
+                '升级图片存储系统', 
+                '即将升级图片存储系统，这将:\n• 将所有base64图片转换为文件格式\n• 优化存储空间和性能\n• 更新聊天记录中的图片引用\n\n确定要继续吗？', 
+                () => resolve(true),
+                () => resolve(false)
+            );
+        });
+
+        if (!confirmed) {
+            if (statusEl) {
+                statusEl.innerHTML = '<div class="image-system-status">升级已取消</div>';
+            }
+            await checkImageSystemStatus(); // 恢复状态显示
+            return;
+        }
+
+        // 执行升级
+        console.log('用户手动触发图片存储系统升级...');
+        const success = await window.imageUpgrader.performUpgrade();
+        
+        if (success) {
+            showToast('✅ 图片存储系统升级成功！');
+            console.log('✅ 手动升级完成');
+        } else {
+            showToast('⚠️ 升级部分完成，请查看控制台日志');
+            console.warn('⚠️ 手动升级部分完成');
+        }
+
+        // 刷新状态显示
+        await checkImageSystemStatus();
+        
+    } catch (error) {
+        console.error('手动升级失败:', error);
+        showToast('❌ 升级失败: ' + error.message);
+        
+        if (statusEl) {
+            statusEl.innerHTML = '<div class="image-system-status error">❌ 升级失败</div>';
+        }
+        
+        await checkImageSystemStatus(); // 恢复状态显示
+    }
+}
+
+// === 图片存储系统测试函数 ===
+async function testImageStorageSystem() {
+    if (!window.imageManager) {
+        console.log('图片管理器未初始化');
+        return false;
+    }
+
+    console.log('开始测试新的图片存储系统...');
+    
+    try {
+        // 测试1: 检查系统状态
+        const stats = await window.imageManager.getStorageStats();
+        console.log('存储统计:', stats);
+        
+        // 测试2: 测试表情存取
+        const testEmojiData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+        const testTag = '测试表情';
+        
+        console.log('测试保存表情...');
+        const saveResult = await window.imageManager.saveEmoji(testTag, testEmojiData);
+        console.log('保存结果:', saveResult);
+        
+        console.log('测试获取表情...');
+        const getResult = await window.imageManager.getEmoji(testTag);
+        console.log('获取结果:', getResult ? '成功' : '失败');
+        
+        // 测试3: 测试缓存
+        console.log('测试缓存...');
+        const getCachedResult = await window.imageManager.getEmoji(testTag);
+        console.log('缓存获取结果:', getCachedResult ? '成功' : '失败');
+        
+        // 测试4: 清理测试数据
+        console.log('清理测试数据...');
+        const deleteResult = await window.imageManager.deleteEmoji(testTag);
+        console.log('删除结果:', deleteResult);
+        
+        // 测试5: 验证删除
+        const verifyDeleteResult = await window.imageManager.getEmoji(testTag);
+        console.log('验证删除:', verifyDeleteResult ? '失败（未删除）' : '成功');
+        
+        console.log('✅ 图片存储系统测试完成');
+        return true;
+    } catch (error) {
+        console.error('❌ 图片存储系统测试失败:', error);
+        return false;
+    }
+}
 
 // 数据库优化函数：将现有base64表情转换为标签格式
 async function optimizeEmojiDatabase() {
@@ -2589,6 +2968,11 @@ function showModal(modalId) {
     if (modalId === 'apiSettingsModal') {
         document.getElementById('contextSlider').value = apiSettings.contextMessageCount;
         document.getElementById('contextValue').textContent = apiSettings.contextMessageCount + '条';
+        
+        // 异步检查图片存储系统状态
+        setTimeout(async () => {
+            await checkImageSystemStatus();
+        }, 100);
     }
 }
 
@@ -2853,7 +3237,10 @@ async function openChat(contact) {
     
     updateContextIndicator();
     const chatMessagesEl = document.getElementById('chatMessages');
-    chatMessagesEl.style.backgroundImage = backgrounds[contact.id] ? `url(${backgrounds[contact.id]})` : 'none';
+    
+    // 使用新的背景图片处理函数
+    const backgroundUrl = await getContactBackground(contact.id);
+    chatMessagesEl.style.backgroundImage = backgroundUrl ? `url(${backgroundUrl})` : 'none';
     
     // 移除旧的监听器
     chatMessagesEl.onscroll = null; 
@@ -3522,8 +3909,17 @@ async function setBackground(event) {
     event.preventDefault();
     if (!currentContact) return;
     const url = document.getElementById('backgroundUrl').value;
-    if (url) backgrounds[currentContact.id] = url;
-    else delete backgrounds[currentContact.id];
+    
+    if (url) {
+        await setContactBackground(currentContact.id, url);
+    } else {
+        // 删除背景
+        if (window.imageManager) {
+            await window.imageManager.deleteBackground(currentContact.id);
+        }
+        delete backgrounds[currentContact.id];
+    }
+    
     await saveDataToDB(); // 使用IndexedDB保存
     openChat(currentContact);
     closeModal('backgroundModal');
