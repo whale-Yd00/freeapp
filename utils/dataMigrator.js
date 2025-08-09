@@ -1029,11 +1029,26 @@ window.DatabaseManager = {
             if (successful) {
                 return { success: true, message: '数据已复制到剪贴板！' };
             } else {
-                return { success: false, error: '复制失败，请手动选择并复制数据' };
+                // 如果传统复制也失败，显示手动复制区域
+                this.showManualCopyFallback(text);
+                return { success: true, message: '请手动复制下方显示的数据', showManualCopy: true };
             }
         } catch (err) {
             console.error('备用复制方案失败:', err);
-            return { success: false, error: '复制失败：' + err.message };
+            // 如果所有复制方案都失败，显示手动复制区域
+            this.showManualCopyFallback(text);
+            return { success: true, message: '自动复制失败，请手动复制下方显示的数据', showManualCopy: true };
+        }
+    },
+    
+    /**
+     * 显示手动复制区域
+     */
+    showManualCopyFallback(text) {
+        if (typeof window.showManualCopyArea === 'function') {
+            window.showManualCopyArea(text);
+        } else {
+            console.error('showManualCopyArea 函数不存在');
         }
     },
     
@@ -1124,6 +1139,52 @@ if (typeof document !== 'undefined') {
         setTimeout(initializeDatabaseManager, 1000);
     }
 }
+
+// 手动复制相关函数
+window.selectAllManualCopyText = function() {
+    const textarea = document.getElementById('manualCopyTextArea');
+    if (textarea) {
+        textarea.select();
+        textarea.setSelectionRange(0, 99999); // 兼容移动设备
+        
+        // 尝试复制选中的文本
+        try {
+            document.execCommand('copy');
+            if (typeof showToast === 'function') {
+                showToast('文本已选中并尝试复制');
+            }
+        } catch (err) {
+            if (typeof showToast === 'function') {
+                showToast('文本已全选，请按Ctrl+C复制');
+            }
+        }
+    }
+};
+
+window.hideManualCopyArea = function() {
+    const manualCopyArea = document.getElementById('manualCopyArea');
+    if (manualCopyArea) {
+        manualCopyArea.style.display = 'none';
+    }
+};
+
+window.showManualCopyArea = function(text) {
+    const manualCopyArea = document.getElementById('manualCopyArea');
+    const textarea = document.getElementById('manualCopyTextArea');
+    
+    if (manualCopyArea && textarea) {
+        textarea.value = text;
+        manualCopyArea.style.display = 'block';
+        
+        // 自动滚动到手动复制区域
+        setTimeout(() => {
+            manualCopyArea.scrollIntoView({ behavior: 'smooth' });
+            // 自动选中所有文本
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+        }, 100);
+    }
+};
 
 // 将HTML中的script内容整合到这里
 window.triggerFileSelect = triggerFileSelect;
