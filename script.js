@@ -1113,7 +1113,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
     container.prepend(loadingIndicator);
 
     console.log('正在构建系统提示词...');
-    const systemPrompt = window.promptBuilder.buildWeiboPrompt(
+    const systemPrompt = await window.promptBuilder.buildWeiboPrompt(
         contactId, 
         relations, 
         relationDescription,
@@ -1856,7 +1856,7 @@ async function generateAIComments(momentContent) {
         return [];
     }
     try {
-        const systemPrompt = window.promptBuilder.buildCommentsPrompt(momentContent);
+        const systemPrompt = await window.promptBuilder.buildCommentsPrompt(momentContent);
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
@@ -4233,7 +4233,7 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
     
     try {
         // 调用新的手动帖子提示词构建方法
-        const systemPrompt = window.promptBuilder.buildManualPostPrompt(
+        const systemPrompt = await window.promptBuilder.buildManualPostPrompt(
             authorName,
             relationTag,
             postContent,
