@@ -1,8 +1,8 @@
 // Netlify函数：代理到Vercel API，解决CORS问题
-const fetch = require('node-fetch');
+// 无需配置任何环境变量，硬编码Vercel URL
 
 exports.handler = async (event, context) => {
-    console.log('代理请求:', event.httpMethod, event.queryStringParameters);
+    console.log('🔄 代理请求:', event.httpMethod, event.queryStringParameters);
     
     // 设置CORS头
     const headers = {
@@ -13,6 +13,7 @@ exports.handler = async (event, context) => {
 
     // 处理OPTIONS预检请求
     if (event.httpMethod === 'OPTIONS') {
+        console.log('✅ OPTIONS预检请求');
         return {
             statusCode: 200,
             headers,
@@ -22,6 +23,7 @@ exports.handler = async (event, context) => {
 
     // 只处理POST请求
     if (event.httpMethod !== 'POST') {
+        console.log('❌ 非POST请求:', event.httpMethod);
         return {
             statusCode: 405,
             headers,
@@ -30,51 +32,49 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // 从查询参数获取API端点
+        // 硬编码的Vercel API URL（无需环境变量）
         const apiEndpoint = event.queryStringParameters?.endpoint || 'upload';
+        const vercelUrl = `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`;
         
-        // 尝试不同的Vercel URL
-        const possibleUrls = [
-            `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`,
-            `https://freeapp-tosd0.vercel.app/api/sync/${apiEndpoint}`,
-            `https://freeapp.vercel.app/api/sync/${apiEndpoint}`
-        ];
-        
-        // 暂时使用第一个URL，后面可以优化为自动检测
-        const vercelUrl = possibleUrls[0];
-        
-        console.log('转发到:', vercelUrl);
-        console.log('请求体:', event.body);
+        console.log('🎯 转发目标:', vercelUrl);
+        console.log('📦 请求体长度:', event.body?.length || 0);
+
+        // 动态导入fetch（兼容性处理）
+        let fetch;
+        try {
+            fetch = globalThis.fetch || require('node-fetch');
+        } catch (e) {
+            const nodeFetch = require('node-fetch');
+            fetch = nodeFetch;
+        }
 
         // 转发请求到Vercel
         const response = await fetch(vercelUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'User-Agent': 'Netlify-Function-Proxy'
+                'Accept': 'application/json',
+                'User-Agent': 'Netlify-Proxy/1.0'
             },
             body: event.body
         });
 
-        console.log('Vercel响应状态:', response.status);
+        console.log('📡 Vercel响应状态:', response.status, response.statusText);
         
-        let responseData;
-        const contentType = response.headers.get('content-type');
+        // 读取响应
+        const responseText = await response.text();
+        console.log('📥 响应内容长度:', responseText.length);
         
-        if (contentType && contentType.includes('application/json')) {
-            responseData = await response.text();
-        } else {
-            // 如果返回的不是JSON，说明有错误
-            const errorText = await response.text();
-            console.log('Vercel错误响应:', errorText);
-            
-            responseData = JSON.stringify({ 
-                error: '服务器返回非JSON响应',
-                status: response.status,
-                statusText: response.statusText,
-                url: vercelUrl,
-                details: errorText.substring(0, 500),
-                headers: Object.fromEntries(response.headers.entries())
+        // 检查是否为JSON
+        let responseBody = responseText;
+        const contentType = response.headers.get('content-type') || '';
+        
+        if (!contentType.includes('application/json')) {
+            console.log('⚠️  非JSON响应，包装错误信息');
+            responseBody = JSON.stringify({
+                error: `Vercel API返回非JSON响应 (${response.status})`,
+                details: responseText.substring(0, 300),
+                url: vercelUrl
             });
         }
         
@@ -84,17 +84,18 @@ exports.handler = async (event, context) => {
                 ...headers,
                 'Content-Type': 'application/json'
             },
-            body: responseData
+            body: responseBody
         };
 
     } catch (error) {
-        console.error('代理错误:', error);
+        console.error('💥 代理错误:', error);
         return {
             statusCode: 500,
             headers,
             body: JSON.stringify({ 
-                error: '代理服务器错误: ' + error.message,
-                stack: error.stack
+                error: '代理服务器错误',
+                message: error.message,
+                type: error.name
             })
         };
     }
