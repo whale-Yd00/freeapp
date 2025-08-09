@@ -1,7 +1,9 @@
-import { Database } from '../../lib/db.js';
-import crypto from 'crypto';
+// 修改: 'import' 改为 'require'
+const { Database } = require('../../lib/db.js');
+const crypto = require('crypto');
 
-export default async function handler(req, res) {
+// 修改: 'export default' 改为 'module.exports ='
+module.exports = async function handler(req, res) {
     // 处理OPTIONS预检请求
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
