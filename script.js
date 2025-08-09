@@ -438,9 +438,52 @@ async function init() {
 
 
 // --- IndexedDB 核心函数 ---
+
+// 静默升级数据库以添加 emojiImages 存储
+async function upgradeToAddEmojiImages() {
+    return new Promise((resolve, reject) => {
+        // 关闭当前连接
+        if (db) {
+            db.close();
+        }
+        
+        // 以更高版本号重新打开数据库，触发升级
+        const upgradeRequest = indexedDB.open('WhaleLLTDB', 8);
+        
+        upgradeRequest.onupgradeneeded = event => {
+            const upgradeDb = event.target.result;
+            console.log('正在升级数据库以添加 emojiImages 存储...');
+            
+            // 创建缺失的 emojiImages 存储
+            if (!upgradeDb.objectStoreNames.contains('emojiImages')) {
+                upgradeDb.createObjectStore('emojiImages', { keyPath: 'tag' });
+                console.log('emojiImages 存储已创建');
+            }
+        };
+        
+        upgradeRequest.onsuccess = event => {
+            db = event.target.result;
+            window.db = db;
+            isIndexedDBReady = true;
+            window.isIndexedDBReady = true;
+            
+            console.log('数据库升级完成，emojiImages 存储已创建');
+            if (typeof showToast === 'function') {
+                showToast('数据库已自动升级，表情图片功能已启用');
+            }
+            resolve();
+        };
+        
+        upgradeRequest.onerror = event => {
+            console.error('数据库升级失败:', event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 7);
+        const request = indexedDB.open('WhaleLLTDB', 8);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -2371,10 +2414,13 @@ async function saveEmojiImage(tag, base64Data) {
         console.warn('IndexedDB 未准备好，无法保存表情图片。');
         return;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
@@ -2390,10 +2436,13 @@ async function getEmojiImage(tag) {
         console.warn('IndexedDB 未准备好，无法获取表情图片。');
         return null;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return null;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readonly');
         const store = transaction.objectStore('emojiImages');
@@ -2410,10 +2459,13 @@ async function deleteEmojiImage(tag) {
         console.warn('IndexedDB 未准备好，无法删除表情图片。');
         return;
     }
+    
+    // 如果 emojiImages 存储不存在，静默升级数据库
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
-        return;
+        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+        await upgradeToAddEmojiImages();
     }
+    
     try {
         const transaction = db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
