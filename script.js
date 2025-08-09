@@ -358,7 +358,12 @@ async function init() {
     // 初始化图片管理器和升级系统
     if (window.imageManager && window.imageUpgrader) {
         // 首先检查数据库是否需要修复
-        await ensureDatabaseIntegrity();
+        const dbRepaired = await ensureDatabaseIntegrity();
+        
+        // 如果数据库被修复，强制ImageManager重新初始化
+        if (dbRepaired) {
+            window.imageManager.db = null; // 清除旧连接引用
+        }
         
         const initResult = await window.imageManager.init();
         if (initResult) {
@@ -409,6 +414,37 @@ async function init() {
         } else {
             console.warn('图片管理器初始化失败，将使用旧的存储方式');
         }
+    }
+
+    // 初始化记忆管理器（在数据库完全稳定后）
+    if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
+        setTimeout(async () => {
+            try {
+                if (isIndexedDBReady && db) {
+                    await window.characterMemoryManager.loadConversationCounters();
+                    await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                    await window.characterMemoryManager.getGlobalMemory();
+                    window.characterMemoryManager.isInitialized = true;
+                    console.log('记忆管理器初始化完成');
+                }
+            } catch (error) {
+                console.warn('记忆管理器初始化失败，将在稍后重试:', error);
+                // 如果失败，稍后再试一次
+                setTimeout(async () => {
+                    try {
+                        if (isIndexedDBReady && db && !window.characterMemoryManager.isInitialized) {
+                            await window.characterMemoryManager.loadConversationCounters();
+                            await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                            await window.characterMemoryManager.getGlobalMemory();
+                            window.characterMemoryManager.isInitialized = true;
+                            console.log('记忆管理器重试初始化成功');
+                        }
+                    } catch (retryError) {
+                        console.error('记忆管理器重试初始化仍然失败:', retryError);
+                    }
+                }, 2000);
+            }
+        }, 800); // 延迟足够时间确保数据库修复完成
     }
 
     renderContactList();
@@ -626,23 +662,8 @@ function openDB() {
                 window._needsEmojiOptimization = false;
             }
             
-            // 数据库准备好后，延迟初始化记忆管理器数据
-            if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
-                // 延迟更长时间，避免与数据库修复冲突
-                setTimeout(async () => {
-                    try {
-                        if (isIndexedDBReady && db) {
-                            await window.characterMemoryManager.loadConversationCounters();
-                            await window.characterMemoryManager.loadLastProcessedMessageIndex();
-                            await window.characterMemoryManager.getGlobalMemory();
-                            window.characterMemoryManager.isInitialized = true;
-                            console.log('记忆管理器初始化完成');
-                        }
-                    } catch (error) {
-                        console.warn('记忆管理器初始化失败，将在稍后重试:', error);
-                    }
-                }, 500); // 增加延迟时间
-            }
+            // 数据库准备好后，延迟初始化记忆管理器数据（但不在这里执行，避免与修复过程冲突）
+            // CharacterMemoryManager 的初始化会在主应用的 init() 函数中进行
             
             resolve(db);
         };
@@ -2595,7 +2616,7 @@ async function setContactBackground(contactId, imageData) {
 async function ensureDatabaseIntegrity() {
     if (!isIndexedDBReady) {
         console.warn('数据库未就绪，跳过完整性检查');
-        return;
+        return false;
     }
     
     try {
@@ -2639,11 +2660,15 @@ async function ensureDatabaseIntegrity() {
                 };
                 upgradeRequest.onerror = reject;
             });
+            
+            return true; // 返回true表示数据库被修复
         } else {
             console.log('数据库结构完整');
+            return false; // 返回false表示无需修复
         }
     } catch (error) {
         console.error('数据库完整性检查失败:', error);
+        return false;
     }
 }
 
