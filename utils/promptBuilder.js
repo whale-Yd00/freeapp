@@ -18,13 +18,6 @@ class PromptBuilder {
 - 时间地点：
 - 事件：
 ---
-## 系统指令
-你需要在每次对话结束时，按以下格式生成记忆表格。每次都要：
-1. 完整复制上一次的表格内容
-2. 根据本次对话新增相关信息
-3. 将表格放在回复的最末尾
-
-### 表格格式要求：
 ## 📋 记忆表格
 
 ### 【现在】
@@ -33,17 +26,6 @@ class PromptBuilder {
 | 地点 | [当前所在的具体地点] |
 | 人物 | [当前在场的所有人物] |
 | 时间 | [精确的年月日和时间，格式：YYYY年MM月DD日 HH:MM] |
-
-### 【未来】
-| 约定事项 | 详细内容 |
-|----------|----------|
-| [事项1]   | [具体的约定内容、时间、地点] |
-| [事项2]   | [具体的约定内容、时间、地点] |
-
-### 【过去】
-| 人物 | 事件 | 地点 | 时间 |
-|------|------|------|------|
-| [相关人物] | [发生的重要事件] | [事件发生地点] | [具体年月日] |
 
 ### 【重要物品】
 | 物品名称 | 物品描述 | 重要原因 |
@@ -56,9 +38,39 @@ class PromptBuilder {
     /**
      * 构建聊天对话的系统提示词
      */
-    buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+    async buildChatPrompt(contact, userProfile, currentContact, apiSettings, emojis, window, turnContext = []) {
+        // 获取原有记忆表格
         const memoryInfo = (currentContact.memoryTableContent || '').trim();
+        
+        // 获取全局记忆（新功能）
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 获取角色记忆（新功能）
+        let characterMemory = '';
+        if (window.characterMemoryManager) {
+            const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+            if (memory) {
+                characterMemory = memory;
+            }
+        }
+        
         let systemPrompt = `你正在进行一次角色扮演。你的所有行为和回复都必须严格遵循以下为你设定的指令。这是最高优先级的指令，在任何情况下都不能违背。\n\n`;
+        
+        // 按优先级显示记忆：全局记忆 -> 角色记忆 -> 记忆表格
+        if (globalMemory) {
+            systemPrompt += `--- 全局记忆 ---\n${globalMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        if (characterMemory) {
+            systemPrompt += `--- 角色记忆 ---\n${characterMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        if (memoryInfo) {
+            systemPrompt += `--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
+        }
 
         // 核心身份与记忆
         systemPrompt += `--- [核心身份与记忆] ---\n`;
@@ -575,7 +587,73 @@ ${userReply}
 
     // 私有方法：构建输出格式指令
     _buildOutputFormatInstructions() {
-        return `\n\n--- [至关重要的输出格式规则] ---\n你的回复必须严格遵守以下顺序和格式，由两部分组成：\n1.  **聊天内容**: 你的对话回复。为了模拟真实聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。\n2.  **更新后的记忆表格**: 在所有聊天内容和分隔符之后，你必须提供完整、更新后的记忆表格。整个表格的Markdown内容必须被 \`<memory_table>...\</memory_table>\` 标签包裹。这不是可选项，而是必须执行的指令。你必须根据本轮最新对话更新表格。如果没有任何信息需要新增或修改，则原样返回上一次的表格。未能按此格式返回表格将导致系统错误。`;
+        return `\n\n--- 至关重要的输出格式规则 ---\n你的回复必须严格遵守以下格式：\n为了模拟真实的网络聊天，你必须将完整的回复拆分成多个（3到8条）独立的短消息（气泡）。每条消息应尽量简短（例如30字以内）。你必须使用"|||"作为每条短消息之间的唯一分隔符。`;
+    }
+
+    /**
+     * 构建独立的记忆表格更新提示词
+     */
+    buildMemoryUpdatePrompt(contact, userProfile, currentContact, apiSettings, recentMessages = []) {
+        const memoryInfo = (currentContact.memoryTableContent || '').trim();
+        
+        // 获取最近的对话历史
+        const messageHistory = recentMessages.length > 0 ? recentMessages : 
+            currentContact.messages.slice(-apiSettings.contextMessageCount);
+        
+        const chatContext = messageHistory.map(msg => {
+            const senderName = msg.role === 'user' ? (userProfile?.name || userProfile?.nickname || '用户') : contact.name;
+            let content = msg.content;
+            
+            // 处理不同类型的消息
+            if (msg.type === 'red_packet') {
+                try {
+                    const p = JSON.parse(content);
+                    content = `发送了金额为${p.amount}元的红包：\"${p.message}\"`;
+                } catch(e) {
+                    content = '发送了红包';
+                }
+            } else if (msg.type === 'emoji') {
+                content = `[表情:${msg.meaning || '未知表情'}]`;
+            }
+            
+            return `${senderName}: ${content}`;
+        }).join('\n');
+
+        // 添加当前时间
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const currentTimeString = `${year}年${month}月${day}日 ${hours}:${minutes}`;
+
+        let systemPrompt = `你是记忆表格更新助手，需要根据最新的对话内容更新记忆表格。
+
+# 角色信息
+- 角色：${contact.name}
+- 人设：${contact.personality}
+- 用户：${userProfile?.name || userProfile?.nickname || '用户'}
+- 当前时间：${currentTimeString}
+
+# 当前记忆表格
+${memoryInfo || this.defaultMemoryTable}
+
+# 最近对话内容
+${chatContext}
+
+# 更新要求
+1. 仔细分析对话内容，识别需要记录的重要信息
+2. 更新【现在】栏目中的地点、人物、时间信息
+3. 更新【重要物品】栏目，添加或修改对话中提到的重要物品
+4. 如果没有新信息需要更新，保持原有内容不变
+5. 时间格式必须为：YYYY年MM月DD日 HH:MM
+6. 只输出完整的更新后记忆表格，使用markdown格式
+7. 表格必须包含所有必要的栏目结构
+
+请输出更新后的完整记忆表格：`;
+
+        return systemPrompt;
     }
 
     _replaceBase64WithEmoji(raw, emojis) {
