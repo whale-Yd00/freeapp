@@ -1074,11 +1074,14 @@ window.uploadDataToCloud = async function() {
                 showToast('数据上传成功！');
             }
         } else {
-            syncStatus.textContent = '上传失败: ' + result.error;
+            const errorMessage = (typeof result.error === 'object' && result.error !== null)
+                ? JSON.stringify(result.error)
+                : result.error;
+            syncStatus.textContent = '上传失败: ' + errorMessage;
             syncStatus.style.color = '#d32f2f';
             
             if (typeof showToast === 'function') {
-                showToast('上传失败: ' + result.error);
+                showToast('上传失败: ' + errorMessage);
             }
         }
     } catch (error) {
