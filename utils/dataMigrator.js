@@ -984,18 +984,56 @@ window.DatabaseManager = {
      */
     async exportToClipboard() {
         try {
-            if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                throw new Error('您的浏览器不支持剪贴板写入功能');
-            }
-            
             const data = await dbManager.exportDatabase();
             const dataStr = JSON.stringify(data, null, 2);
             
-            await navigator.clipboard.writeText(dataStr);
-            return { success: true, message: '数据已复制到剪贴板！' };
+            // 尝试使用现代的Clipboard API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(dataStr);
+                    return { success: true, message: '数据已复制到剪贴板！' };
+                } catch (clipboardError) {
+                    console.warn('现代剪贴板API失败，尝试备用方案:', clipboardError);
+                    // 如果现代API失败，尝试备用方案
+                    return this.fallbackCopyToClipboard(dataStr);
+                }
+            } else {
+                // 如果不支持现代API，直接使用备用方案
+                return this.fallbackCopyToClipboard(dataStr);
+            }
         } catch (error) {
             console.error('复制到剪贴板失败:', error);
             return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 备用剪贴板复制方案
+     */
+    fallbackCopyToClipboard(text) {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            if (successful) {
+                return { success: true, message: '数据已复制到剪贴板！' };
+            } else {
+                return { success: false, error: '复制失败，请手动选择并复制数据' };
+            }
+        } catch (err) {
+            console.error('备用复制方案失败:', err);
+            return { success: false, error: '复制失败：' + err.message };
         }
     },
     
