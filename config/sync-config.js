@@ -17,8 +17,8 @@ class SyncConfig {
             
             // Netlify部署检测
             if (hostname.includes('.netlify.app') || hostname.includes('netlify')) {
-                // 调用Vercel的API - 你需要替换为实际的Vercel域名
-                return 'https://freeapp-git-sync-tosd0.vercel.app';
+                // 使用Netlify Functions代理到Vercel API（避免CORS问题）
+                return '/.netlify/functions';
             }
             
             // 本地开发环境
@@ -44,6 +44,13 @@ class SyncConfig {
      */
     static getApiUrl(endpoint) {
         const baseUrl = this.getApiBaseUrl();
+        
+        // 如果是Netlify函数代理
+        if (baseUrl === '/.netlify/functions') {
+            return `${baseUrl}/sync-proxy?endpoint=${endpoint}`;
+        }
+        
+        // 其他情况使用标准API路径
         return `${baseUrl}/api/sync/${endpoint}`;
     }
     
