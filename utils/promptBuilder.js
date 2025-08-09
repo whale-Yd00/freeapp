@@ -239,7 +239,7 @@ class PromptBuilder {
         return messages;
     }
 
-    buildWeiboPrompt(contactId, relations, relationDescription, hashtag, count, contact, userProfile, contacts, emojis) {
+    async buildWeiboPrompt(contactId, relations, relationDescription, hashtag, count, contact, userProfile, contacts, emojis) {
         const forumRoles = [
             { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
             { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
@@ -273,6 +273,21 @@ class PromptBuilder {
         // 组合成最终的评论生成指令
         const finalCommentPrompt = `${genericRolePromptPart}。${userCharacterPromptPart}`;
     
+        // 获取全局记忆
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 获取发帖角色的记忆
+        let characterMemory = '';
+        if (window.characterMemoryManager) {
+            const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+            if (memory) {
+                characterMemory = memory;
+            }
+        }
+        
         const userRole = `人设：${userProfile.name}, ${userProfile.personality || '用户'}`;
         const charRole = `人设：${contact.name}, ${contact.personality}`;
         const recentMessages = contact.messages.slice(-10);
@@ -303,8 +318,29 @@ class PromptBuilder {
             return `${sender}: ${content}`;
         }).join('\n');
     
-        const systemPrompt = `你是现在要扮演一个角色，发表论坛帖子。你的人设和用户人设如下。
-    # 设定
+        let systemPrompt = `你是现在要扮演一个角色，发表论坛帖子。你的人设和用户人设如下。
+
+`;
+        
+        // 添加全局记忆
+        if (globalMemory) {
+            systemPrompt += `--- 全局记忆 ---
+${globalMemory}
+--- 结束 ---
+
+`;
+        }
+        
+        // 添加角色记忆（只有该角色了解）
+        if (characterMemory) {
+            systemPrompt += `--- 角色记忆（只有${contact.name}了解） ---
+${characterMemory}
+--- 结束 ---
+
+`;
+        }
+        
+        systemPrompt += `# 设定
     - User: ${userRole}
     - Char: ${charRole}
     - 他们的关系是: ${relations}（${relationDescription}）
@@ -356,9 +392,37 @@ class PromptBuilder {
     /**
      * 构建朋友圈评论生成提示词
      */
-    buildCommentsPrompt(momentContent) {
-        return `你是一个朋友圈评论生成器，需要根据朋友圈文案生成3-5条路人评论。
-要求：
+    async buildCommentsPrompt(momentContent, selectedContacts) {
+        // 获取全局记忆
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 为参与评论的角色获取记忆
+        let charactersMemory = '';
+        if (selectedContacts && Array.isArray(selectedContacts) && window.characterMemoryManager) {
+            const memoryPromises = selectedContacts.map(async (contact) => {
+                const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+                return memory ? `【${contact.name}的记忆（只有${contact.name}了解）】：${memory}` : null;
+            });
+            const memories = await Promise.all(memoryPromises);
+            charactersMemory = memories.filter(m => m).join('\n\n');
+        }
+        
+        let prompt = `你是一个朋友圈评论生成器，需要根据朋友圈文案生成3-5条路人评论。\n\n`;
+        
+        // 添加全局记忆
+        if (globalMemory) {
+            prompt += `--- 全局记忆 ---\n${globalMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 添加角色记忆
+        if (charactersMemory) {
+            prompt += `--- 角色记忆 ---\n${charactersMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        prompt += `要求：
 1. 根据文案内容生成3-5条相关评论
 2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
 3. 模仿网络语气，使用当代流行语。
@@ -376,6 +440,8 @@ class PromptBuilder {
 }
 
 朋友圈文案：${momentContent}`;
+        
+        return prompt;
     }
 
     /**
@@ -442,7 +508,7 @@ ${userReply}
     /**
      * 构建手动发帖的提示词 - 用于为用户手动输入的帖子生成评论
      */
-    buildManualPostPrompt(authorName, relationTag, postContent, imageDescription, userProfile, contacts, emojis) {
+    async buildManualPostPrompt(authorName, relationTag, postContent, imageDescription, userProfile, contacts, emojis) {
         const forumRoles = [
             { name: '杠精', description: '一个总是喜欢抬杠，对任何观点都持怀疑甚至否定态度的角色，擅长从各种角度进行反驳。' },
             { name: 'CP头子', description: '一个狂热的CP粉丝，无论原帖内容是什么，总能从中解读出CP的糖，并为此感到兴奋。' },
@@ -474,12 +540,39 @@ ${userReply}
             }
         }
 
+        // 获取全局记忆
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 为参与评论的用户角色获取记忆
+        let userCharactersMemory = '';
+        if (potentialCommenters.length > 0 && window.characterMemoryManager) {
+            const memoryPromises = potentialCommenters.slice(0, 2).map(async (contact) => {
+                const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+                return memory ? `【${contact.name}的记忆（只有${contact.name}了解）】：${memory}` : null;
+            });
+            const memories = await Promise.all(memoryPromises);
+            userCharactersMemory = memories.filter(m => m).join('\n\n');
+        }
+        
         // 组合成最终的评论生成指令
         const finalCommentPrompt = userCharacterPromptPart ? `${genericRolePromptPart} ${userCharacterPromptPart}` : genericRolePromptPart;
 
-        const systemPrompt = `你需要为一条用户手动发布的论坛帖子生成评论。
-
-# 帖子信息
+        let systemPrompt = `你需要为一条用户手动发布的论坛帖子生成评论。\n\n`;
+        
+        // 添加全局记忆
+        if (globalMemory) {
+            systemPrompt += `--- 全局记忆 ---\n${globalMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 添加用户角色记忆
+        if (userCharactersMemory) {
+            systemPrompt += `--- 角色记忆 ---\n${userCharactersMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        systemPrompt += `# 帖子信息
 - 发帖人：${authorName}
 - 话题标签：${relationTag}
 - 帖子内容：${postContent}
