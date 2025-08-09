@@ -2329,7 +2329,6 @@ function renderMessages(isInitialLoad = false) {
             msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
         }
         
-        // 【修改点 5】: 修改语音播放逻辑以兼容 Minimax
         // 检查 forceVoice 标志, contact.voiceId 和 Minimax 的凭证
         if (msg.forceVoice && currentContact.voiceId && apiSettings.minimaxGroupId && apiSettings.minimaxApiKey) {
             const bubble = msgDiv.querySelector('.message-bubble');
@@ -3745,9 +3744,8 @@ function deleteSelectedMessages() {
 }
 
 
-// 【修改点 6】: 更新整个语音播放功能以适配 Minimax
 /**
- * 播放或停止语音消息 (Minimax Version)
+ * [修正后的函数] 播放或停止语音消息 (Minimax Version)
  * @param {HTMLElement} playerElement - 被点击的播放器元素
  * @param {string} text - 需要转换为语音的文本
  * @param {string} voiceId - Minimax 的声音ID
@@ -3789,7 +3787,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.add('loading');
         playButton.textContent = '...'; // 加载指示
 
-        // 调用我们适配了 Minimax 的 TTS API
+        // 调用 TTS API 端点
         const response = await fetch('/api/tts', {
             method: 'POST',
             headers: {
@@ -3798,33 +3796,27 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             body: JSON.stringify({
                 text: text,
                 voiceId: voiceId,
-                apiKey: apiSettings.minimaxApiKey, // 发送 Minimax API Key
-                groupId: apiSettings.minimaxGroupId // 发送 Minimax Group ID
+                apiKey: apiSettings.minimaxApiKey,
+                groupId: apiSettings.minimaxGroupId
             })
         });
 
         if (!response.ok) {
+            // 尝试从响应体中获取有意义的错误信息
             const errorData = await response.json().catch(() => ({ error: '语音生成失败，请检查服务器日志' }));
             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
 
+        // 后端 tts.js 使用了 isBase64Encoded: true，所以浏览器会收到原始的二进制音频数据。
+        // 正确的处理方式是使用 response.blob()。
         const audioBlob = await response.blob();
-        if (audioBlob.type !== 'audio/mpeg') {
-             throw new Error('返回的不是有效的音频文件');
-        }
-// --- 修改开始 ---
-        // 1. 服务器返回的是 JSON 格式，所以我们用 .json() 来解析它。
-        const responseData = await response.json();
-        
-        // 2. 真正的音频数据在返回的 JSON 对象的 'body' 属性里，是 Base64 格式。
-        if (!responseData.body) {
-            throw new Error('服务器响应中未包含音频数据。');
-        }
 
-        // 3. 使用我们刚添加的辅助函数，将 Base64 字符串转换成浏览器可以播放的音频 Blob。
-        const audioBlob = b64toBlob(responseData.body, 'audio/mpeg');
-        // --- 修改结束 ---
+        // 验证我们是否收到了一个音频文件
+        if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
+             throw new Error('服务器返回的不是有效的音频文件');
+        }
         
+        // 从Blob创建一个可播放的URL
         const audioUrl = URL.createObjectURL(audioBlob);
         
         voiceAudio.src = audioUrl;
@@ -3834,6 +3826,8 @@ async function playVoiceMessage(playerElement, text, voiceId) {
                 const minutes = Math.floor(voiceAudio.duration / 60);
                 const seconds = Math.floor(voiceAudio.duration % 60).toString().padStart(2, '0');
                 durationEl.textContent = `${minutes}:${seconds}`;
+            } else {
+                durationEl.textContent = '...';
             }
         };
 
@@ -3851,6 +3845,7 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         currentPlayingElement = null;
     }
 }
+
 /**
  * 将 Base64 字符串转换为 Blob 对象。
  * @param {string} b64Data - Base64 编码的数据。
