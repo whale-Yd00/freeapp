@@ -3807,16 +3807,34 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
 
-        // 后端 tts.js 使用了 isBase64Encoded: true，所以浏览器会收到原始的二进制音频数据。
-        // 正确的处理方式是使用 response.blob()。
-        const audioBlob = await response.blob();
+        // --- NEW ROBUST LOGIC ---
+        let audioBlob;
+        const contentType = response.headers.get('content-type');
 
-        // 验证我们是否收到了一个音频文件
-        if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
-             throw new Error('服务器返回的不是有效的音频文件');
+        if (contentType && contentType.includes('audio/')) {
+            // Case 1: Backend is correctly configured and sends a direct audio stream.
+            console.log("Handling response as direct audio blob.");
+            audioBlob = await response.blob();
+        } else if (contentType && contentType.includes('application/json')) {
+            // Case 2: Backend sends a JSON object with base64 data inside.
+            console.log("Handling response as JSON with base64 data.");
+            const responseData = await response.json();
+            if (!responseData.body) {
+                throw new Error('JSON响应中未找到 "body" 字段。');
+            }
+            audioBlob = b64toBlob(responseData.body, 'audio/mpeg');
+        } else {
+            // Case 3 (Fallback): Assume the response is a raw base64 text string.
+            // This can happen with misconfigured serverless functions.
+            console.log("Handling response as raw base64 text.");
+            const b64Data = await response.text();
+            audioBlob = b64toBlob(b64Data, 'audio/mpeg');
         }
         
-        // 从Blob创建一个可播放的URL
+        if (!audioBlob || audioBlob.size === 0) {
+            throw new Error('未能生成有效的音频数据。');
+        }
+        
         const audioUrl = URL.createObjectURL(audioBlob);
         
         voiceAudio.src = audioUrl;
