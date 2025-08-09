@@ -26,17 +26,22 @@ class ImageManager {
      */
     async init() {
         try {
-            this.db = await this.openDB();
-            console.log('图片管理器初始化成功');
+            // 如果主应用已经有数据库连接，使用主应用的连接
+            if (window.db && window.isIndexedDBReady) {
+                this.db = window.db;
+                console.log('图片管理器使用主应用数据库连接');
+            } else {
+                this.db = await this.openDB();
+                console.log('图片管理器创建独立数据库连接');
+            }
             
             // 验证虚拟文件系统存储是否存在
             if (!this.db.objectStoreNames.contains(this.storeName)) {
                 console.warn(`虚拟文件系统存储 '${this.storeName}' 不存在，需要升级数据库`);
-                // 尝试重新打开数据库以触发升级
-                this.db.close();
-                this.db = await this.openDB();
+                return false; // 返回失败，让主应用处理数据库升级
             }
             
+            console.log('图片管理器初始化成功');
             return true;
         } catch (error) {
             console.error('图片管理器初始化失败:', error);

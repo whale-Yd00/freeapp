@@ -626,14 +626,22 @@ function openDB() {
                 window._needsEmojiOptimization = false;
             }
             
-            // 数据库准备好后，初始化记忆管理器数据
+            // 数据库准备好后，延迟初始化记忆管理器数据
             if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
+                // 延迟更长时间，避免与数据库修复冲突
                 setTimeout(async () => {
-                    await window.characterMemoryManager.loadConversationCounters();
-                    await window.characterMemoryManager.loadLastProcessedMessageIndex();
-                    await window.characterMemoryManager.getGlobalMemory();
-                    window.characterMemoryManager.isInitialized = true;
-                }, 100); // 稍微延迟确保所有设置都完成
+                    try {
+                        if (isIndexedDBReady && db) {
+                            await window.characterMemoryManager.loadConversationCounters();
+                            await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                            await window.characterMemoryManager.getGlobalMemory();
+                            window.characterMemoryManager.isInitialized = true;
+                            console.log('记忆管理器初始化完成');
+                        }
+                    } catch (error) {
+                        console.warn('记忆管理器初始化失败，将在稍后重试:', error);
+                    }
+                }, 500); // 增加延迟时间
             }
             
             resolve(db);
@@ -2595,8 +2603,12 @@ async function ensureDatabaseIntegrity() {
         if (!db.objectStoreNames.contains('virtualFileSystem')) {
             console.log('检测到缺少虚拟文件系统存储，正在修复...');
             
+            // 暂时标记数据库不可用，避免其他操作
+            const originalDb = db;
+            isIndexedDBReady = false;
+            
             // 关闭当前数据库连接
-            db.close();
+            originalDb.close();
             
             // 重新打开数据库，强制触发版本升级
             const upgradeRequest = indexedDB.open('WhaleLLTDB', 8);
@@ -2612,12 +2624,6 @@ async function ensureDatabaseIntegrity() {
                 }
             };
             
-            upgradeRequest.onsuccess = (event) => {
-                db = event.target.result;
-                isIndexedDBReady = true;
-                console.log('数据库结构修复完成');
-            };
-            
             upgradeRequest.onerror = (error) => {
                 console.error('修复数据库结构失败:', error);
             };
@@ -2628,7 +2634,8 @@ async function ensureDatabaseIntegrity() {
                     db = event.target.result;
                     isIndexedDBReady = true;
                     console.log('数据库结构修复完成');
-                    resolve();
+                    // 等待足够时间确保数据库连接稳定
+                    setTimeout(resolve, 200);
                 };
                 upgradeRequest.onerror = reject;
             });
