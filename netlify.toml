@@ -18,16 +18,3 @@
   from = "/api/test-connection"
   to = "/.netlify/functions/test-connection"
   status = 200
-
-# 规则三：将语音合成(TTS)的请求转发到 tts 函数
-# 请求路径: /api/tts
-[[redirects]]
-  from = "/api/tts"
-  to = "/.netlify/functions/tts"
-  status = 200
-
-# 将数据分享的请求转发到 transfer-data 函数
-[[redirects]]
-  from = "/api/transfer-data"
-  to = "/.netlify/functions/transfer-data"
-  status = 200
