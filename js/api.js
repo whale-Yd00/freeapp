@@ -116,5 +116,9 @@ class APIService {
     }
 }
 
-// 创建全局实例
-window.apiService = new APIService();
+// 导出类供使用
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = APIService;
+} else if (typeof window !== 'undefined') {
+    window.apiService = new APIService();
+}

@@ -796,12 +796,26 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1) {
+    console.log('=== 开始生成论坛帖子 ===');
+    console.log('输入参数:', { contactId, relations, relationDescription, hashtag, count });
+    
     const contact = contacts.find(c => c.id === contactId);
+    console.log('找到的联系人:', contact);
+    
     if (!contact) {
+        console.error('未找到联系人，contactId:', contactId, '所有联系人:', contacts);
         showToast('未找到指定的聊天对象');
         return;
     }
+    
+    console.log('当前API设置:', { 
+        url: apiSettings.url, 
+        model: apiSettings.model, 
+        hasKey: !!apiSettings.key 
+    });
+    
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        console.error('API配置不完整:', apiSettings);
         showToast('请先在设置中配置API');
         return;
     }
@@ -812,6 +826,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
     loadingIndicator.textContent = '正在生成论坛内容...';
     container.prepend(loadingIndicator);
 
+    console.log('正在构建系统提示词...');
     const systemPrompt = window.promptBuilder.buildWeiboPrompt(
         contactId, 
         relations, 
@@ -823,6 +838,8 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         contacts,
         emojis
     );
+    console.log('系统提示词长度:', systemPrompt.length, '字符');
+    console.log('系统提示词内容(前500字符):', systemPrompt.substring(0, 500));
 
     try {
         const payload = {
@@ -833,7 +850,10 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         };
 
         const apiUrl = `${apiSettings.url}/chat/completions`;
+        console.log('准备发送API请求到:', apiUrl);
+        console.log('请求载荷:', JSON.stringify(payload, null, 2));
 
+        console.log('发送API请求...');
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 
@@ -843,45 +863,99 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             body: JSON.stringify(payload)
         });
 
+        console.log('收到API响应:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
+        });
+
         if (!response.ok) {
-            throw new Error(`API请求失败: ${response.status} - ${await response.text()}`);
+            const errorText = await response.text();
+            console.error('API请求失败，错误详情:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText: errorText
+            });
+            throw new Error(`API请求失败: ${response.status} - ${errorText}`);
         }
 
+        console.log('解析API响应JSON...');
         const data = await response.json();
+        console.log('API返回的完整数据:', JSON.stringify(data, null, 2));
+        
         let jsonText = data.choices[0].message.content;
+        console.log('提取的消息内容:', jsonText);
         
         if (!jsonText) {
+            console.error('AI返回的内容为空');
             throw new Error("AI未返回有效内容");
         }
         
+        console.log('原始JSON文本:', jsonText);
+        
         // 自动清理AI可能返回的多余代码块
+        const originalJsonText = jsonText;
         jsonText = jsonText.trim();
         if (jsonText.startsWith('```json')) {
             jsonText = jsonText.substring(7).trim(); // 移除 ```json 和可能的前导空格
+            console.log('移除了```json前缀');
         }
         if (jsonText.endsWith('```')) {
             jsonText = jsonText.slice(0, -3).trim(); // 移除末尾的 ``` 和可能的尾随空格
+            console.log('移除了```后缀');
+        }
+        
+        if (originalJsonText !== jsonText) {
+            console.log('清理后的JSON文本:', jsonText);
         }
 
-        const weiboData = JSON.parse(jsonText);
+        console.log('尝试解析JSON...');
+        let weiboData;
+        try {
+            weiboData = JSON.parse(jsonText);
+            console.log('JSON解析成功，数据结构:', weiboData);
+        } catch (parseError) {
+            console.error('JSON解析失败:', parseError);
+            console.error('尝试解析的文本:', jsonText);
+            throw new Error(`JSON解析失败: ${parseError.message}`);
+        }
 
         // --- 时间戳注入 ---
+        console.log('开始注入时间戳...');
         const now = Date.now();
         // 主楼时间设为2-5分钟前
         const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
         let lastCommentTime = postCreatedAt.getTime();
+        
+        console.log('生成的帖子数量:', weiboData.posts ? weiboData.posts.length : '无posts字段');
 
-        weiboData.posts.forEach(post => {
-            post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
-            if (post.comments && Array.isArray(post.comments)) {
-                post.comments.forEach(comment => {
-                    // 回复时间在主楼和现在之间，且比上一条晚一点
-                    const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
-                    lastCommentTime = newCommentTimestamp;
-                    comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
+        if (weiboData.posts && Array.isArray(weiboData.posts)) {
+            weiboData.posts.forEach((post, index) => {
+                post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
+                console.log(`帖子${index + 1}:`, { 
+                    content: post.content ? post.content.substring(0, 50) + '...' : '无内容',
+                    timestamp: post.timestamp,
+                    commentsCount: post.comments ? post.comments.length : 0
                 });
-            }
-        });
+                
+                if (post.comments && Array.isArray(post.comments)) {
+                    post.comments.forEach((comment, commentIndex) => {
+                        // 回复时间在主楼和现在之间，且比上一条晚一点
+                        const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
+                        lastCommentTime = newCommentTimestamp;
+                        comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
+                        console.log(`  评论${commentIndex + 1}:`, {
+                            author: comment.author,
+                            content: comment.content ? comment.content.substring(0, 30) + '...' : '无内容',
+                            timestamp: comment.timestamp
+                        });
+                    });
+                }
+            });
+        } else {
+            console.error('weiboData.posts不是数组或不存在:', weiboData);
+        }
         // --- 时间戳注入结束 ---
         
         const newPost = {
@@ -894,16 +968,40 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             createdAt: postCreatedAt.toISOString()
         };
 
+        console.log('准备保存新帖子:', {
+            id: newPost.id,
+            contactId: newPost.contactId,
+            relations: newPost.relations,
+            hashtag: newPost.hashtag,
+            createdAt: newPost.createdAt,
+            dataStructure: {
+                hasWeiboPosts: !!newPost.data.posts,
+                postsCount: newPost.data.posts ? newPost.data.posts.length : 0
+            }
+        });
+
+        console.log('保存帖子到数据库...');
         await saveWeiboPost(newPost);
+        console.log('帖子保存成功，添加到内存数组...');
         weiboPosts.push(newPost); // Update in-memory array
+        console.log('当前内存中的帖子数量:', weiboPosts.length);
+        
+        console.log('重新渲染所有帖子...');
         renderAllWeiboPosts();
+        console.log('=== 论坛帖子生成完成 ===');
         showToast('帖子已刷新！');
 
     } catch (error) {
-        console.error('生成论坛失败:', error);
+        console.error('=== 生成论坛失败 ===');
+        console.error('错误类型:', error.name);
+        console.error('错误消息:', error.message);
+        console.error('错误堆栈:', error.stack);
+        console.error('完整错误对象:', error);
         showToast('生成论坛失败: ' + error.message);
     } finally {
+        console.log('清理加载指示器...');
         loadingIndicator.remove();
+        console.log('=== generateWeiboPosts 函数执行结束 ===');
     }
 }
 
@@ -3367,8 +3465,22 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// 监听DOMContentLoaded事件，这是执行所有JS代码的入口
-document.addEventListener('DOMContentLoaded', init);
+// --- 1. 修改你的 DOMContentLoaded 事件监听器 ---
+// 找到文件末尾的这个事件监听器，用下面的代码替换它
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 检查URL中是否有导入ID
+    const urlParams = new URLSearchParams(window.location.search);
+    const importId = urlParams.get('importId');
+
+    if (importId) {
+        // 如果有ID，则执行自动导入流程
+        await handleAutoImport(importId);
+    } else {
+        // 否则，正常初始化应用
+        await init();
+    }
+});
 
 // 全局错误处理器
 window.addEventListener('error', (event) => {
@@ -3872,5 +3984,140 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         playerElement.classList.remove('loading');
         playButton.textContent = '▶';
         currentPlayingElement = null; // 重置当前播放元素
+    }
+}
+
+// 【【【【【这是你要在 script.js 末尾新增的函数】】】】】
+
+async function handleShareData() {
+    const shareBtn = document.getElementById('shareDataBtn');
+    shareBtn.disabled = true;
+    shareBtn.textContent = '生成中...';
+
+    try {
+        // 1. 使用你已有的 IndexedDBManager 导出整个数据库的数据
+        const exportData = await dbManager.exportDatabase();
+
+        // 2. 将数据发送到我们的云函数中转站
+        const response = await fetch('/api/transfer-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(exportData),
+        });
+
+        if (!response.ok) {
+            throw new Error('创建分享链接失败，请稍后重试。');
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.id) {
+            throw new Error(result.error || '服务器返回数据格式错误。');
+        }
+
+        // 3. 构造给Vercel应用使用的链接
+        const vercelAppUrl = 'https://chat.whale-llt.top'; 
+        const shareLink = `${vercelAppUrl}/?importId=${result.id}`;
+
+        // 4. 显示分享链接给用户
+        showShareLinkDialog(shareLink);
+
+    } catch (error) {
+        console.error('分享数据失败:', error);
+        showToast('分享失败: ' + error.message);
+    } finally {
+        shareBtn.disabled = false;
+        shareBtn.textContent = '🔗 分享到新设备';
+    }
+}
+
+// 一个用于显示分享链接的对话框函数
+function showShareLinkDialog(link) {
+    const dialogId = 'shareLinkDialog';
+    let dialog = document.getElementById(dialogId);
+    if (!dialog) {
+        dialog = document.createElement('div');
+        dialog.id = dialogId;
+        dialog.className = 'modal';
+        dialog.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">分享链接已生成</div>
+                    <div class="modal-close" onclick="closeModal('${dialogId}')">关闭</div>
+                </div>
+                <div class="modal-body" style="text-align: center;">
+                    <p style="margin-bottom: 15px; font-size: 14px; color: #666;">请复制以下链接，在新设备或浏览器中打开即可自动导入数据。链接15分钟内有效。</p>
+                    <textarea id="shareLinkTextarea" class="form-textarea" rows="3" readonly>${link}</textarea>
+                    <button class="form-submit" style="margin-top: 15px;" onclick="copyShareLink()">复制链接</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+    } else {
+        document.getElementById('shareLinkTextarea').value = link;
+    }
+    showModal(dialogId);
+}
+
+/**
+ * 复制链接到剪贴板的辅助函数
+ */
+function copyShareLink() {
+    const textarea = document.getElementById('shareLinkTextarea');
+    textarea.select();
+    document.execCommand('copy');
+    showToast('链接已复制！');
+}
+
+/**
+ * 处理从URL自动导入的逻辑
+ */
+async function handleAutoImport(importId) {
+    // 1. 清理URL，防止刷新页面时重复导入
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // 2. 显示一个友好的加载提示
+    showToast('检测到分享数据，正在导入...');
+
+    try {
+        // 3. 去Netlify中转站取回数据
+        // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
+        const netlifyFunctionUrl = `https://velvety-belekoy-02a99e.netlify.app/.netlify/functions/transfer-data?id=${importId}`;
+        const response = await fetch(netlifyFunctionUrl);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => null);
+            throw new Error(error?.error || '数据获取失败，链接可能已失效。');
+        }
+
+        const result = await response.json();
+        if (!result.success || !result.data) {
+            throw new Error(result.error || '服务器返回数据格式错误。');
+        }
+
+        const importData = result.data;
+
+        // 4. 使用你已有的导入逻辑 (dataMigrator.js)
+        if (!window.dbManager) {
+            window.dbManager = new IndexedDBManager();
+        }
+        await dbManager.initDB();
+        
+        // 5. 调用导入函数，直接覆盖
+        const importResult = await dbManager.importDatabase(importData, { overwrite: true });
+
+        if (importResult.success) {
+            alert('数据导入成功！页面将自动刷新以应用新数据。');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        } else {
+            throw new Error(importResult.error || '导入数据库时发生未知错误。');
+        }
+
+    } catch (error) {
+        console.error('自动导入失败:', error);
+        alert('自动导入失败: ' + error.message + '\n\n即将正常加载页面。');
+        // 如果导入失败，就正常初始化页面
+        await init();
     }
 }

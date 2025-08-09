@@ -448,6 +448,63 @@ class IndexedDBManager {
     }
 
     /**
+     * 验证导入文件的合法性
+     * @param {Object} importData - 要验证的数据
+     */
+    validateFileIntegrity(importData) {
+        // 基本格式检查
+        if (!importData || typeof importData !== 'object') {
+            return {
+                valid: false,
+                error: '文件格式无效：不是有效的JSON对象'
+            };
+        }
+
+        // 检查是否包含关键的 objectStore
+        const requiredStores = ['contacts', 'userProfile'];
+        const availableStores = Object.keys(importData).filter(key => key !== '_metadata');
+        
+        // 检查必需的存储是否存在
+        const missingStores = requiredStores.filter(store => !availableStores.includes(store));
+        
+        if (missingStores.length > 0) {
+            return {
+                valid: false,
+                error: `文件不是有效的数据库备份文件，缺少关键数据表：${missingStores.join(', ')}`
+            };
+        }
+
+        // 检查是否有任何有效的存储
+        const validStores = Object.keys(this.stores);
+        const hasValidStore = availableStores.some(store => validStores.includes(store));
+        
+        if (!hasValidStore) {
+            return {
+                valid: false,
+                error: '文件不包含任何有效的数据表，可能不是本应用的备份文件'
+            };
+        }
+
+        // 检查数据表内容是否为数组格式
+        for (const storeName of availableStores) {
+            if (validStores.includes(storeName)) {
+                if (!Array.isArray(importData[storeName])) {
+                    return {
+                        valid: false,
+                        error: `数据表 ${storeName} 格式错误：应为数组格式`
+                    };
+                }
+            }
+        }
+
+        return {
+            valid: true,
+            foundStores: availableStores.length,
+            validStores: availableStores.filter(store => validStores.includes(store))
+        };
+    }
+
+    /**
      * 关闭数据库连接
      */
     close() {
@@ -710,6 +767,39 @@ window.enhanceApiSettingsModal = function() {
     }
 };
 
+// 剪贴板操作函数
+window.exportToClipboard = async function() {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在导出数据到剪贴板...');
+        }
+        
+        const result = await window.DatabaseManager.exportToClipboard();
+        
+        if (result.success) {
+            if (typeof showToast === 'function') {
+                showToast('数据已复制到剪贴板！');
+            } else {
+                alert('数据已复制到剪贴板！');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast('复制失败: ' + result.error);
+            } else {
+                alert('复制失败: ' + result.error);
+            }
+        }
+    } catch (error) {
+        if (typeof showToast === 'function') {
+            showToast('复制出错: ' + error.message);
+        } else {
+            alert('复制出错: ' + error.message);
+        }
+        console.error('复制到剪贴板失败:', error);
+    }
+};
+
+
 // 导出功能函数，供HTML界面调用
 window.DatabaseManager = {
     
@@ -754,6 +844,16 @@ window.DatabaseManager = {
         try {
             const importData = await dbManager.readImportFile(file);
             
+            // 新增：检查文件合法性
+            const validationResult = dbManager.validateFileIntegrity(importData);
+            if (!validationResult.valid) {
+                return {
+                    success: false,
+                    error: validationResult.error,
+                    validation: validationResult
+                };
+            }
+            
             // 验证数据
             const validation = dbManager.validateImportData(importData);
             
@@ -794,6 +894,90 @@ window.DatabaseManager = {
         } catch (error) {
             return { success: false, error: error.message };
         }
+    },
+    
+    /**
+     * 导出数据到剪贴板（直接显示让用户手动复制）
+     */
+    async exportToClipboard() {
+        try {
+            const data = await dbManager.exportDatabase();
+            const dataStr = JSON.stringify(data, null, 2);
+            
+            // 直接显示手动复制区域
+            this.showManualCopyArea(dataStr);
+            return { success: true, message: '数据已显示，请手动选择并复制' };
+        } catch (error) {
+            console.error('导出数据失败:', error);
+            return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 显示手动复制区域
+     */
+    showManualCopyArea(text) {
+        if (typeof window.showManualCopyArea === 'function') {
+            window.showManualCopyArea(text);
+        } else {
+            console.error('showManualCopyArea 函数不存在');
+        }
+    },
+    
+    /**
+     * 从文本导入数据（用于手动输入）
+     */
+    async importFromText(textData) {
+        try {
+            if (!textData || !textData.trim()) {
+                throw new Error('输入的数据为空');
+            }
+            
+            let importData;
+            try {
+                importData = JSON.parse(textData);
+            } catch (parseError) {
+                throw new Error('输入的内容不是有效的JSON格式');
+            }
+            
+            // 检查文件合法性
+            const validationResult = dbManager.validateFileIntegrity(importData);
+            if (!validationResult.valid) {
+                return {
+                    success: false,
+                    error: validationResult.error,
+                    validation: validationResult
+                };
+            }
+            
+            // 验证数据
+            const validation = dbManager.validateImportData(importData);
+            
+            if (!validation.valid) {
+                return { 
+                    success: false, 
+                    error: '数据验证失败：' + validation.errors.join(', '),
+                    validation 
+                };
+            }
+            
+            // 导入数据（强制覆盖）
+            const result = await dbManager.importDatabase(importData, { 
+                overwrite: true,
+                validateVersion: true 
+            });
+            
+            return { 
+                success: true, 
+                message: `手动导入成功！导入了 ${result.importedStores?.length || 0} 个数据表`,
+                result,
+                validation 
+            };
+            
+        } catch (error) {
+            console.error('从文本导入失败:', error);
+            return { success: false, error: error.message };
+        }
     }
 };
 
@@ -821,6 +1005,193 @@ if (typeof document !== 'undefined') {
         setTimeout(initializeDatabaseManager, 1000);
     }
 }
+
+// 手动复制相关函数
+window.selectAllManualCopyText = function() {
+    const textarea = document.getElementById('manualCopyTextArea');
+    if (textarea) {
+        textarea.select();
+        textarea.setSelectionRange(0, 99999); // 兼容移动设备
+        
+        // 尝试复制选中的文本
+        try {
+            document.execCommand('copy');
+            if (typeof showToast === 'function') {
+                showToast('文本已选中并尝试复制');
+            }
+        } catch (err) {
+            if (typeof showToast === 'function') {
+                showToast('文本已全选，请按Ctrl+C复制');
+            }
+        }
+    }
+};
+
+window.hideManualCopyArea = function() {
+    const manualCopyArea = document.getElementById('manualCopyArea');
+    if (manualCopyArea) {
+        manualCopyArea.style.display = 'none';
+    }
+};
+
+window.showManualCopyArea = function(text) {
+    const manualCopyArea = document.getElementById('manualCopyArea');
+    const textarea = document.getElementById('manualCopyTextArea');
+    
+    if (manualCopyArea && textarea) {
+        textarea.value = text;
+        manualCopyArea.style.display = 'block';
+        
+        // 自动滚动到手动复制区域
+        setTimeout(() => {
+            manualCopyArea.scrollIntoView({ behavior: 'smooth' });
+            // 自动选中所有文本
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+        }, 100);
+    }
+};
+
+// 手动导入相关函数
+window.showManualImportArea = function() {
+    const manualImportArea = document.getElementById('manualImportArea');
+    const textarea = document.getElementById('manualImportTextArea');
+    
+    if (manualImportArea && textarea) {
+        // 隐藏其他区域
+        const manualCopyArea = document.getElementById('manualCopyArea');
+        if (manualCopyArea) {
+            manualCopyArea.style.display = 'none';
+        }
+        
+        // 显示导入区域
+        manualImportArea.style.display = 'block';
+        textarea.value = '';
+        
+        // 自动滚动并聚焦
+        setTimeout(() => {
+            manualImportArea.scrollIntoView({ behavior: 'smooth' });
+            textarea.focus();
+        }, 100);
+        
+        if (typeof showToast === 'function') {
+            showToast('请粘贴要导入的JSON数据');
+        }
+    }
+};
+
+window.hideManualImportArea = function() {
+    const manualImportArea = document.getElementById('manualImportArea');
+    if (manualImportArea) {
+        manualImportArea.style.display = 'none';
+    }
+};
+
+window.clearManualImportText = function() {
+    const textarea = document.getElementById('manualImportTextArea');
+    if (textarea) {
+        textarea.value = '';
+        textarea.focus();
+    }
+};
+
+window.processManualImport = async function() {
+    const textarea = document.getElementById('manualImportTextArea');
+    
+    if (!textarea) {
+        alert('未找到输入框');
+        return;
+    }
+    
+    const inputText = textarea.value.trim();
+    
+    if (!inputText) {
+        alert('请先粘贴要导入的数据');
+        textarea.focus();
+        return;
+    }
+    
+    const firstConfirmMessage = '手动导入数据将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
+    const secondConfirmMessage = '再次确认：此操作不可撤销！\n确定要用输入的数据覆盖当前所有数据吗？';
+    
+    // 使用原生 confirm 对话框避免嵌套问题
+    if (confirm(firstConfirmMessage)) {
+        if (confirm(secondConfirmMessage)) {
+            try {
+                if (typeof showToast === 'function') {
+                    showToast('正在处理导入数据...');
+                }
+                
+                const result = await window.DatabaseManager.importFromText(inputText);
+                
+                if (result.success) {
+                    // 隐藏导入区域
+                    window.hideManualImportArea();
+                    
+                    // 刷新统计信息
+                    if (typeof window.refreshDatabaseStats === 'function') {
+                        window.refreshDatabaseStats();
+                    }
+                    
+                    // 清空内存中的数据，确保数据同步
+                    if (typeof window.contacts !== 'undefined') {
+                        window.contacts = [];
+                    }
+                    if (typeof window.currentContact !== 'undefined') {
+                        window.currentContact = null;
+                    }
+                    if (typeof window.emojis !== 'undefined') {
+                        window.emojis = [];
+                    }
+                    if (typeof window.backgrounds !== 'undefined') {
+                        window.backgrounds = {};
+                    }
+                    if (typeof window.userProfile !== 'undefined') {
+                        window.userProfile = { name: '我的昵称', avatar: '', personality: '' };
+                    }
+                    if (typeof window.moments !== 'undefined') {
+                        window.moments = [];
+                    }
+                    if (typeof window.weiboPosts !== 'undefined') {
+                        window.weiboPosts = [];
+                    }
+                    
+                    // 显示成功消息
+                    const successMessage = `手动导入成功！\n导入了 ${result.result?.importedStores?.length || '多个'} 个数据表\n页面将自动刷新以更新显示`;
+                    
+                    if (typeof showToast === 'function') {
+                        showToast('导入成功！正在刷新页面以应用新数据...');
+                    }
+                    
+                    // 显示警告信息（如果有）
+                    if (result.validation && result.validation.warnings.length > 0) {
+                        alert('导入成功，但有以下警告，请及时截图:\n' + result.validation.warnings.join('\n') + '\n\n页面即将刷新');
+                    } else {
+                        alert(successMessage);
+                    }
+                    
+                    // 自动刷新页面
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                } else {
+                    if (typeof showToast === 'function') {
+                        showToast('导入失败: ' + result.error);
+                    } else {
+                        alert('导入失败: ' + result.error);
+                    }
+                }
+            } catch (error) {
+                if (typeof showToast === 'function') {
+                    showToast('处理导入数据出错: ' + error.message);
+                } else {
+                    alert('处理导入数据出错: ' + error.message);
+                }
+                console.error('手动导入失败:', error);
+            }
+        }
+    }
+};
 
 // 将HTML中的script内容整合到这里
 window.triggerFileSelect = triggerFileSelect;
