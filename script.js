@@ -710,8 +710,9 @@ async function loadDataFromDB() {
         ];
 
         // 先检查存不存在 emojiImages
-        if (!db.objectStoreNames.contains('emojiImages')) {
+        if (db.objectStoreNames.contains('emojiImages')) {
             storeNames.push('emojiImages');
+        } else {
             console.warn('数据库版本未包含 emojiImages 存储，建议更新页面以升级数据库。');
         }
         
