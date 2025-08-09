@@ -5012,8 +5012,8 @@ function createMemoryItem(memory, isCharacter, characterId = null) {
                     <div class="memory-meta">
                         <span class="memory-date">${date}</span>
                         <div class="memory-actions">
-                            <button class="memory-btn" onclick="editSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">修改</button>
-                            <button class="memory-btn delete" onclick="deleteSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">删除</button>
+                            <button class="memory-edit-btn" onclick="editSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">修改</button>
+                            <button class="memory-edit-btn delete" onclick="deleteSingleMemoryItem('${memory.id}', ${index}, ${isCharacter}, '${characterId || ''}')">删除</button>
                         </div>
                     </div>
                 </div>
