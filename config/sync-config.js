@@ -18,7 +18,7 @@ class SyncConfig {
             // Netlify部署检测
             if (hostname.includes('.netlify.app') || hostname.includes('netlify')) {
                 // 调用Vercel的API - 你需要替换为实际的Vercel域名
-                return 'https://chat.whale-llt.top';
+                return 'https://freeapp-git-sync-tosd0.vercel.app';
             }
             
             // 本地开发环境
