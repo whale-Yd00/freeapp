@@ -3745,12 +3745,13 @@ function deleteSelectedMessages() {
 
 
 /**
- * [最终修正版] 播放或停止语音消息
+ * [MODIFIED] 播放或停止语音消息 - 直接从前端调用 Minimax API
  * @param {HTMLElement} playerElement - 被点击的播放器元素
  * @param {string} text - 需要转换为语音的文本
  * @param {string} voiceId - Minimax 的声音ID
  */
 async function playVoiceMessage(playerElement, text, voiceId) {
+    // 1. 检查 Minimax API 凭证是否已在设置中配置
     if (!apiSettings.minimaxGroupId || !apiSettings.minimaxApiKey) {
         showToast('请在设置中填写 Minimax Group ID 和 API Key');
         return;
@@ -3760,8 +3761,10 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         return;
     }
 
+    // 2. 判断当前点击的播放器是否正在播放
     const wasPlaying = playerElement === currentPlayingElement && !voiceAudio.paused;
 
+    // 3. 如果有任何音频正在播放，先停止它
     if (currentPlayingElement) {
         voiceAudio.pause();
         voiceAudio.currentTime = 0;
@@ -3770,44 +3773,68 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         currentPlayingElement.classList.remove('playing', 'loading');
     }
 
+    // 4. 如果点击的是正在播放的按钮，则仅停止，然后退出
     if (wasPlaying) {
         currentPlayingElement = null;
         return;
     }
 
+    // 5. 设置当前播放器为活动状态并更新UI
     currentPlayingElement = playerElement;
     const playButton = playerElement.querySelector('.play-button');
     const durationEl = playerElement.querySelector('.duration');
 
     try {
+        // 显示加载状态
         playerElement.classList.add('loading');
         playButton.textContent = '...';
 
-        const response = await fetch('/api/tts', {
+        // 6. 准备并直接发送 API 请求到 Minimax (纯前端)
+        const groupId = apiSettings.minimaxGroupId;
+        const apiKey = apiSettings.minimaxApiKey;
+        
+        // Minimax API URL，将 GroupId 放在查询参数中
+        const apiUrl = `https://api.minimax.chat/v1/text_to_speech?GroupId=${groupId}`;
+        
+        // 请求体
+        const requestBody = {
+            "voice_id": voiceId,
+            "text": text,
+            "model": "speech-01",
+            "speed": 1.0,
+            "vol": 1.0,
+            "pitch": 0
+        };
+
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                text: text,
-                voiceId: voiceId,
-                apiKey: apiSettings.minimaxApiKey,
-                groupId: apiSettings.minimaxGroupId
-            })
+            headers: {
+                // 授权头，注意这里只用 API Key
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
         });
 
+        // 7. 处理 API 响应
         if (!response.ok) {
+            // 如果请求失败，解析错误信息
             let errorMsg = `语音服务错误 (状态码: ${response.status})`;
             try {
                 const errorData = await response.json();
-                if (errorData && errorData.error) {
-                    errorMsg += `: ${errorData.error}`;
+                // 尝试从返回的JSON中获取更具体的错误信息
+                if (errorData && errorData.base_resp && errorData.base_resp.status_msg) {
+                    errorMsg += `: ${errorData.base_resp.status_msg}`;
                 }
             } catch (e) {
+                // 如果解析JSON失败，则直接显示文本响应
                 errorMsg += `: ${await response.text()}`;
             }
             throw new Error(errorMsg);
         }
 
-        // Netlify/Vercel 会自动解码base64，我们直接接收二进制的blob
+        // 8. 处理成功的响应
+        // 服务器返回的是音频数据流，我们将其转换为 Blob
         const audioBlob = await response.blob();
         
         if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
@@ -3815,10 +3842,13 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             throw new Error(`服务器返回了非预期的内容类型: ${audioBlob.type}`);
         }
 
+        // 创建一个临时的 URL 指向这个 Blob 数据
         const audioUrl = URL.createObjectURL(audioBlob);
         
+        // 将这个 URL 设置为音频元素的源
         voiceAudio.src = audioUrl;
 
+        // 当音频元数据加载完成后，显示时长
         voiceAudio.onloadedmetadata = () => {
             if (isFinite(voiceAudio.duration)) {
                 const minutes = Math.floor(voiceAudio.duration / 60);
@@ -3827,17 +3857,20 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             }
         };
 
+        // 播放音频
         await voiceAudio.play();
 
+        // 更新UI为播放状态
         playerElement.classList.remove('loading');
         playerElement.classList.add('playing');
         playButton.textContent = '❚❚';
 
     } catch (error) {
+        // 9. 统一处理所有错误
         console.error('语音播放失败:', error);
         showToast(`语音播放错误: ${error.message}`);
         playerElement.classList.remove('loading');
         playButton.textContent = '▶';
-        currentPlayingElement = null;
+        currentPlayingElement = null; // 重置当前播放元素
     }
 }

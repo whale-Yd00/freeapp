@@ -19,9 +19,8 @@
   to = "/.netlify/functions/test-connection"
   status = 200
 
-# 规则三：将语音合成(TTS)的请求转发到 tts 函数
-# 请求路径: /api/tts
-[[redirects]]
-  from = "/api/tts"
-  to = "/.netlify/functions/tts"
-  status = 200
+# 规则三 (已移除)：不再需要 tts 函数的重定向规则
+# [[redirects]]
+#  from = "/api/tts"
+#  to = "/.netlify/functions/tts"
+#  status = 200
