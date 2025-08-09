@@ -448,6 +448,63 @@ class IndexedDBManager {
     }
 
     /**
+     * 验证导入文件的合法性
+     * @param {Object} importData - 要验证的数据
+     */
+    validateFileIntegrity(importData) {
+        // 基本格式检查
+        if (!importData || typeof importData !== 'object') {
+            return {
+                valid: false,
+                error: '文件格式无效：不是有效的JSON对象'
+            };
+        }
+
+        // 检查是否包含关键的 objectStore
+        const requiredStores = ['contacts', 'userProfile'];
+        const availableStores = Object.keys(importData).filter(key => key !== '_metadata');
+        
+        // 检查必需的存储是否存在
+        const missingStores = requiredStores.filter(store => !availableStores.includes(store));
+        
+        if (missingStores.length > 0) {
+            return {
+                valid: false,
+                error: `文件不是有效的数据库备份文件，缺少关键数据表：${missingStores.join(', ')}`
+            };
+        }
+
+        // 检查是否有任何有效的存储
+        const validStores = Object.keys(this.stores);
+        const hasValidStore = availableStores.some(store => validStores.includes(store));
+        
+        if (!hasValidStore) {
+            return {
+                valid: false,
+                error: '文件不包含任何有效的数据表，可能不是本应用的备份文件'
+            };
+        }
+
+        // 检查数据表内容是否为数组格式
+        for (const storeName of availableStores) {
+            if (validStores.includes(storeName)) {
+                if (!Array.isArray(importData[storeName])) {
+                    return {
+                        valid: false,
+                        error: `数据表 ${storeName} 格式错误：应为数组格式`
+                    };
+                }
+            }
+        }
+
+        return {
+            valid: true,
+            foundStores: availableStores.length,
+            validStores: availableStores.filter(store => validStores.includes(store))
+        };
+    }
+
+    /**
      * 关闭数据库连接
      */
     close() {
@@ -753,6 +810,16 @@ window.DatabaseManager = {
     async importFromFile(file, overwrite = false) {
         try {
             const importData = await dbManager.readImportFile(file);
+            
+            // 新增：检查文件合法性
+            const validationResult = dbManager.validateFileIntegrity(importData);
+            if (!validationResult.valid) {
+                return {
+                    success: false,
+                    error: validationResult.error,
+                    validation: validationResult
+                };
+            }
             
             // 验证数据
             const validation = dbManager.validateImportData(importData);
