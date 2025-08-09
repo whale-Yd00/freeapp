@@ -555,13 +555,6 @@ function openDB() {
             window.db = db;
             window.isIndexedDBReady = isIndexedDBReady;
             
-            console.log('[记忆调试] IndexedDB 成功打开', {
-                version: db.version,
-                objectStoreNames: Array.from(db.objectStoreNames),
-                isIndexedDBReady: isIndexedDBReady,
-                windowDb: !!window.db,
-                windowReady: window.isIndexedDBReady
-            });
             
             // 检查是否需要进行表情数据优化
             if (window._needsEmojiOptimization) {
@@ -575,12 +568,10 @@ function openDB() {
             // 数据库准备好后，初始化记忆管理器数据
             if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
                 setTimeout(async () => {
-                    console.log('[记忆调试] 数据库已准备好，开始初始化记忆管理器数据');
                     await window.characterMemoryManager.loadConversationCounters();
                     await window.characterMemoryManager.loadLastProcessedMessageIndex();
                     await window.characterMemoryManager.getGlobalMemory();
                     window.characterMemoryManager.isInitialized = true;
-                    console.log('[记忆调试] 记忆管理器数据初始化完成');
                 }, 100); // 稍微延迟确保所有设置都完成
             }
             
@@ -819,20 +810,10 @@ async function loadDataFromDB() {
         hashtagCache = savedHashtagCache;
 
         // 重新初始化角色记忆管理器的数据（现在数据库已准备好）
-        console.log('[记忆调试] script.js 中准备加载角色记忆管理器数据', {
-            hasMemoryManager: !!window.characterMemoryManager,
-            isIndexedDBReady: window.isIndexedDBReady,
-            hasDb: !!window.db,
-            dbVersion: window.db?.version,
-            contactsCount: window.contacts?.length
-        });
         
         if (window.characterMemoryManager) {
             await window.characterMemoryManager.loadConversationCounters();
             await window.characterMemoryManager.getGlobalMemory();
-            console.log('[记忆调试] script.js 中角色记忆管理器数据加载完成', {
-                isSystemReady: window.characterMemoryManager.isSystemReady()
-            });
         }
 
     } catch (error) {
@@ -3153,23 +3134,14 @@ async function sendMessage() {
                 await saveDataToDB();
             }
             // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
-            console.log('[记忆调试] 准备触发记忆更新检查', {
-                hasMemoryManager: !!window.characterMemoryManager,
-                hasContacts: !!window.contacts,
-                isContactsArray: Array.isArray(window.contacts),
-                currentContactId: currentContact?.id,
-                currentContactType: currentContact?.type,
-                messageCount: currentContact?.messages?.length
-            });
             
             if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
                 try {
                     await window.characterMemoryManager.checkAndUpdateMemory(currentContact.id, currentContact);
                 } catch (error) {
-                    console.error('[记忆调试] 检查更新记忆失败:', error);
+                    console.error('检查更新记忆失败:', error);
                 }
             } else {
-                console.log('[记忆调试] 记忆更新条件不满足，跳过');
             }
         }
     } catch (error) {
