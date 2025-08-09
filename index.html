@@ -162,10 +162,16 @@
                     <div id="databaseStatsContent" style="font-size: 13px; color: #666;">
                         <div>正在加载统计信息...</div>
                     </div>
-                    <button type="button" class="refresh-stats-btn" onclick="refreshDatabaseStats()" 
-                            style="margin-top: 10px; padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        刷新统计
-                    </button>
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <button type="button" class="refresh-stats-btn" onclick="refreshDatabaseStats()" 
+                                style="padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            刷新统计
+                        </button>
+                        <button type="button" class="optimize-db-btn" onclick="optimizeEmojiDatabase()" 
+                                style="padding: 5px 10px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;" title="将Base64表情转换为标签格式，减小数据库体积">
+                            🚀 数据库优化
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- 导入导出操作 -->
