@@ -1,6 +1,6 @@
 // === Console日志捕获系统 ===
 let consoleLogs = [];
-const maxLogEntries = 1000; // 限制日志条目数量避免内存过大
+const maxLogEntries = 500; // 限制日志条目数量避免内存过大
 
 // 重写console方法来捕获日志
 function setupConsoleCapture() {
@@ -1099,11 +1099,6 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         return;
     }
     
-    console.log('当前API设置:', { 
-        url: apiSettings.url, 
-        model: apiSettings.model, 
-        hasKey: !!apiSettings.key 
-    });
     
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
         console.error('API配置不完整:', apiSettings);
@@ -1173,7 +1168,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
 
         console.log('解析API响应JSON...');
         const data = await response.json();
-        console.log('API返回的完整数据:', JSON.stringify(data, null, 2));
+        console.log('API完整返回:', JSON.stringify(data, null, 2));
         
         let jsonText = data.choices[0].message.content;
         console.log('提取的消息内容:', jsonText);
@@ -3156,19 +3151,7 @@ async function sendMessage() {
             name: error.name,
             message: error.message,
             stack: error.stack,
-            currentContact: currentContact ? {
-                id: currentContact.id,
-                name: currentContact.name,
-                type: currentContact.type,
-                messagesCount: currentContact.messages ? currentContact.messages.length : 0
-            } : null,
-            apiSettings: {
-                url: apiSettings.url ? 'configured' : 'not configured',
-                key: apiSettings.key ? 'configured' : 'not configured',
-                model: apiSettings.model ? 'configured' : 'not configured'
-            },
             timestamp: new Date().toISOString(),
-            userAgent: navigator.userAgent,
             url: window.location.href
         });
         showToast('发送失败：' + error.message);
