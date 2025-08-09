@@ -767,6 +767,122 @@ window.enhanceApiSettingsModal = function() {
     }
 };
 
+// 剪贴板操作函数
+window.exportToClipboard = async function() {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在导出数据到剪贴板...');
+        }
+        
+        const result = await window.DatabaseManager.exportToClipboard();
+        
+        if (result.success) {
+            if (typeof showToast === 'function') {
+                showToast('数据已复制到剪贴板！');
+            } else {
+                alert('数据已复制到剪贴板！');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast('复制失败: ' + result.error);
+            } else {
+                alert('复制失败: ' + result.error);
+            }
+        }
+    } catch (error) {
+        if (typeof showToast === 'function') {
+            showToast('复制出错: ' + error.message);
+        } else {
+            alert('复制出错: ' + error.message);
+        }
+        console.error('复制到剪贴板失败:', error);
+    }
+};
+
+window.importFromClipboard = async function() {
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.readText) {
+            throw new Error('您的浏览器不支持剪贴板读取功能');
+        }
+
+        const firstConfirmMessage = '从剪贴板导入数据将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
+        const secondConfirmMessage = '再次确认：此操作不可撤销！\n确定要用剪贴板数据覆盖当前所有数据吗？';
+        
+        // 使用原生 confirm 对话框避免嵌套问题
+        if (confirm(firstConfirmMessage)) {
+            if (confirm(secondConfirmMessage)) {
+                if (typeof showToast === 'function') {
+                    showToast('正在从剪贴板读取数据...');
+                }
+                
+                const result = await window.DatabaseManager.importFromClipboard();
+                
+                if (result.success) {
+                    // 刷新统计信息
+                    if (typeof window.refreshDatabaseStats === 'function') {
+                        window.refreshDatabaseStats();
+                    }
+                    
+                    // 清空内存中的数据，确保数据同步
+                    if (typeof window.contacts !== 'undefined') {
+                        window.contacts = [];
+                    }
+                    if (typeof window.currentContact !== 'undefined') {
+                        window.currentContact = null;
+                    }
+                    if (typeof window.emojis !== 'undefined') {
+                        window.emojis = [];
+                    }
+                    if (typeof window.backgrounds !== 'undefined') {
+                        window.backgrounds = {};
+                    }
+                    if (typeof window.userProfile !== 'undefined') {
+                        window.userProfile = { name: '我的昵称', avatar: '', personality: '' };
+                    }
+                    if (typeof window.moments !== 'undefined') {
+                        window.moments = [];
+                    }
+                    if (typeof window.weiboPosts !== 'undefined') {
+                        window.weiboPosts = [];
+                    }
+                    
+                    // 显示成功消息
+                    const successMessage = `从剪贴板导入成功！\n导入了 ${result.result?.importedStores?.length || '多个'} 个数据表\n页面将自动刷新以更新显示`;
+                    
+                    if (typeof showToast === 'function') {
+                        showToast('导入成功！正在刷新页面以应用新数据...');
+                    }
+                    
+                    // 显示警告信息（如果有）
+                    if (result.validation && result.validation.warnings.length > 0) {
+                        alert('导入成功，但有以下警告，请及时截图:\n' + result.validation.warnings.join('\n') + '\n\n页面即将刷新');
+                    } else {
+                        alert(successMessage);
+                    }
+                    
+                    // 自动刷新页面
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                } else {
+                    if (typeof showToast === 'function') {
+                        showToast('导入失败: ' + result.error);
+                    } else {
+                        alert('导入失败: ' + result.error);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        if (typeof showToast === 'function') {
+            showToast('从剪贴板导入出错: ' + error.message);
+        } else {
+            alert('从剪贴板导入出错: ' + error.message);
+        }
+        console.error('从剪贴板导入失败:', error);
+    }
+};
+
 // 导出功能函数，供HTML界面调用
 window.DatabaseManager = {
     
@@ -859,6 +975,88 @@ window.DatabaseManager = {
             const stats = await dbManager.getStatistics();
             return { success: true, stats };
         } catch (error) {
+            return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 导出数据到剪贴板
+     */
+    async exportToClipboard() {
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                throw new Error('您的浏览器不支持剪贴板写入功能');
+            }
+            
+            const data = await dbManager.exportDatabase();
+            const dataStr = JSON.stringify(data, null, 2);
+            
+            await navigator.clipboard.writeText(dataStr);
+            return { success: true, message: '数据已复制到剪贴板！' };
+        } catch (error) {
+            console.error('复制到剪贴板失败:', error);
+            return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 从剪贴板导入数据
+     */
+    async importFromClipboard() {
+        try {
+            if (!navigator.clipboard || !navigator.clipboard.readText) {
+                throw new Error('您的浏览器不支持剪贴板读取功能');
+            }
+            
+            const clipboardText = await navigator.clipboard.readText();
+            
+            if (!clipboardText.trim()) {
+                throw new Error('剪贴板为空或不包含有效数据');
+            }
+            
+            let importData;
+            try {
+                importData = JSON.parse(clipboardText);
+            } catch (parseError) {
+                throw new Error('剪贴板内容不是有效的JSON格式');
+            }
+            
+            // 检查文件合法性
+            const validationResult = dbManager.validateFileIntegrity(importData);
+            if (!validationResult.valid) {
+                return {
+                    success: false,
+                    error: validationResult.error,
+                    validation: validationResult
+                };
+            }
+            
+            // 验证数据
+            const validation = dbManager.validateImportData(importData);
+            
+            if (!validation.valid) {
+                return { 
+                    success: false, 
+                    error: '数据验证失败：' + validation.errors.join(', '),
+                    validation 
+                };
+            }
+            
+            // 导入数据（强制覆盖）
+            const result = await dbManager.importDatabase(importData, { 
+                overwrite: true,
+                validateVersion: true 
+            });
+            
+            return { 
+                success: true, 
+                message: `从剪贴板导入成功！导入了 ${result.importedStores?.length || 0} 个数据表`,
+                result,
+                validation 
+            };
+            
+        } catch (error) {
+            console.error('从剪贴板导入失败:', error);
             return { success: false, error: error.message };
         }
     }

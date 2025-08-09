@@ -186,6 +186,19 @@
                         </button>
                     </div>
                     
+                    <!-- 剪贴板操作 -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button type="button" class="form-submit" onclick="exportToClipboard()" 
+                                style="flex: 1; background-color: #6f42c1;">
+                            📋 复制到剪贴板
+                        </button>
+                        
+                        <button type="button" class="form-submit" onclick="importFromClipboard()" 
+                                style="flex: 1; background-color: #fd7e14;">
+                            📋 从剪贴板导入
+                        </button>
+                    </div>
+                    
                     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
                     
                     <!-- 导入说明 -->
