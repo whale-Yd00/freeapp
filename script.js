@@ -3864,8 +3864,7 @@ async function handleShareData() {
         }
 
         // 3. 构造给Vercel应用使用的链接
-        // !!! 注意：请把下面的 'https://your-app.vercel.app' 换成你Vercel应用的真实地址
-        const vercelAppUrl = 'https://whalellt.vercel.app'; 
+        const vercelAppUrl = 'https://chat.whale-llt.top'; 
         const shareLink = `${vercelAppUrl}/?importId=${result.id}`;
 
         // 4. 显示分享链接给用户
@@ -3931,7 +3930,7 @@ async function handleAutoImport(importId) {
     try {
         // 3. 去Netlify中转站取回数据
         // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
-        const netlifyFunctionUrl = `https://deploy-preview-54--velvety-belekoy-02a99e.netlify.app/.netlify/functions/transfer-data?id=${importId}`;
+        const netlifyFunctionUrl = `https://velvety-belekoy-02a99e.netlify.app/.netlify/functions/transfer-data?id=${importId}`;
         const response = await fetch(netlifyFunctionUrl);
 
         if (!response.ok) {
