@@ -61,8 +61,21 @@ class ImageManager {
             
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                console.log('ImageManager 数据库升级中...');
+                
+                // 创建所有必需的存储（与主应用保持一致）
+                if (!db.objectStoreNames.contains('contacts')) {
+                    db.createObjectStore('contacts', { keyPath: 'id' });
+                }
+                if (!db.objectStoreNames.contains('emojis')) {
+                    db.createObjectStore('emojis', { keyPath: 'id' });
+                }
+                if (!db.objectStoreNames.contains('emojiImages')) {
+                    db.createObjectStore('emojiImages', { keyPath: 'tag' });
+                }
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     db.createObjectStore(this.storeName, { keyPath: 'path' });
+                    console.log('ImageManager 创建虚拟文件系统存储');
                 }
             };
         });
