@@ -332,6 +332,15 @@ let currentPlayingElement = null; // 跟踪当前播放的语音元素
 // --- 初始化 ---
 async function init() {
     await openDB(); // 确保IndexedDB先打开
+    
+    // 检查数据库版本并提示用户
+    if (!db.objectStoreNames.contains('emojiImages')) {
+        console.log('检测到数据库需要升级，表情包功能将使用兼容模式。');
+        if (typeof showToast === 'function') {
+            showToast('数据库已更新，表情包功能已优化！如需使用新功能，请点击"🚀数据库优化"按钮');
+        }
+    }
+    
     await loadDataFromDB(); // 从IndexedDB加载数据
 
     renderContactList();
@@ -419,7 +428,7 @@ async function init() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 4);
+        const request = indexedDB.open('WhaleLLTDB', 5);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -436,6 +445,9 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains('emojis')) {
                 db.createObjectStore('emojis', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('emojiImages')) {
+                db.createObjectStore('emojiImages', { keyPath: 'tag' });
             }
             if (!db.objectStoreNames.contains('backgrounds')) {
                 db.createObjectStore('backgrounds', { keyPath: 'id' });
@@ -474,7 +486,15 @@ async function loadDataFromDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache'], 'readonly');
+        // 检查是否存在新的emojiImages存储
+        const storeNames = ['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'weiboPosts', 'hashtagCache'];
+        if (db.objectStoreNames.contains('emojiImages')) {
+            storeNames.push('emojiImages');
+        } else {
+            console.warn('数据库版本较旧，缺少emojiImages存储。建议刷新页面以升级数据库。');
+        }
+        
+        const transaction = db.transaction(storeNames, 'readonly');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -532,7 +552,13 @@ async function saveDataToDB() {
         return;
     }
     try {
-        const transaction = db.transaction(['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'hashtagCache'], 'readwrite');
+        // 检查是否存在新的emojiImages存储
+        const storeNames = ['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'hashtagCache'];
+        if (db.objectStoreNames.contains('emojiImages')) {
+            storeNames.push('emojiImages');
+        }
+        
+        const transaction = db.transaction(storeNames, 'readwrite');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -2014,6 +2040,252 @@ function showToast(message) {
     setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
+// === 表情图片管理函数 ===
+async function renderEmojiContent(emojiContent, isInline = false) {
+    // 处理新格式 [emoji:tag]
+    if (emojiContent.startsWith('[emoji:') && emojiContent.endsWith(']')) {
+        const tag = emojiContent.slice(7, -1);
+        const imageData = await getEmojiImage(tag);
+        if (imageData) {
+            const style = isInline ? 'max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;' : '';
+            const className = isInline ? '' : 'class="message-emoji"';
+            return `<img src="${imageData}" ${className} style="${style}">`;
+        } else {
+            // 如果找不到图片，显示标签
+            return `[表情:${tag}]`;
+        }
+    }
+    
+    // 处理旧格式的base64或URL
+    if (emojiContent.startsWith('data:image/') || emojiContent.startsWith('http')) {
+        const style = isInline ? 'max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;' : '';
+        const className = isInline ? '' : 'class="message-emoji"';
+        return `<img src="${emojiContent}" ${className} style="${style}">`;
+    }
+    
+    return emojiContent; // 返回原内容
+}
+
+async function processTextWithInlineEmojis(textContent) {
+    const emojiTagRegex = /\[(?:emoji|发送了表情)[:：]([^\]]+)\]/g;
+    const standaloneEmojiMatch = textContent.trim().match(/^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/);
+    
+    if (standaloneEmojiMatch) {
+        // 处理独立表情消息
+        const emojiName = standaloneEmojiMatch[1];
+        const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+        if (foundEmoji && foundEmoji.tag) {
+            return await renderEmojiContent(`[emoji:${foundEmoji.tag}]`);
+        } else if (foundEmoji && foundEmoji.url) {
+            // 旧格式兼容
+            return `<img src="${foundEmoji.url}" class="message-emoji">`;
+        } else {
+            return `<div class="message-content">${textContent}</div>`;
+        }
+    } else {
+        // 处理包含内联表情的文本
+        let processedContent = textContent.replace(/\n/g, '<br>');
+        
+        // 使用异步替换处理内联表情
+        const emojiMatches = [...processedContent.matchAll(emojiTagRegex)];
+        for (const match of emojiMatches) {
+            const fullMatch = match[0];
+            const emojiName = match[1];
+            const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+            
+            let replacement = fullMatch; // 默认保持原样
+            if (foundEmoji && foundEmoji.tag) {
+                const emojiHtml = await renderEmojiContent(`[emoji:${foundEmoji.tag}]`, true);
+                replacement = emojiHtml;
+            } else if (foundEmoji && foundEmoji.url) {
+                // 旧格式兼容
+                replacement = `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">`;
+            }
+            
+            processedContent = processedContent.replace(fullMatch, replacement);
+        }
+        
+        return `<div class="message-content">${processedContent}</div>`;
+    }
+}
+async function saveEmojiImage(tag, base64Data) {
+    if (!isIndexedDBReady) {
+        console.warn('IndexedDB 未准备好，无法保存表情图片。');
+        return;
+    }
+    if (!db.objectStoreNames.contains('emojiImages')) {
+        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
+        return;
+    }
+    try {
+        const transaction = db.transaction(['emojiImages'], 'readwrite');
+        const store = transaction.objectStore('emojiImages');
+        await promisifyRequest(store.put({ tag: tag, data: base64Data }));
+    } catch (error) {
+        console.error('保存表情图片失败:', error);
+        throw error;
+    }
+}
+
+async function getEmojiImage(tag) {
+    if (!isIndexedDBReady) {
+        console.warn('IndexedDB 未准备好，无法获取表情图片。');
+        return null;
+    }
+    if (!db.objectStoreNames.contains('emojiImages')) {
+        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
+        return null;
+    }
+    try {
+        const transaction = db.transaction(['emojiImages'], 'readonly');
+        const store = transaction.objectStore('emojiImages');
+        const result = await promisifyRequest(store.get(tag));
+        return result ? result.data : null;
+    } catch (error) {
+        console.error('获取表情图片失败:', error);
+        return null;
+    }
+}
+
+async function deleteEmojiImage(tag) {
+    if (!isIndexedDBReady) {
+        console.warn('IndexedDB 未准备好，无法删除表情图片。');
+        return;
+    }
+    if (!db.objectStoreNames.contains('emojiImages')) {
+        console.warn('emojiImages存储不存在，请刷新页面升级数据库。');
+        return;
+    }
+    try {
+        const transaction = db.transaction(['emojiImages'], 'readwrite');
+        const store = transaction.objectStore('emojiImages');
+        await promisifyRequest(store.delete(tag));
+    } catch (error) {
+        console.error('删除表情图片失败:', error);
+        throw error;
+    }
+}
+
+
+// 数据库优化函数：将现有base64表情转换为标签格式
+async function optimizeEmojiDatabase() {
+    if (!isIndexedDBReady) {
+        showToast('数据库未准备好，无法执行优化');
+        return;
+    }
+    
+    try {
+        showToast('开始优化数据库...');
+        let optimizedCount = 0;
+        let processedContacts = 0;
+        
+        // 处理所有联系人的消息
+        for (const contact of contacts) {
+            let contactModified = false;
+            
+            for (const message of contact.messages) {
+                // 查找包含base64图片的消息
+                if (message.content && typeof message.content === 'string') {
+                    const base64Regex = /data:image\/[^,\s]+,[A-Za-z0-9+/=]+/g;
+                    const matches = message.content.match(base64Regex);
+                    
+                    if (matches) {
+                        let newContent = message.content;
+                        
+                        for (const base64Url of matches) {
+                            // 查找对应的表情
+                            const emoji = emojis.find(e => e.url === base64Url || (e.url && e.url === base64Url));
+                            if (emoji && emoji.meaning) {
+                                // 如果还没有保存过这个表情的图片，保存到emojiImages
+                                const existingImage = await getEmojiImage(emoji.meaning);
+                                if (!existingImage) {
+                                    await saveEmojiImage(emoji.meaning, base64Url);
+                                }
+                                
+                                // 更新表情数据结构
+                                if (!emoji.tag) {
+                                    emoji.tag = emoji.meaning;
+                                }
+                                
+                                // 替换消息中的base64为标签格式
+                                newContent = newContent.replace(base64Url, `[emoji:${emoji.meaning}]`);
+                                optimizedCount++;
+                                contactModified = true;
+                            } else {
+                                // 如果找不到对应的表情，可能是独立的base64图片，创建一个临时标签
+                                const tempTag = `temp_${Date.now()}`;
+                                await saveEmojiImage(tempTag, base64Url);
+                                newContent = newContent.replace(base64Url, `[emoji:${tempTag}]`);
+                                
+                                // 创建一个新的表情记录
+                                emojis.push({
+                                    id: Date.now().toString(),
+                                    tag: tempTag,
+                                    meaning: tempTag
+                                });
+                                optimizedCount++;
+                                contactModified = true;
+                            }
+                        }
+                        
+                        // 更新消息内容
+                        message.content = newContent;
+                        
+                        // 如果消息类型是emoji，也更新类型
+                        if (message.type === 'emoji' && matches.length === 1 && newContent.trim().match(/^\[emoji:[^\]]+\]$/)) {
+                            // 这是一个纯表情消息
+                            message.content = newContent.trim();
+                        }
+                    }
+                }
+            }
+            
+            if (contactModified) {
+                processedContacts++;
+            }
+        }
+        
+        // 更新表情数据结构，移除旧的url字段
+        for (const emoji of emojis) {
+            if (emoji.url && emoji.url.startsWith('data:image/')) {
+                // 确保图片已保存到emojiImages
+                if (emoji.tag || emoji.meaning) {
+                    const tag = emoji.tag || emoji.meaning;
+                    const existingImage = await getEmojiImage(tag);
+                    if (!existingImage) {
+                        await saveEmojiImage(tag, emoji.url);
+                    }
+                    
+                    // 移除url字段
+                    delete emoji.url;
+                    
+                    // 确保有tag字段
+                    if (!emoji.tag && emoji.meaning) {
+                        emoji.tag = emoji.meaning;
+                    }
+                }
+            }
+        }
+        
+        // 保存优化后的数据
+        await saveDataToDB();
+        
+        showToast(`数据库优化完成！处理了 ${optimizedCount} 个表情，涉及 ${processedContacts} 个联系人`);
+        
+        // 刷新表情网格
+        await renderEmojiGrid();
+        
+        // 如果当前有打开的聊天，重新渲染消息
+        if (currentContact) {
+            await renderMessages(true);
+        }
+        
+    } catch (error) {
+        console.error('数据库优化失败:', error);
+        showToast(`优化失败: ${error.message}`);
+    }
+}
+
 function showTopNotification(message) {
     const notification = document.getElementById('topNotification');
     notification.textContent = message;
@@ -2273,7 +2545,7 @@ function getGroupAvatarContent(group) {
 }
 
 // --- 聊天核心逻辑 ---
-function openChat(contact) {
+async function openChat(contact) {
     currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
     document.getElementById('chatTitle').textContent = contact.name;
@@ -2282,7 +2554,7 @@ function openChat(contact) {
     // 重置消息加载状态
     currentlyDisplayedMessageCount = 0; 
     
-    renderMessages(true); // 初始加载
+    await renderMessages(true); // 初始加载
     
     updateContextIndicator();
     const chatMessagesEl = document.getElementById('chatMessages');
@@ -2312,7 +2584,7 @@ function closeChatPage() {
     toggleMemoryPanel(true);
 }
 
-function renderMessages(isInitialLoad = false) {
+async function renderMessages(isInitialLoad = false) {
     if (!currentContact) return;
     const chatMessages = document.getElementById('chatMessages');
     const allMessages = currentContact.messages;
@@ -2342,7 +2614,7 @@ function renderMessages(isInitialLoad = false) {
     }
 
     let lastTimestamp = null;
-    messagesToRender.forEach((msg, index) => {
+    for (const [index, msg] of messagesToRender.entries()) {
         const originalIndex = allMessages.length - currentlyDisplayedMessageCount + index;
         const currentMsgTime = new Date(msg.time);
 
@@ -2355,37 +2627,19 @@ function renderMessages(isInitialLoad = false) {
         }
 
         const msgDiv = document.createElement('div');
-        if (msg.role === 'system') return;
+        if (msg.role === 'system') continue;
         
         msgDiv.className = `message ${msg.role === 'user' ? 'sent' : 'received'}`;
         msgDiv.dataset.messageIndex = originalIndex;
 
         let contentHtml = '';
         if (msg.type === 'emoji') {
-            contentHtml = `<img src="${msg.content}" class="message-emoji">`;
+            contentHtml = await renderEmojiContent(msg.content);
         } else if (msg.type === 'red_packet') {
             const packet = JSON.parse(msg.content);
             contentHtml = `<div class="message-content red-packet" onclick="showToast('红包金额: ${packet.amount}')"><div class="red-packet-body"><svg class="red-packet-icon" viewBox="0 0 1024 1024"><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32zM731.2 565.2H603.9c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8zM419.8 565.2H292.5c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8z" fill="#FEFEFE"></path><path d="M872.4 240H151.6c-17.7 0-32 14.3-32 32v64h784v-64c0-17.7-14.3-32-32-32z" fill="#FCD4B3"></path><path d="M512 432c-48.6 0-88 39.4-88 88s39.4 88 88 88 88-39.4 88-88-39.4-88-88-88z m0 152c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64-64z" fill="#FCD4B3"></path><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32z m-32 552H215.6V368h624.8v488z" fill="#F37666"></path><path d="M512 128c-112.5 0-204 91.5-204 204s91.5 204 204 204 204-91.5 204-204-91.5-204-204-204z m0 384c-99.4 0-180-80.6-180-180s80.6-180 180-180 180 80.6 180 180-80.6 180-180 180z" fill="#F37666"></path><path d="M512 456c-35.3 0-64 28.7-64 64s28.7 64 64 64 64 28.7 64 64-28.7-64-64-64z m16.4 76.4c-2.3 2.3-5.4 3.6-8.5 3.6h-15.8c-3.1 0-6.2-1.3-8.5-3.6s-3.6-5.4-3.6-8.5v-27.8c0-6.6 5.4-12 12-12h16c6.6 0 12 5.4 12 12v27.8c0.1 3.1-1.2 6.2-3.5 8.5z" fill="#F37666"></path></svg><div class="red-packet-text"><div>${packet.message || '恭喜发财，大吉大利！'}</div><div>领取红包</div></div></div><div class="red-packet-footer">AI红包</div></div>`;
         } else {
-            let processedContent = msg.content;
-            const emojiTagRegex = /\[(?:emoji|发送了表情)[:：]([^\]]+)\]/g;
-            const standaloneEmojiMatch = processedContent.trim().match(/^\[(?:emoji|发送了表情)[:：]([^\]]+)\]$/);
-            if (standaloneEmojiMatch) {
-                 const emojiName = standaloneEmojiMatch[1];
-                 const foundEmoji = emojis.find(e => e.meaning === emojiName);
-                 if(foundEmoji) {
-                    contentHtml = `<img src="${foundEmoji.url}" class="message-emoji">`;
-                 } else {
-                    contentHtml = `<div class="message-content">${processedContent}</div>`;
-                 }
-            } else {
-                processedContent = processedContent.replace(/\n/g, '<br>');
-                processedContent = processedContent.replace(emojiTagRegex, (match, name) => {
-                    const foundEmoji = emojis.find(e => e.meaning === name);
-                    return foundEmoji ? `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">` : match;
-                });
-                contentHtml = `<div class="message-content">${processedContent}</div>`;
-            }
+            contentHtml = await processTextWithInlineEmojis(msg.content);
         }
 
         if (msg.edited) {
@@ -2464,7 +2718,7 @@ function renderMessages(isInitialLoad = false) {
         }
         
         chatMessages.appendChild(msgDiv);
-    });
+    }
 
     if (isInitialLoad) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -2475,7 +2729,7 @@ function renderMessages(isInitialLoad = false) {
 }
 
 
-function loadMoreMessages() {
+async function loadMoreMessages() {
     if (isLoadingMoreMessages) return;
     isLoadingMoreMessages = true;
 
@@ -2485,13 +2739,13 @@ function loadMoreMessages() {
         loadMoreButton.textContent = '正在加载...';
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
         const allMessages = currentContact.messages;
         const newCount = Math.min(allMessages.length, currentlyDisplayedMessageCount + MESSAGES_PER_PAGE);
         
         if (newCount > currentlyDisplayedMessageCount) {
             currentlyDisplayedMessageCount = newCount;
-            renderMessages(false); // 重新渲染，非初始加载
+            await renderMessages(false); // 重新渲染，非初始加载
         }
         
         isLoadingMoreMessages = false;
@@ -2520,7 +2774,7 @@ async function sendUserMessage() {
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
     input.value = '';
     input.style.height = 'auto';
-    renderMessages(true); // 重新渲染并滚动到底部
+    await renderMessages(true); // 重新渲染并滚动到底部
     renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     input.focus();
@@ -2810,9 +3064,10 @@ async function callAPI(contact, turnContext = []) {
 
             if (emojiMatch) {
                 const emojiName = emojiMatch[1];
-                const foundEmoji = emojis.find(e => e.meaning === emojiName);
+                const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
                 if (foundEmoji) {
-                    processedReplies.push({ type: 'emoji', content: foundEmoji.url });
+                    const content = foundEmoji.tag ? `[emoji:${foundEmoji.tag}]` : foundEmoji.url;
+                    processedReplies.push({ type: 'emoji', content: content });
                 } else {
                     processedReplies.push({ type: 'text', content: reply });
                 }
@@ -2959,14 +3214,24 @@ async function setBackground(event) {
 async function addEmoji(event) {
     event.preventDefault();
     const meaning = document.getElementById('emojiMeaning').value.trim();
-    if (emojis.some(e => e.meaning === meaning)) {
-        showToast('该表情含义已存在，请使用其他名称。');
+    if (emojis.some(e => e.tag === meaning)) {
+        showToast('该表情标签已存在，请使用其他标签。');
         return;
     }
+    
+    const imageUrl = document.getElementById('emojiUrl').value;
+    
+    // 如果是base64图片，存储到emojiImages，否则直接存储URL
+    let imageData = imageUrl;
+    if (imageUrl.startsWith('data:image/')) {
+        await saveEmojiImage(meaning, imageUrl);
+        imageData = `[emoji:${meaning}]`; // 内部存储格式
+    }
+    
     const emoji = { 
         id: Date.now().toString(), 
-        url: document.getElementById('emojiUrl').value, 
-        meaning: meaning
+        tag: meaning,  // 使用tag而不是meaning
+        meaning: meaning // 保留meaning用于显示
     };
     emojis.push(emoji);
     await saveDataToDB(); // 使用IndexedDB保存
@@ -2978,6 +3243,11 @@ async function addEmoji(event) {
 
 async function deleteEmoji(emojiId) {
     showConfirmDialog('删除确认', '确定要删除这个表情吗？', async () => {
+        const emojiToDelete = emojis.find(e => e.id === emojiId);
+        if (emojiToDelete && emojiToDelete.tag) {
+            // 删除对应的图片数据
+            await deleteEmojiImage(emojiToDelete.tag);
+        }
         emojis = emojis.filter(e => e.id !== emojiId);
         await saveDataToDB(); // 使用IndexedDB保存
         renderEmojiGrid();
@@ -2985,16 +3255,36 @@ async function deleteEmoji(emojiId) {
     });
 }
 
-function renderEmojiGrid() {
+async function renderEmojiGrid() {
     const grid = document.getElementById('emojiGrid');
     grid.innerHTML = '';
-    emojis.forEach(emoji => {
+    
+    for (const emoji of emojis) {
         const item = document.createElement('div');
         item.className = 'emoji-item';
-        item.innerHTML = `<img src="${emoji.url}"><div class="emoji-delete-btn" onclick="event.stopPropagation(); deleteEmoji('${emoji.id}')">×</div>`;
-        item.onclick = () => sendEmoji(emoji);
+        
+        // 获取表情图片
+        let imageSrc;
+        if (emoji.tag) {
+            // 新格式：从emojiImages存储获取
+            imageSrc = await getEmojiImage(emoji.tag);
+        } else if (emoji.url) {
+            // 旧格式：直接使用URL
+            imageSrc = emoji.url;
+        }
+        
+        if (imageSrc) {
+            item.innerHTML = `<img src="${imageSrc}"><div class="emoji-delete-btn" onclick="event.stopPropagation(); deleteEmoji('${emoji.id}')">×</div>`;
+            item.onclick = () => sendEmoji(emoji);
+        } else {
+            // 如果没有图片数据，显示占位符
+            item.innerHTML = `<div style="background: #f0f0f0; display: flex; align-items: center; justify-content: center; width: 80px; height: 80px; border-radius: 8px;">${emoji.meaning || emoji.tag || '?'}</div><div class="emoji-delete-btn" onclick="event.stopPropagation(); deleteEmoji('${emoji.id}')">×</div>`;
+            item.onclick = () => sendEmoji(emoji);
+        }
+        
         grid.appendChild(item);
-    });
+    }
+    
     const addBtn = document.createElement('div');
     addBtn.className = 'add-emoji-btn';
     addBtn.textContent = '+ 添加表情';
@@ -3025,7 +3315,9 @@ async function sendRedPacket(event) {
 
 async function sendEmoji(emoji) {
     if (!currentContact) return;
-    currentContact.messages.push({ role: 'user', content: emoji.url, type: 'emoji', time: new Date().toISOString(), senderId: 'user' });
+    // 使用新的[emoji:tag]格式存储
+    const content = emoji.tag ? `[emoji:${emoji.tag}]` : emoji.url;
+    currentContact.messages.push({ role: 'user', content: content, type: 'emoji', time: new Date().toISOString(), senderId: 'user' });
     if (currentContact.messages.length > currentlyDisplayedMessageCount) {
         currentlyDisplayedMessageCount++;
     }

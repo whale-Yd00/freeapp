@@ -154,8 +154,14 @@ class PromptBuilder {
             } 
             // 处理表情消息
             else if (msg.type === 'emoji') {
-                const foundEmoji = emojis.find(e => e.url === msg.content);
-                content = `[emoji:${foundEmoji?.meaning || '未知表情'}]`;
+                // 处理新格式 [emoji:tag]
+                if (msg.content.startsWith('[emoji:') && msg.content.endsWith(']')) {
+                    content = msg.content; // 已经是标签格式，直接使用
+                } else {
+                    // 处理旧格式的URL
+                    const foundEmoji = emojis.find(e => e.url === msg.content || e.tag === msg.content || e.meaning === msg.content);
+                    content = `[emoji:${foundEmoji?.tag || foundEmoji?.meaning || '未知表情'}]`;
+                }
             }
             
             // 构建最终的消息内容
@@ -187,8 +193,16 @@ class PromptBuilder {
                 } else if (msg.type === 'text') {
                     content = this._replaceBase64WithEmoji(msg.content, emojis);
                 } else if (msg.type === 'emoji') {
-                    const foundEmoji = emojis.find(e => e.url === msg.content);
-                    content = `[表情:${foundEmoji?.meaning || '未知表情'}]`;
+                    // 处理新格式 [emoji:tag]
+                    if (msg.content.startsWith('[emoji:') && msg.content.endsWith(']')) {
+                        const tag = msg.content.slice(7, -1);
+                        const foundEmoji = emojis.find(e => e.tag === tag || e.meaning === tag);
+                        content = `[表情:${foundEmoji?.meaning || foundEmoji?.tag || tag}]`;
+                    } else {
+                        // 处理旧格式的URL
+                        const foundEmoji = emojis.find(e => e.url === msg.content || e.tag === msg.content || e.meaning === msg.content);
+                        content = `[表情:${foundEmoji?.meaning || foundEmoji?.tag || '未知表情'}]`;
+                    }
                 }
                 
                 if (content && content.trim()) {
@@ -255,8 +269,14 @@ class PromptBuilder {
             let content = msg.content;
             
             if (msg.type === 'emoji') {
-                const foundEmoji = emojis.find(e => e.url === msg.content);
-                content = `[emoji:${foundEmoji?.meaning || '未知表情'}]`;
+                // 处理新格式 [emoji:tag]
+                if (msg.content.startsWith('[emoji:') && msg.content.endsWith(']')) {
+                    content = msg.content; // 已经是标签格式，直接使用
+                } else {
+                    // 处理旧格式的URL
+                    const foundEmoji = emojis.find(e => e.url === msg.content || e.tag === msg.content || e.meaning === msg.content);
+                    content = `[emoji:${foundEmoji?.tag || foundEmoji?.meaning || '未知表情'}]`;
+                }
             } else if (msg.type === 'text') {
                 content = this._replaceBase64WithEmoji(msg.content, emojis);
             } else if (msg.type === 'red_packet') {
@@ -518,7 +538,7 @@ ${userReply}
 
     // 私有方法：构建表情包指令
     _buildEmojiInstructions(emojis) {
-        const availableEmojisString = emojis.map(e => `- [emoji:${e.meaning}] (含义: ${e.meaning})`).join('\n');
+        const availableEmojisString = emojis.map(e => `- [emoji:${e.tag || e.meaning}] (含义: ${e.meaning || e.tag})`).join('\n');
         
         return `\n\n**能力二：发送表情包**\n`
              + `你可以从下面的列表中选择表情包来丰富你的表达。\n`
@@ -560,10 +580,15 @@ ${userReply}
 
     _replaceBase64WithEmoji(raw, emojis) {
         if (typeof raw !== 'string' || !raw) return raw;
+        
+        // 处理新格式 [emoji:tag] - 直接返回，不需要替换
+        if (raw.includes('[emoji:')) return raw;
+        
+        // 处理旧格式的base64
         const re = /data:image\/[^,\s]+,[A-Za-z0-9+/=]+/g;
         return raw.replace(re, (imgUrl) => {
-        const found = emojis.find(e => e.url === imgUrl);
-        return `[发送了表情：${found?.meaning || '未知'}]`;
+            const found = emojis.find(e => e.url === imgUrl);
+            return `[发送了表情：${found?.meaning || found?.tag || '未知'}]`;
         });
     }
 }

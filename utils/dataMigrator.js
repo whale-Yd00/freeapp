@@ -5,8 +5,11 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 4;
+        this.dbVersion = 5;
         this.db = null;
+        
+        // 定义不参与手动导入导出的存储（图片等大数据）
+        this.excludedFromManualExport = ['emojiImages'];
         
         // 定义所有对象存储的结构
         this.stores = {
@@ -14,6 +17,7 @@ class IndexedDBManager {
             contacts: { keyPath: 'id' },
             apiSettings: { keyPath: 'id' },
             emojis: { keyPath: 'id' },
+            emojiImages: { keyPath: 'tag' }, // 存储表情图片的base64数据
             backgrounds: { keyPath: 'id' },
             userProfile: { keyPath: 'id' },
             moments: { keyPath: 'id' },
@@ -570,6 +574,7 @@ window.refreshDatabaseStats = async function() {
                 'songs': '音乐文件', 
                 'apiSettings': 'API设置',
                 'emojis': '表情包',
+                'emojiImages': '表情图片',
                 'backgrounds': '聊天背景',
                 'userProfile': '用户资料',
                 'moments': '朋友圈',
@@ -898,11 +903,20 @@ window.DatabaseManager = {
     
     /**
      * 导出数据到剪贴板（直接显示让用户手动复制）
+     * 排除大数据存储（如表情图片）
      */
     async exportToClipboard() {
         try {
-            const data = await dbManager.exportDatabase();
-            const dataStr = JSON.stringify(data, null, 2);
+            // 获取所有存储名称，排除不需要手动导出的存储
+            const allStores = Array.from(dbManager.db.objectStoreNames);
+            const exportStores = allStores.filter(store => !dbManager.excludedFromManualExport.includes(store));
+            
+            const data = await dbManager.exportDatabase({ stores: exportStores });
+            
+            // 清空所有avatar字段中的base64数据
+            this.clearAvatarData(data);
+            
+            const dataStr = JSON.stringify(data);
             
             // 直接显示手动复制区域
             this.showManualCopyArea(dataStr);
@@ -910,6 +924,38 @@ window.DatabaseManager = {
         } catch (error) {
             console.error('导出数据失败:', error);
             return { success: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 清空导出数据中的头像base64数据
+     */
+    clearAvatarData(data) {
+        // 清空用户资料中的头像
+        if (data.userProfile && Array.isArray(data.userProfile)) {
+            data.userProfile.forEach(profile => {
+                if (profile.avatar) {
+                    profile.avatar = '';
+                }
+            });
+        }
+        
+        // 清空联系人中的头像
+        if (data.contacts && Array.isArray(data.contacts)) {
+            data.contacts.forEach(contact => {
+                if (contact.avatar) {
+                    contact.avatar = '';
+                }
+            });
+        }
+        
+        // 清空朋友圈中的头像
+        if (data.moments && Array.isArray(data.moments)) {
+            data.moments.forEach(moment => {
+                if (moment.authorAvatar) {
+                    moment.authorAvatar = '';
+                }
+            });
         }
     },
     
