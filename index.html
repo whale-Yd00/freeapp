@@ -201,6 +201,22 @@
                     
                     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
                     
+                    <!-- 手动复制区域 -->
+                    <div id="manualCopyArea" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
+                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #495057;">
+                            自动复制失败，请手动选择并复制以下数据：
+                        </div>
+                        <textarea id="manualCopyTextArea" readonly style="width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; background: white;"></textarea>
+                        <div style="margin-top: 10px; display: flex; gap: 10px;">
+                            <button type="button" class="form-submit" onclick="selectAllManualCopyText()" style="flex: 1; background-color: #6c757d; font-size: 12px; padding: 8px;">
+                                📋 全选文本
+                            </button>
+                            <button type="button" class="form-submit" onclick="hideManualCopyArea()" style="flex: 1; background-color: #dc3545; font-size: 12px; padding: 8px;">
+                                ❌ 关闭
+                            </button>
+                        </div>
+                    </div>
+                    
                     <!-- 导入说明 -->
                     <div class="import-warning" style="margin-top: 10px; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
                         <div style="font-size: 13px; color: #721c24; margin-bottom: 5px;">
