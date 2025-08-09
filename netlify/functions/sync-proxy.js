@@ -1,9 +1,13 @@
 // Netlify函数：代理到Vercel API，解决CORS问题
+const fetch = require('node-fetch');
+
 exports.handler = async (event, context) => {
+    console.log('代理请求:', event.httpMethod, event.queryStringParameters);
+    
     // 设置CORS头
     const headers = {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
     };
 
@@ -26,21 +30,41 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // 从路径参数获取API端点
-        const apiEndpoint = event.queryStringParameters.endpoint || 'upload';
+        // 从查询参数获取API端点
+        const apiEndpoint = event.queryStringParameters?.endpoint || 'upload';
         const vercelUrl = `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`;
+        
+        console.log('转发到:', vercelUrl);
+        console.log('请求体:', event.body);
 
         // 转发请求到Vercel
-        const fetch = require('node-fetch');
         const response = await fetch(vercelUrl, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'User-Agent': 'Netlify-Function-Proxy'
             },
             body: event.body
         });
 
-        const data = await response.text();
+        console.log('Vercel响应状态:', response.status);
+        
+        let responseData;
+        const contentType = response.headers.get('content-type');
+        
+        if (contentType && contentType.includes('application/json')) {
+            responseData = await response.text();
+        } else {
+            // 如果返回的不是JSON，说明有错误
+            const errorText = await response.text();
+            console.log('Vercel错误响应:', errorText);
+            
+            responseData = JSON.stringify({ 
+                error: '服务器返回非JSON响应',
+                status: response.status,
+                details: errorText.substring(0, 500)
+            });
+        }
         
         return {
             statusCode: response.status,
@@ -48,7 +72,7 @@ exports.handler = async (event, context) => {
                 ...headers,
                 'Content-Type': 'application/json'
             },
-            body: data
+            body: responseData
         };
 
     } catch (error) {
@@ -56,7 +80,10 @@ exports.handler = async (event, context) => {
         return {
             statusCode: 500,
             headers,
-            body: JSON.stringify({ error: '代理服务器错误: ' + error.message })
+            body: JSON.stringify({ 
+                error: '代理服务器错误: ' + error.message,
+                stack: error.stack
+            })
         };
     }
 };
