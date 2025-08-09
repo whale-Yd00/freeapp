@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 7;
+        this.dbVersion = 8;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
@@ -26,7 +26,8 @@ class IndexedDBManager {
             characterMemories: { keyPath: 'contactId' },
             conversationCounters: { keyPath: 'id' },
             globalMemory: { keyPath: 'id' },
-            memoryProcessedIndex: { keyPath: 'contactId' }
+            memoryProcessedIndex: { keyPath: 'contactId' },
+            virtualFileSystem: { keyPath: 'path' } // 虚拟文件系统存储
         };
     }
 

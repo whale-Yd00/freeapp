@@ -357,6 +357,9 @@ async function init() {
     
     // 初始化图片管理器和升级系统
     if (window.imageManager && window.imageUpgrader) {
+        // 首先检查数据库是否需要修复
+        await ensureDatabaseIntegrity();
+        
         const initResult = await window.imageManager.init();
         if (initResult) {
             console.log('图片管理器初始化成功');
@@ -590,6 +593,11 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
                 db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
+            }
+            // 版本8新增：虚拟文件系统存储
+            if (!db.objectStoreNames.contains('virtualFileSystem')) {
+                db.createObjectStore('virtualFileSystem', { keyPath: 'path' });
+                console.log('创建虚拟文件系统存储');
             }
             
             // 标记需要进行数据优化（针对版本4、5用户）
@@ -2570,6 +2578,66 @@ async function setContactBackground(contactId, imageData) {
     // 回退到原有方式（直接存储URL）
     backgrounds[contactId] = imageData;
     return true;
+}
+
+// === 数据库完整性检查函数 ===
+/**
+ * 确保数据库完整性，修复缺失的存储
+ */
+async function ensureDatabaseIntegrity() {
+    if (!isIndexedDBReady) {
+        console.warn('数据库未就绪，跳过完整性检查');
+        return;
+    }
+    
+    try {
+        // 检查是否缺少virtualFileSystem存储
+        if (!db.objectStoreNames.contains('virtualFileSystem')) {
+            console.log('检测到缺少虚拟文件系统存储，正在修复...');
+            
+            // 关闭当前数据库连接
+            db.close();
+            
+            // 重新打开数据库，强制触发版本升级
+            const upgradeRequest = indexedDB.open('WhaleLLTDB', 8);
+            
+            upgradeRequest.onupgradeneeded = (event) => {
+                const upgradeDb = event.target.result;
+                console.log('修复数据库结构...');
+                
+                // 确保所有必需的存储都存在
+                if (!upgradeDb.objectStoreNames.contains('virtualFileSystem')) {
+                    upgradeDb.createObjectStore('virtualFileSystem', { keyPath: 'path' });
+                    console.log('已创建虚拟文件系统存储');
+                }
+            };
+            
+            upgradeRequest.onsuccess = (event) => {
+                db = event.target.result;
+                isIndexedDBReady = true;
+                console.log('数据库结构修复完成');
+            };
+            
+            upgradeRequest.onerror = (error) => {
+                console.error('修复数据库结构失败:', error);
+            };
+            
+            // 等待修复完成
+            await new Promise((resolve, reject) => {
+                upgradeRequest.onsuccess = (event) => {
+                    db = event.target.result;
+                    isIndexedDBReady = true;
+                    console.log('数据库结构修复完成');
+                    resolve();
+                };
+                upgradeRequest.onerror = reject;
+            });
+        } else {
+            console.log('数据库结构完整');
+        }
+    } catch (error) {
+        console.error('数据库完整性检查失败:', error);
+    }
 }
 
 // === 数据迁移函数 ===

@@ -28,6 +28,15 @@ class ImageManager {
         try {
             this.db = await this.openDB();
             console.log('图片管理器初始化成功');
+            
+            // 验证虚拟文件系统存储是否存在
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn(`虚拟文件系统存储 '${this.storeName}' 不存在，需要升级数据库`);
+                // 尝试重新打开数据库以触发升级
+                this.db.close();
+                this.db = await this.openDB();
+            }
+            
             return true;
         } catch (error) {
             console.error('图片管理器初始化失败:', error);
@@ -79,6 +88,17 @@ class ImageManager {
      */
     async saveImage(filePath, data, metadata = {}) {
         try {
+            // 检查数据库和存储是否可用
+            if (!this.db) {
+                console.warn('数据库未连接，无法保存图片');
+                return false;
+            }
+
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn(`存储 '${this.storeName}' 不存在，无法保存图片`);
+                return false;
+            }
+
             let blob;
             
             if (typeof data === 'string') {
@@ -132,6 +152,17 @@ class ImageManager {
      */
     async getImage(filePath) {
         try {
+            // 检查数据库和存储是否可用
+            if (!this.db) {
+                console.warn('数据库未连接，无法获取图片');
+                return null;
+            }
+
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn(`存储 '${this.storeName}' 不存在，无法获取图片`);
+                return null;
+            }
+
             // 检查URL缓存
             if (this.urlCache.has(filePath)) {
                 return this.urlCache.get(filePath);
@@ -177,6 +208,17 @@ class ImageManager {
      */
     async deleteImage(filePath) {
         try {
+            // 检查数据库和存储是否可用
+            if (!this.db) {
+                console.warn('数据库未连接，无法删除图片');
+                return false;
+            }
+
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn(`存储 '${this.storeName}' 不存在，无法删除图片`);
+                return false;
+            }
+
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
             await new Promise((resolve, reject) => {
@@ -305,6 +347,17 @@ class ImageManager {
      */
     async listFiles(path = '') {
         try {
+            // 检查数据库和存储是否可用
+            if (!this.db) {
+                console.warn('数据库未连接，无法获取文件列表');
+                return [];
+            }
+
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn(`存储 '${this.storeName}' 不存在，无法获取文件列表`);
+                return [];
+            }
+
             const transaction = this.db.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
             const files = await new Promise((resolve, reject) => {
