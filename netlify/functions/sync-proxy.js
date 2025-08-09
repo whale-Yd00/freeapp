@@ -32,7 +32,16 @@ exports.handler = async (event, context) => {
     try {
         // 从查询参数获取API端点
         const apiEndpoint = event.queryStringParameters?.endpoint || 'upload';
-        const vercelUrl = `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`;
+        
+        // 尝试不同的Vercel URL
+        const possibleUrls = [
+            `https://freeapp-git-sync-tosd0.vercel.app/api/sync/${apiEndpoint}`,
+            `https://freeapp-tosd0.vercel.app/api/sync/${apiEndpoint}`,
+            `https://freeapp.vercel.app/api/sync/${apiEndpoint}`
+        ];
+        
+        // 暂时使用第一个URL，后面可以优化为自动检测
+        const vercelUrl = possibleUrls[0];
         
         console.log('转发到:', vercelUrl);
         console.log('请求体:', event.body);
@@ -62,7 +71,10 @@ exports.handler = async (event, context) => {
             responseData = JSON.stringify({ 
                 error: '服务器返回非JSON响应',
                 status: response.status,
-                details: errorText.substring(0, 500)
+                statusText: response.statusText,
+                url: vercelUrl,
+                details: errorText.substring(0, 500),
+                headers: Object.fromEntries(response.headers.entries())
             });
         }
         
