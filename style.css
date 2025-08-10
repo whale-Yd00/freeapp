@@ -275,6 +275,29 @@ body {
     display: flex;
     margin-bottom: 15px;
     align-items: flex-start;
+    animation: slideInFromBottom 0.3s ease-out;
+}
+
+/* 新消息从底部滑入的动画 */
+@keyframes slideInFromBottom {
+    from {
+        transform: translateY(15px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* 为新发送的消息添加特殊动画类 */
+.message.new-message {
+    animation: slideInFromBottom 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* 打字指示器也使用相同动画 */
+#typingIndicator {
+    animation: slideInFromBottom 0.4s ease-out;
 }
 
 .message.sent {

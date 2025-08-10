@@ -3102,7 +3102,7 @@ function closeChatPage() {
     toggleMemoryPanel(true);
 }
 
-async function renderMessages(isInitialLoad = false) {
+async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
     if (!currentContact) return;
     const chatMessages = document.getElementById('chatMessages');
     const allMessages = currentContact.messages;
@@ -3147,7 +3147,9 @@ async function renderMessages(isInitialLoad = false) {
         const msgDiv = document.createElement('div');
         if (msg.role === 'system') continue;
         
-        msgDiv.className = `message ${msg.role === 'user' ? 'sent' : 'received'}`;
+        const isLastMessage = index === messagesToRender.length - 1;
+        const isNewMsg = hasNewMessage && isLastMessage;
+        msgDiv.className = `message ${msg.role === 'user' ? 'sent' : 'received'}${isNewMsg ? ' new-message' : ''}`;
         msgDiv.dataset.messageIndex = originalIndex;
 
         let contentHtml = '';
@@ -3242,7 +3244,13 @@ async function renderMessages(isInitialLoad = false) {
     }
 
     if (isInitialLoad) {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        // 延时滚动，让动画先开始，然后平滑滚动到底部
+        setTimeout(() => {
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+        }, hasNewMessage ? 200 : 0); // 新消息延时200ms滚动，让动画先开始并完成大部分
     } else {
         const newScrollHeight = chatMessages.scrollHeight;
         chatMessages.scrollTop = newScrollHeight - oldScrollHeight;
@@ -3295,7 +3303,7 @@ async function sendUserMessage() {
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
     input.value = '';
     input.style.height = 'auto';
-    await renderMessages(true); // 重新渲染并滚动到底部
+    await addSingleMessage(userMessage, true); // 单独添加用户消息，使用动画
     await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     input.focus();
@@ -3327,7 +3335,12 @@ async function sendMessage() {
                 }
             }, 1000);
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
-            for (const response of replies) {
+            
+            // 批量处理AI回复，避免每条消息都重新渲染
+            for (let i = 0; i < replies.length; i++) {
+                const response = replies[i];
+                const isLastReply = i === replies.length - 1;
+                
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
                 
                 let messageContent = removeThinkingChain(response.content);
@@ -3353,11 +3366,17 @@ async function sendMessage() {
                 if (currentContact.messages.length > currentlyDisplayedMessageCount) {
                     currentlyDisplayedMessageCount++;
                 }
-                currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : (response.type === 'emoji' ? '[表情]' : '[红包]');
-                currentContact.lastTime = formatContactListTime(new Date().toISOString());
-                renderMessages(true); // 重新渲染并滚动到底部
-                await renderContactList();
-                await saveDataToDB();
+                
+                // 单独添加这条新消息，而不是重新渲染整个界面
+                await addSingleMessage(aiMessage, true); // true表示这是AI回复的新消息
+                
+                // 只在最后一条消息时更新联系人列表和保存数据
+                if (isLastReply) {
+                    currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : (response.type === 'emoji' ? '[表情]' : '[红包]');
+                    currentContact.lastTime = formatContactListTime(new Date().toISOString());
+                    await renderContactList();
+                    await saveDataToDB();
+                }
             }
             // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
             
@@ -3406,7 +3425,12 @@ async function sendGroupMessage() {
                 }
             }, 1000);
             if (!replies || replies.length === 0) continue;
-            for (const response of replies) {
+            
+            // 批量处理群成员AI回复，避免每条消息都重新渲染
+            for (let j = 0; j < replies.length; j++) {
+                const response = replies[j];
+                const isLastMemberReply = j === replies.length - 1;
+                
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
 
                 let messageContent = removeThinkingChain(response.content);
@@ -3431,11 +3455,17 @@ async function sendGroupMessage() {
                     currentlyDisplayedMessageCount++;
                 }
                 turnContext.push(aiMessage);
-                currentContact.lastMessage = `${member.name}: ${response.type === 'text' ? response.content.substring(0, 15) + '...' : '[表情]'}`;
-                currentContact.lastTime = formatContactListTime(new Date().toISOString());
-                renderMessages(true); // 重新渲染并滚动到底部
-                await renderContactList();
-                await saveDataToDB();
+                
+                // 单独添加群成员消息，不重新渲染整个界面
+                await addSingleMessage(aiMessage, true); // true表示新消息
+                
+                // 只在该成员最后一条回复时更新UI和数据库
+                if (isLastMemberReply) {
+                    currentContact.lastMessage = `${member.name}: ${response.type === 'text' ? response.content.substring(0, 15) + '...' : '[表情]'}`;
+                    currentContact.lastTime = formatContactListTime(new Date().toISOString());
+                    await renderContactList();
+                    await saveDataToDB();
+                }
             }
             // 为群聊中的每个成员检查记忆更新
             if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
@@ -3485,12 +3515,102 @@ async function showTypingIndicator(contact = null) {
     }
     
     indicator.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    // 延时滚动，让打字指示器的动画先开始
+    setTimeout(() => {
+        chatMessages.scrollTo({
+            top: chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, 100); // 稍微延长延时，让动画更明显
 }
 
 function hideTypingIndicator() {
     const indicator = document.getElementById('typingIndicator');
     if (indicator) indicator.remove();
+}
+
+/**
+ * 单独添加一条新消息，而不是重新渲染整个聊天界面
+ */
+async function addSingleMessage(message, isNewMessage = false) {
+    const chatMessages = document.getElementById('chatMessages');
+    
+    // 创建消息元素
+    const msgDiv = document.createElement('div');
+    if (message.role === 'system') return;
+    
+    msgDiv.className = `message ${message.role === 'user' ? 'sent' : 'received'}${isNewMessage ? ' new-message' : ''}`;
+    // 设置正确的消息索引
+    const messageIndex = currentContact.messages.findIndex(m => m === message);
+    msgDiv.dataset.messageIndex = messageIndex >= 0 ? messageIndex : currentContact.messages.length - 1;
+
+    let contentHtml = '';
+    if (message.type === 'emoji') {
+        contentHtml = await renderEmojiContent(message.content);
+    } else if (message.type === 'red_packet') {
+        const packet = JSON.parse(message.content);
+        contentHtml = `<div class="message-content red-packet" onclick="showToast('红包金额: ${packet.amount}')"><div class="red-packet-body"><svg class="red-packet-icon" viewBox="0 0 1024 1024"><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32zM731.2 565.2H603.9c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8zM419.8 565.2H292.5c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8z" fill="#FEFEFE"></path><path d="M872.4 240H151.6c-17.7 0-32 14.3-32 32v64h784v-64c0-17.7-14.3-32-32-32z" fill="#FCD4B3"></path><path d="M512 432c-48.6 0-88 39.4-88 88s39.4 88 88 88 88-39.4 88-88-39.4-88-88-88z m0 152c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64-64z" fill="#FCD4B3"></path><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32z m-32 552H215.6V368h624.8v488z" fill="#F37666"></path><path d="M512 128c-112.5 0-204 91.5-204 204s91.5 204 204 204 204-91.5 204-204-91.5-204-204-204z m0 384c-99.4 0-180-80.6-180-180s80.6-180 180-180 180 80.6 180 180-80.6 180-180 180z" fill="#F37666"></path><path d="M512 456c-35.3 0-64 28.7-64 64s28.7 64 64 64 64 28.7 64 64s28.7-64-64-64z m16.4 76.4c-2.3 2.3-5.4 3.6-8.5 3.6h-15.8c-3.1 0-6.2-1.3-8.5-3.6s-3.6-5.4-3.6-8.5v-27.8c0-6.6 5.4-12 12-12h16c6.6 0 12 5.4 12 12v27.8c0.1 3.1-1.2 6.2-3.5 8.5z" fill="#F37666"></path></svg><div class="red-packet-text"><div>${packet.message || '恭喜发财，大吉大利！'}</div><div>领取红包</div></div></div><div class="red-packet-footer">AI红包</div></div>`;
+    } else {
+        contentHtml = await processTextWithInlineEmojis(message.content);
+    }
+
+    if (message.edited) {
+        const editedTag = `<span style="color: #999; font-size: 12px; margin-left: 5px;">已编辑</span>`;
+        if (message.type === 'emoji') {
+            contentHtml += editedTag;
+        } else {
+            contentHtml = contentHtml.replace('</div>', editedTag + '</div>');
+        }
+    }
+
+    let avatarContent = '';
+    if (message.role === 'assistant') {
+        if (currentContact.type === 'group') {
+            const member = currentContact.members.find(m => m.id === message.senderId);
+            avatarContent = member ? (await getAvatarHTML(member, 'contact') || member.name[0]) : '🤖';
+        } else {
+            avatarContent = await getAvatarHTML(currentContact, 'contact') || currentContact.name[0];
+        }
+    } else {
+        avatarContent = await getAvatarHTML(userProfile, 'user') || userProfile?.name?.[0] || '我';
+    }
+
+    // 先移除复杂的语音处理逻辑，专注于修复基础消息样式
+
+    if (currentContact.type === 'group' && message.role === 'assistant') {
+        const member = currentContact.members.find(m => m.id === message.senderId);
+        const memberName = member ? member.name : '未知成员';
+        msgDiv.innerHTML = `
+            <div class="message-avatar">${avatarContent}</div>
+            <div class="message-bubble">
+                <div class="group-message-header">
+                    <div class="group-message-name">${memberName}</div>
+                </div>
+                ${contentHtml}
+            </div>
+        `;
+    } else {
+        msgDiv.innerHTML = `
+            <div class="message-avatar">${avatarContent}</div>
+            <div class="message-bubble">
+                ${contentHtml}
+            </div>
+        `;
+    }
+
+    // 添加到聊天界面
+    chatMessages.appendChild(msgDiv);
+
+    // 延时滚动，让动画先开始，与动画时间配合
+    setTimeout(() => {
+        chatMessages.scrollTo({
+            top: chatMessages.scrollHeight,
+            behavior: 'smooth'
+        });
+    }, isNewMessage ? 150 : 0); // 新消息延时150ms，让滑入动画更明显
+
+    // 先暂时移除复杂的语音生成逻辑，专注于修复消息样式问题
+    // TODO: 稍后重新添加语音功能
 }
 
 /**
