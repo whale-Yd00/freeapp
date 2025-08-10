@@ -662,7 +662,7 @@ ${userReply}
             currentContact.messages.slice(-apiSettings.contextMessageCount);
         
         const chatContext = messageHistory.map(msg => {
-            const senderName = msg.role === 'user' ? (userProfile?.name || userProfile?.nickname || '用户') : contact.name;
+            const senderName = msg.role === 'user' ? (userProfile?.name || '用户') : contact.name;
             let content = msg.content;
             
             // 处理不同类型的消息
@@ -689,12 +689,8 @@ ${userReply}
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const currentTimeString = `${year}年${month}月${day}日 ${hours}:${minutes}`;
 
-        let systemPrompt = `你是记忆表格更新助手，需要根据最新的对话内容更新记忆表格。
+        let systemPrompt = `你是记忆表格更新助手，需要根据用户(${userProfile.name})和角色(${contact.name})最新的对话内容更新记忆表格。
 
-# 角色信息
-- 角色：${contact.name}
-- 人设：${contact.personality}
-- 用户：${userProfile?.name || userProfile?.nickname || '用户'}
 - 当前时间：${currentTimeString}
 
 # 当前记忆表格
@@ -704,7 +700,8 @@ ${memoryInfo || window.defaultMemoryTable}
 ${chatContext}
 
 # 更新要求
-1. 仔细分析对话内容，识别需要记录的重要信息
+0. 以用户(${userProfile.name})和角色(${contact.name})的全名记录表格。
+1. 仔细分析对话内容，识别需要记录的信息
 2. 更新【现在】栏目中的地点、人物、时间信息
 3. 更新【重要物品】栏目，添加或修改对话中提到的重要物品
 4. 如果没有新信息需要更新，保持原有内容不变
