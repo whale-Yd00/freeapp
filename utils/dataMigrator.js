@@ -5,11 +5,11 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 7;
+        this.dbVersion = 9;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
-        this.excludedFromManualExport = ['emojiImages'];
+        this.excludedFromManualExport = ['emojiImages', 'fileStorage'];
         
         // 定义所有对象存储的结构
         this.stores = {
@@ -17,7 +17,7 @@ class IndexedDBManager {
             contacts: { keyPath: 'id' },
             apiSettings: { keyPath: 'id' },
             emojis: { keyPath: 'id' },
-            emojiImages: { keyPath: 'tag' }, // 存储表情图片的base64数据
+            emojiImages: { keyPath: 'tag' }, // 存储表情图片的base64数据（将逐步迁移到fileStorage）
             backgrounds: { keyPath: 'id' },
             userProfile: { keyPath: 'id' },
             moments: { keyPath: 'id' },
@@ -26,7 +26,9 @@ class IndexedDBManager {
             characterMemories: { keyPath: 'contactId' },
             conversationCounters: { keyPath: 'id' },
             globalMemory: { keyPath: 'id' },
-            memoryProcessedIndex: { keyPath: 'contactId' }
+            memoryProcessedIndex: { keyPath: 'contactId' },
+            fileStorage: { keyPath: 'fileId' }, // 新增：存储原始文件Blob数据
+            fileReferences: { keyPath: 'referenceId' } // 新增：存储文件引用关系
         };
     }
 
@@ -382,6 +384,16 @@ class IndexedDBManager {
             this.migrateFrom6To7(migratedData);
         }
         
+        if (fromVersion <= 7 && toVersion >= 8) {
+            // 版本7到8的迁移：添加文件存储系统
+            this.migrateFrom7To8(migratedData);
+        }
+        
+        if (fromVersion <= 8 && toVersion >= 9) {
+            // 版本8到9的迁移：完善文件存储系统
+            this.migrateFrom8To9(migratedData);
+        }
+        
         console.log('数据迁移完成');
         return migratedData;
     }
@@ -451,6 +463,74 @@ class IndexedDBManager {
     migrateFrom6To7(data) {
         console.log('执行版本6到7的迁移');
         // 如果有需要的字段更新，在这里添加
+    }
+    
+    /**
+     * 从版本7迁移到版本8
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom7To8(data) {
+        console.log('执行版本7到8的迁移：添加文件存储系统');
+        
+        // 版本8新增：文件存储系统
+        if (!data.fileStorage) {
+            data.fileStorage = [];
+            console.log('添加 fileStorage 存储');
+        }
+        
+        if (!data.fileReferences) {
+            data.fileReferences = [];
+            console.log('添加 fileReferences 存储');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            const newStores = ['fileStorage', 'fileReferences'];
+            for (const store of newStores) {
+                if (!data._metadata.stores.includes(store)) {
+                    data._metadata.stores.push(store);
+                }
+            }
+        }
+        
+        console.log('文件存储系统迁移完成');
+    }
+    
+    /**
+     * 从版本8迁移到版本9
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom8To9(data) {
+        console.log('执行版本8到9的迁移：完善文件存储系统');
+        
+        // 版本9：确保文件存储系统完整
+        if (!data.fileStorage) {
+            data.fileStorage = [];
+            console.log('确保 fileStorage 存储存在');
+        }
+        
+        if (!data.fileReferences) {
+            data.fileReferences = [];
+            console.log('确保 fileReferences 存储存在');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            const newStores = ['fileStorage', 'fileReferences'];
+            for (const store of newStores) {
+                if (!data._metadata.stores.includes(store)) {
+                    data._metadata.stores.push(store);
+                }
+            }
+        }
+        
+        // 标记需要进行数据迁移（在运行时UI中完成实际的文件存储迁移）
+        if (data._metadata) {
+            data._metadata.needsFileStorageMigration = true;
+            data._metadata.migrationSource = 'v8_to_v9';
+        }
+        
+        console.log('版本8到9迁移完成：文件存储系统已完善，已标记需要运行时数据迁移');
     }
 
     /**

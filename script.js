@@ -316,7 +316,103 @@ const RELATION_PRESETS = {
 let hashtagCache = {};
 
 let audio = null;
-let db = null; // IndexedDB 实例 
+let db = null; // IndexedDB 实例
+
+// === 图片处理辅助函数 ===
+
+/**
+ * 获取头像HTML（支持新的文件存储格式和旧的base64格式）
+ * @param {Object} entity - 实体对象（联系人或用户）
+ * @param {string} entityType - 实体类型 ('contact' 或 'user')
+ * @param {string} className - CSS类名（可选）
+ * @returns {Promise<string>} 返回HTML字符串
+ */
+async function getAvatarHTML(entity, entityType = 'contact', className = '') {
+    if (!entity) return '';
+    
+    try {
+        // 如果有新的文件引用，使用ImageDisplayHelper
+        if (entity.avatarFileId && window.ImageDisplayHelper) {
+            return await window.ImageDisplayHelper.createAvatarHTML(entity, entityType, className);
+        }
+        
+        // 回退到旧的base64格式
+        const classAttr = className ? ` class="${className}"` : '';
+        if (entity.avatar && entity.avatar.startsWith('data:')) {
+            return `<img src="${entity.avatar}"${classAttr}>`;
+        } else {
+            // 使用首字符作为默认头像
+            const firstChar = entity.name ? entity.name[0] : (entityType === 'user' ? '我' : '?');
+            return `<span${classAttr}>${firstChar}</span>`;
+        }
+    } catch (error) {
+        console.warn(`获取${entityType}头像HTML失败:`, error);
+        // 安全回退
+        const classAttr = className ? ` class="${className}"` : '';
+        const firstChar = entity.name ? entity.name[0] : (entityType === 'user' ? '我' : '?');
+        return entity.avatar ? `<img src="${entity.avatar}"${classAttr}>` : `<span${classAttr}>${firstChar}</span>`;
+    }
+}
+
+/**
+ * 同步获取头像HTML（用于不能使用async的地方）
+ * 注意：这个函数不支持新的文件存储格式，只用于紧急情况下的回退
+ */
+function getAvatarHTMLSync(entity, entityType = 'contact', className = '') {
+    if (!entity) return '';
+    
+    const classAttr = className ? ` class="${className}"` : '';
+    if (entity.avatar && entity.avatar.startsWith('data:')) {
+        return `<img src="${entity.avatar}"${classAttr}>`;
+    } else {
+        const firstChar = entity.name ? entity.name[0] : (entityType === 'user' ? '我' : '?');
+        return `<span${classAttr}>${firstChar}</span>`;
+    }
+}
+
+/**
+ * 获取背景图片URL
+ * @param {Object} background - 背景对象
+ * @returns {Promise<string>} 返回图片URL
+ */
+async function getBackgroundImageURL(background) {
+    if (!background) return '';
+    
+    try {
+        // 如果有新的文件引用，使用ImageDisplayHelper
+        if (background.fileId && window.ImageDisplayHelper) {
+            return await window.ImageDisplayHelper.getBackgroundURL(background);
+        }
+        
+        // 回退到旧格式
+        return background.data || background.url || '';
+    } catch (error) {
+        console.warn('获取背景图片失败:', error);
+        return background.data || background.url || '';
+    }
+}
+
+/**
+ * 获取表情包URL
+ * @param {Object} emoji - 表情包对象
+ * @returns {Promise<string>} 返回图片URL
+ */
+async function getEmojiImageURL(emoji) {
+    if (!emoji) return '';
+    
+    try {
+        // 如果有新的文件引用，使用ImageDisplayHelper
+        if (emoji.fileId && window.ImageDisplayHelper) {
+            return await window.ImageDisplayHelper.getEmojiURL(emoji);
+        }
+        
+        // 回退到旧格式
+        return emoji.data || emoji.url || '';
+    } catch (error) {
+        console.warn('获取表情包失败:', error);
+        return emoji.data || emoji.url || '';
+    }
+} 
 let playlist = [];
 let currentSongIndex = -1;
 let isPlaying = false;
@@ -355,8 +451,8 @@ async function init() {
     
     await loadDataFromDB(); // 从IndexedDB加载数据
 
-    renderContactList();
-    updateUserProfileUI();
+    await renderContactList();
+    await updateUserProfileUI();
     updateContextIndicator();
     
     // 绑定基础事件
@@ -448,7 +544,7 @@ async function upgradeToAddEmojiImages() {
         }
         
         // 以更高版本号重新打开数据库，触发升级
-        const upgradeRequest = indexedDB.open('WhaleLLTDB', 8);
+        const upgradeRequest = indexedDB.open('WhaleLLTDB', 9);
         
         upgradeRequest.onupgradeneeded = event => {
             const upgradeDb = event.target.result;
@@ -483,7 +579,7 @@ async function upgradeToAddEmojiImages() {
 
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhaleLLTDB', 8);
+        const request = indexedDB.open('WhaleLLTDB', 9);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -539,11 +635,32 @@ function openDB() {
                 db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
             }
             
+            // 版本8新增：文件存储系统
+            if (!db.objectStoreNames.contains('fileStorage')) {
+                const fileStore = db.createObjectStore('fileStorage', { keyPath: 'fileId' });
+                fileStore.createIndex('type', 'type', { unique: false });
+                fileStore.createIndex('createdAt', 'createdAt', { unique: false });
+                console.log('创建 fileStorage 存储');
+            }
+            
+            if (!db.objectStoreNames.contains('fileReferences')) {
+                const refStore = db.createObjectStore('fileReferences', { keyPath: 'referenceId' });
+                refStore.createIndex('fileId', 'fileId', { unique: false });
+                refStore.createIndex('category', 'category', { unique: false });
+                console.log('创建 fileReferences 存储');
+            }
+            
             // 标记需要进行数据优化（针对版本4、5用户）
-            if (oldVersion <= 5 && newVersion >= 7) {
+            if (oldVersion <= 5 && newVersion >= 9) {
                 // 设置标记，在数据库连接成功后触发优化
                 window._needsEmojiOptimization = true;
                 console.log('标记需要进行表情数据优化');
+            }
+            
+            // 标记需要进行文件存储迁移（版本8→9用户）
+            if (oldVersion <= 8 && newVersion >= 9) {
+                window._needsFileStorageMigration = true;
+                console.log('标记需要进行文件存储迁移');
             }
         };
 
@@ -563,6 +680,15 @@ function openDB() {
                     performEmojiOptimization();
                 }, 1000); // 延迟1秒确保所有数据加载完成
                 window._needsEmojiOptimization = false;
+            }
+            
+            // 检查是否需要进行文件存储迁移（版本8→9自动升级）
+            if (window._needsFileStorageMigration) {
+                console.log('检测到需要进行文件存储迁移，准备自动执行...');
+                setTimeout(() => {
+                    performFileStorageMigration();
+                }, 2000); // 延迟2秒确保所有模块加载完成
+                window._needsFileStorageMigration = false;
             }
             
             // 数据库准备好后，初始化记忆管理器数据
@@ -930,6 +1056,13 @@ function formatTime(timestamp) {
 const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage'];
 
 function showPage(pageIdToShow) {
+    // 异步包装函数，用于处理包含异步操作的页面显示
+    showPageAsync(pageIdToShow).catch(error => {
+        console.error('页面显示错误:', error);
+    });
+}
+
+async function showPageAsync(pageIdToShow) {
     // Hide all main pages and the chat page
     pageIds.forEach(pageId => {
         const page = document.getElementById(pageId);
@@ -963,7 +1096,7 @@ function showPage(pageIdToShow) {
     }
     // Render Moments only on the first time it's opened
     if (pageIdToShow === 'momentsPage' && !isMomentsRendered) {
-        renderMomentsList();
+        await renderMomentsList();
         isMomentsRendered = true;
     }
 
@@ -1775,7 +1908,7 @@ async function generateMomentContent() {
 
         moments.unshift(moment);
         await saveDataToDB();
-        renderMomentsList();
+        await renderMomentsList();
         closePublishMomentModal();
         showToast('朋友圈发布成功');
 
@@ -1900,7 +2033,7 @@ async function publishMoment() {
         const moment = { id: Date.now().toString(), authorName: currentContact.name, authorAvatar: currentContact.avatar, content, image: imageUrl, time: new Date().toISOString(), likes: 0, comments };
         moments.unshift(moment);
         await saveDataToDB(); // 使用IndexedDB保存
-        renderMomentsList();
+        await renderMomentsList();
         closePublishMomentModal();
         showToast('朋友圈发布成功');
     } catch (error) {
@@ -1912,7 +2045,7 @@ async function publishMoment() {
     }
 }
 
-function renderMomentsList() {
+async function renderMomentsList() {
     const momentsEmpty = document.getElementById('momentsEmpty');
     const momentsList = document.getElementById('momentsList');
     if (moments.length === 0) { 
@@ -1922,10 +2055,20 @@ function renderMomentsList() {
         momentsEmpty.style.display = 'none';
         momentsList.style.display = 'block';
         momentsList.innerHTML = '';
-        moments.forEach(moment => {
+        for (const moment of moments) {
             const momentDiv = document.createElement('div');
             momentDiv.className = 'moment-item';
-            let avatarContent = moment.authorAvatar ? `<img src="${moment.authorAvatar}">` : moment.authorName[0];
+            // 处理作者头像 - 需要从contacts中找到对应的用户
+            let avatarContent = '';
+            const author = contacts.find(c => c.name === moment.authorName);
+            if (author) {
+                avatarContent = await getAvatarHTML(author, 'contact') || moment.authorName[0];
+            } else if (moment.authorName === userProfile.name) {
+                // 如果是当前用户的动态
+                avatarContent = await getAvatarHTML(userProfile, 'user') || moment.authorName[0];
+            } else {
+                avatarContent = moment.authorName[0];
+            }
             let imageContent = moment.image ? `<img src="${moment.image}" class="moment-image">` : '';
             let commentsContent = '';
             if (moment.comments && moment.comments.length > 0) {
@@ -1933,7 +2076,7 @@ function renderMomentsList() {
             }
             momentDiv.innerHTML = `<div class="moment-header"><div class="moment-avatar">${avatarContent}</div><div class="moment-info"><div class="moment-name">${moment.authorName}</div><div class="moment-time">${formatContactListTime(moment.time)}</div></div></div><div class="moment-content">${moment.content}</div>${imageContent}${commentsContent}`;
             momentsList.appendChild(momentDiv);
-        });
+        }
     }
 }
 
@@ -2419,17 +2562,31 @@ async function getEmojiImage(tag) {
         return null;
     }
     
-    // 如果 emojiImages 存储不存在，静默升级数据库
-    if (!db.objectStoreNames.contains('emojiImages')) {
-        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
-        await upgradeToAddEmojiImages();
-    }
-    
     try {
+        // 首先尝试从新的文件存储系统获取
+        if (window.ImageStorageAPI) {
+            try {
+                await window.ImageStorageAPI.init();
+                const url = await window.ImageStorageAPI.getEmojiURL(tag);
+                if (url) {
+                    return url;
+                }
+            } catch (error) {
+                console.warn('从新文件存储获取表情失败，回退到旧系统:', error);
+            }
+        }
+        
+        // 回退到旧的 emojiImages 存储
+        if (!db.objectStoreNames.contains('emojiImages')) {
+            console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
+            await upgradeToAddEmojiImages();
+        }
+        
         const transaction = db.transaction(['emojiImages'], 'readonly');
         const store = transaction.objectStore('emojiImages');
         const result = await promisifyRequest(store.get(tag));
         return result ? result.data : null;
+        
     } catch (error) {
         console.error('获取表情图片失败:', error);
         return null;
@@ -2666,8 +2823,28 @@ function showApiSettingsModal() {
 }
 
 function showBackgroundModal() {
+    // 异步包装函数
+    showBackgroundModalAsync().catch(error => {
+        console.error('显示背景设置界面错误:', error);
+    });
+}
+
+async function showBackgroundModalAsync() {
     if (!currentContact) { showToast('请先选择联系人'); return; }
-    document.getElementById('backgroundUrl').value = backgrounds[currentContact.id] || '';
+    
+    // 处理背景URL显示
+    let displayUrl = '';
+    const backgroundUrl = backgrounds[currentContact.id];
+    if (backgroundUrl) {
+        if (backgroundUrl.startsWith('file:')) {
+            // 如果是新的文件存储格式，显示文件存储标识
+            displayUrl = '(已使用文件存储)';
+        } else {
+            displayUrl = backgroundUrl;
+        }
+    }
+    
+    document.getElementById('backgroundUrl').value = displayUrl;
     showModal('backgroundModal');
     toggleSettingsMenu();
 }
@@ -2689,20 +2866,30 @@ function showEditProfileModal() {
 }
 
 function showCreateGroupModal() {
+    // 异步包装函数
+    showCreateGroupModalAsync().catch(error => {
+        console.error('显示群聊创建界面错误:', error);
+    });
+}
+
+async function showCreateGroupModalAsync() {
     const memberList = document.getElementById('groupMemberList');
     memberList.innerHTML = '';
-    contacts.forEach(contact => {
+    
+    for (const contact of contacts) {
         if (contact.type !== 'group') {
             const item = document.createElement('div');
             item.className = 'group-member-item';
-            item.innerHTML = `<div class="group-member-avatar">${contact.avatar ? `<img src="${contact.avatar}">` : contact.name[0]}</div><div class="group-member-name">${contact.name}</div><div class="group-member-checkbox">✓</div>`;
+            
+            const avatarHTML = await getAvatarHTML(contact, 'contact') || contact.name[0];
+            item.innerHTML = `<div class="group-member-avatar">${avatarHTML}</div><div class="group-member-name">${contact.name}</div><div class="group-member-checkbox">✓</div>`;
             item.onclick = () => {
                 item.classList.toggle('selected');
                 item.querySelector('.group-member-checkbox').classList.toggle('selected');
             };
             memberList.appendChild(item);
         }
-    });
+    }
     showModal('createGroupModal');
 }
 
@@ -2726,7 +2913,7 @@ async function saveContact(event) {
         showToast('添加成功');
     }
     await saveDataToDB(); // 使用IndexedDB保存
-    renderContactList();
+    await renderContactList();
     closeModal('addContactModal');
     event.target.reset();
 }
@@ -2746,7 +2933,7 @@ async function createGroup(event) {
     const group = { id: 'group_' + Date.now().toString(), name: groupName, members: memberIds, messages: [], lastMessage: '群聊已创建', lastTime: formatContactListTime(new Date().toISOString()), type: 'group', memoryTableContent: defaultMemoryTable };
     contacts.unshift(group);
     await saveDataToDB(); // 使用IndexedDB保存
-    renderContactList();
+    await renderContactList();
     closeModal('createGroupModal');
     showToast('群聊创建成功');
 }
@@ -2773,28 +2960,36 @@ async function saveProfile(event) {
     userProfile.avatar = document.getElementById('profileAvatarInput').value;
     userProfile.personality = document.getElementById('profilePersonality').value;
     await saveDataToDB(); // 使用IndexedDB保存
-    updateUserProfileUI();
+    await updateUserProfileUI();
     closeModal('editProfileModal');
     showToast('保存成功');
 }
 
-function updateUserProfileUI() {
+async function updateUserProfileUI() {
     const userAvatar = document.getElementById('userAvatar');
     const userName = document.getElementById('userName');
     userName.textContent = userProfile.name;
-    userAvatar.innerHTML = userProfile.avatar ? `<img src="${userProfile.avatar}">` : (userProfile.name[0] || '我');
+    
+    // 使用getAvatarHTML支持文件存储
+    const avatarHTML = await getAvatarHTML(userProfile, 'user');
+    userAvatar.innerHTML = avatarHTML || (userProfile.name[0] || '我');
 }
 
-function renderContactList() {
+async function renderContactList() {
     const contactList = document.getElementById('contactList');
     contactList.innerHTML = '';
-    contacts.forEach(contact => {
+    
+    for (const contact of contacts) {
         const item = document.createElement('div');
         item.className = 'contact-item';
+        
         if (contact.type === 'group') {
-            item.innerHTML = `<div class="group-avatar"><div class="group-avatar-inner">${getGroupAvatarContent(contact)}</div></div><div class="contact-info"><div class="contact-name">${contact.name}</div><div class="contact-message">${contact.lastMessage}</div></div><div class="contact-time">${contact.lastTime}</div>`;
+            const groupAvatarContent = await getGroupAvatarContent(contact);
+            item.innerHTML = `<div class="group-avatar"><div class="group-avatar-inner">${groupAvatarContent}</div></div><div class="contact-info"><div class="contact-name">${contact.name}</div><div class="contact-message">${contact.lastMessage}</div></div><div class="contact-time">${contact.lastTime}</div>`;
         } else {
-            item.innerHTML = `<div class="contact-avatar">${contact.avatar ? `<img src="${contact.avatar}">` : contact.name[0]}</div><div class="contact-info"><div class="contact-name">${contact.name}</div><div class="contact-message">${contact.lastMessage}</div></div><div class="contact-time">${contact.lastTime}</div>`;
+            // 使用异步版本支持文件存储
+            const avatarHTML = await getAvatarHTML(contact, 'contact');
+            item.innerHTML = `<div class="contact-avatar">${avatarHTML || contact.name[0]}</div><div class="contact-info"><div class="contact-name">${contact.name}</div><div class="contact-message">${contact.lastMessage}</div></div><div class="contact-time">${contact.lastTime}</div>`;
         }
         item.onclick = () => openChat(contact);
 
@@ -2822,16 +3017,18 @@ function renderContactList() {
         });
 
         contactList.appendChild(item);
-    });
+    }
 }
 
-function getGroupAvatarContent(group) {
+async function getGroupAvatarContent(group) {
     const memberAvatars = group.members.slice(0, 4).map(id => contacts.find(c => c.id === id)).filter(Boolean);
     let avatarContent = '';
+    
     for (let i = 0; i < 4; i++) {
         if (i < memberAvatars.length) {
             const member = memberAvatars[i];
-            avatarContent += `<div class="group-avatar-item">${member.avatar ? `<img src="${member.avatar}">` : member.name[0]}</div>`;
+            const avatarHTML = await getAvatarHTML(member, 'contact');
+            avatarContent += `<div class="group-avatar-item">${avatarHTML || member.name[0]}</div>`;
         } else {
             avatarContent += `<div class="group-avatar-item"></div>`;
         }
@@ -2854,7 +3051,31 @@ async function openChat(contact) {
     
     updateContextIndicator();
     const chatMessagesEl = document.getElementById('chatMessages');
-    chatMessagesEl.style.backgroundImage = backgrounds[contact.id] ? `url(${backgrounds[contact.id]})` : 'none';
+    // 处理背景图片 - 支持新的文件存储系统
+    if (backgrounds[contact.id]) {
+        const backgroundUrl = backgrounds[contact.id];
+        if (backgroundUrl.startsWith('file:')) {
+            // 新的文件存储格式: file:fileId
+            const fileId = backgroundUrl.substring(5); // 移除 'file:' 前缀
+            if (window.ImageStorageAPI) {
+                try {
+                    await window.ImageStorageAPI.init();
+                    const url = await window.ImageStorageAPI.getBackgroundURL(contact.id);
+                    chatMessagesEl.style.backgroundImage = `url(${url})`;
+                } catch (error) {
+                    console.warn('获取背景图片失败:', error);
+                    chatMessagesEl.style.backgroundImage = 'none';
+                }
+            } else {
+                chatMessagesEl.style.backgroundImage = 'none';
+            }
+        } else {
+            // 旧格式 - 直接使用URL
+            chatMessagesEl.style.backgroundImage = `url(${backgroundUrl})`;
+        }
+    } else {
+        chatMessagesEl.style.backgroundImage = 'none';
+    }
     
     // 移除旧的监听器
     chatMessagesEl.onscroll = null; 
@@ -2950,10 +3171,14 @@ async function renderMessages(isInitialLoad = false) {
 
         let avatarContent = '';
         if (msg.role === 'user') {
-            avatarContent = userProfile.avatar ? `<img src="${userProfile.avatar}">` : (userProfile.name[0] || '我');
+            avatarContent = await getAvatarHTML(userProfile, 'user') || (userProfile.name[0] || '我');
         } else {
             const sender = contacts.find(c => c.id === msg.senderId);
-            avatarContent = sender ? (sender.avatar ? `<img src="${sender.avatar}">` : sender.name[0]) : '?';
+            if (sender) {
+                avatarContent = await getAvatarHTML(sender, 'contact') || sender.name[0];
+            } else {
+                avatarContent = '?';
+            }
         }
 
         if (currentContact.type === 'group' && msg.role !== 'user') {
@@ -3071,7 +3296,7 @@ async function sendUserMessage() {
     input.value = '';
     input.style.height = 'auto';
     await renderMessages(true); // 重新渲染并滚动到底部
-    renderContactList();
+    await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     input.focus();
 }
@@ -3131,7 +3356,7 @@ async function sendMessage() {
                 currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : (response.type === 'emoji' ? '[表情]' : '[红包]');
                 currentContact.lastTime = formatContactListTime(new Date().toISOString());
                 renderMessages(true); // 重新渲染并滚动到底部
-                renderContactList();
+                await renderContactList();
                 await saveDataToDB();
             }
             // 检查是否需要更新记忆（新逻辑：用户发送2条消息就触发）
@@ -3209,7 +3434,7 @@ async function sendGroupMessage() {
                 currentContact.lastMessage = `${member.name}: ${response.type === 'text' ? response.content.substring(0, 15) + '...' : '[表情]'}`;
                 currentContact.lastTime = formatContactListTime(new Date().toISOString());
                 renderMessages(true); // 重新渲染并滚动到底部
-                renderContactList();
+                await renderContactList();
                 await saveDataToDB();
             }
             // 为群聊中的每个成员检查记忆更新
@@ -3244,7 +3469,7 @@ async function sendGroupMessage() {
     }
 }
 
-function showTypingIndicator(contact = null) {
+async function showTypingIndicator(contact = null) {
     const chatMessages = document.getElementById('chatMessages');
     let indicator = document.getElementById('typingIndicator');
     if (indicator) indicator.remove();
@@ -3253,7 +3478,12 @@ function showTypingIndicator(contact = null) {
     indicator.id = 'typingIndicator';
     chatMessages.appendChild(indicator);
     const displayContact = contact || currentContact;
-    let avatarContent = displayContact ? (displayContact.avatar ? `<img src="${displayContact.avatar}">` : displayContact.name[0]) : '';
+    
+    let avatarContent = '';
+    if (displayContact) {
+        avatarContent = await getAvatarHTML(displayContact, 'contact') || displayContact.name[0];
+    }
+    
     indicator.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble"><div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>`;
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -3615,7 +3845,7 @@ async function sendRedPacket(event) {
     currentContact.lastMessage = '[红包]';
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
     renderMessages(true);
-    renderContactList();
+    await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     closeModal('redPacketModal');
     await sendMessage();
@@ -3632,7 +3862,7 @@ async function sendEmoji(emoji) {
     currentContact.lastMessage = '[表情]';
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
     renderMessages(true);
-    renderContactList();
+    await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     toggleEmojiPanel(true);
     if (!apiSettings.url || !apiSettings.key || !apiSettings.model) { showToast('请先设置API'); return; }
@@ -3660,7 +3890,7 @@ async function sendEmoji(emoji) {
             currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : '[表情]';
             currentContact.lastTime = formatContactListTime(new Date().toISOString());
             renderMessages(true);
-            renderContactList();
+            await renderContactList();
             await saveDataToDB();
         }
     } catch (error) {
@@ -3702,7 +3932,7 @@ async function clearMessages() {
         currentContact.lastMessage = '暂无消息';
         currentContact.lastTime = formatContactListTime(new Date().toISOString());
         renderMessages(true); // 重新渲染
-        renderContactList();
+        await renderContactList();
         await saveDataToDB();
         
         // 清空该角色的记忆数据
@@ -3747,7 +3977,7 @@ async function deleteMessage(messageIndex) {
     }
 
     renderMessages(false); // 重新渲染，但不滚动到底部
-    renderContactList();
+    await renderContactList();
     await saveDataToDB();
     
     // 检查并更新记忆
@@ -3810,7 +4040,7 @@ async function deleteContact(contactId) {
     window.currentContact = null;
         }
 
-        renderContactList(); // 重新渲染联系人列表
+        await renderContactList(); // 重新渲染联系人列表
         await saveDataToDB(); // 重新保存contacts数组到IndexedDB，确保数据同步
         
         // 清空该角色的记忆数据
@@ -4475,7 +4705,7 @@ function deleteSelectedMessages() {
             exitMultiSelectMode();
             
             // 重新渲染
-            renderContactList();
+            await renderContactList();
             await saveDataToDB();
             
             // 检查并更新记忆
@@ -5697,3 +5927,451 @@ async function handleAutoImport(importId) {
         await init();
     }
 }
+
+// === 图片迁移功能 ===
+
+/**
+ * 检查图片迁移状态
+ */
+async function checkImageMigrationStatus() {
+    const statusText = document.getElementById('migrationStatusText');
+    const statusDetails = document.getElementById('migrationStatusDetails');
+    const startMigrationBtn = document.getElementById('startMigrationBtn');
+    
+    try {
+        statusText.textContent = '检查中...';
+        statusDetails.innerHTML = '<div>正在检查图片数据状态...</div>';
+        
+        // 确保迁移管理器已初始化
+        if (!window.ImageMigrationManager) {
+            throw new Error('图片迁移管理器未加载');
+        }
+        
+        await window.ImageMigrationManager.init();
+        
+        // 检查迁移状态
+        const migrationStatus = await window.ImageMigrationManager.checkMigrationNeeded();
+        
+        if (migrationStatus.error) {
+            statusText.textContent = '检查失败';
+            statusDetails.innerHTML = `<div style="color: #dc3545;">错误: ${migrationStatus.error}</div>`;
+            return;
+        }
+        
+        if (!migrationStatus.needed) {
+            statusText.textContent = '✅ 已优化';
+            statusDetails.innerHTML = '<div style="color: #28a745;">太棒了！所有图片数据都已采用高效的存储格式。</div>';
+            startMigrationBtn.disabled = true;
+            startMigrationBtn.textContent = '✅ 无需优化';
+            return;
+        }
+        
+        // 需要迁移
+        statusText.textContent = `${migrationStatus.totalFiles} 个文件待优化`;
+        
+        let detailsHtml = '<div style="margin-bottom: 8px;"><strong>发现以下数据需要优化：</strong></div>';
+        
+        if (migrationStatus.details.contacts.needsMigration > 0) {
+            detailsHtml += `<div>• 联系人头像: ${migrationStatus.details.contacts.needsMigration} 个</div>`;
+        }
+        if (migrationStatus.details.userProfile.needsMigration > 0) {
+            detailsHtml += `<div>• 用户头像: ${migrationStatus.details.userProfile.needsMigration} 个</div>`;
+        }
+        if (migrationStatus.details.emojiImages.needsMigration > 0) {
+            detailsHtml += `<div>• 表情包: ${migrationStatus.details.emojiImages.needsMigration} 个</div>`;
+        }
+        if (migrationStatus.details.backgrounds.needsMigration > 0) {
+            detailsHtml += `<div>• 背景图片: ${migrationStatus.details.backgrounds.needsMigration} 个</div>`;
+        }
+        if (migrationStatus.details.moments.needsMigration > 0) {
+            detailsHtml += `<div>• 朋友圈图片: ${migrationStatus.details.moments.needsMigration} 个</div>`;
+        }
+        
+        // 估算存储空间节省
+        const savings = await window.ImageMigrationManager.estimateStorageSavings(migrationStatus);
+        detailsHtml += `<div style="margin-top: 8px; color: #ff9500;"><strong>预计节省存储空间: ${savings.formattedSavings}</strong></div>`;
+        
+        statusDetails.innerHTML = detailsHtml;
+        startMigrationBtn.disabled = false;
+        startMigrationBtn.textContent = '🚀 开始优化';
+        
+    } catch (error) {
+        console.error('检查迁移状态失败:', error);
+        statusText.textContent = '检查失败';
+        statusDetails.innerHTML = `<div style="color: #dc3545;">检查失败: ${error.message}</div>`;
+    }
+}
+
+/**
+ * 开始图片数据迁移
+ */
+async function startImageMigration() {
+    const statusText = document.getElementById('migrationStatusText');
+    const statusDetails = document.getElementById('migrationStatusDetails');
+    const startMigrationBtn = document.getElementById('startMigrationBtn');
+    const migrationProgress = document.getElementById('migrationProgress');
+    const progressBar = document.getElementById('migrationProgressBar');
+    const progressText = document.getElementById('migrationProgressText');
+    
+    try {
+        // 确认操作
+        const confirmed = confirm('开始图片存储优化？\n\n这个过程将：\n• 将现有base64图片转换为高效的文件存储格式\n• 显著减少存储空间占用\n• 提升应用性能\n\n优化过程中请勿关闭页面。');
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // 禁用按钮，显示进度
+        startMigrationBtn.disabled = true;
+        startMigrationBtn.textContent = '优化中...';
+        migrationProgress.style.display = 'block';
+        statusText.textContent = '优化中...';
+        
+        // 进度回调函数
+        const progressCallback = (progress) => {
+            const percentage = Math.round((progress.current / progress.total) * 100);
+            progressBar.style.width = percentage + '%';
+            progressText.textContent = `正在优化 ${progress.type}: ${progress.item} (${progress.current}/${progress.total})`;
+        };
+        
+        // 执行迁移
+        const result = await window.ImageMigrationManager.performFullMigration(progressCallback);
+        
+        if (result.success) {
+            // 迁移成功
+            statusText.textContent = '✅ 优化完成';
+            progressBar.style.width = '100%';
+            progressText.textContent = '优化完成！';
+            
+            let successHtml = `<div style="color: #28a745; margin-bottom: 8px;"><strong>${result.message}</strong></div>`;
+            
+            if (result.summary) {
+                successHtml += `<div>• 成功优化: ${result.summary.totalSuccess} 个文件</div>`;
+                if (result.summary.totalFailed > 0) {
+                    successHtml += `<div style="color: #dc3545;">• 优化失败: ${result.summary.totalFailed} 个文件</div>`;
+                }
+            }
+            
+            successHtml += '<div style="margin-top: 8px; color: #666; font-size: 11px;">图片数据已优化为高效的文件存储格式，存储空间占用显著减少。</div>';
+            
+            statusDetails.innerHTML = successHtml;
+            startMigrationBtn.textContent = '✅ 优化完成';
+            
+            // 显示成功消息
+            if (typeof showToast === 'function') {
+                showToast('图片存储优化完成！存储空间占用已显著减少。');
+            } else {
+                alert('图片存储优化完成！存储空间占用已显著减少。');
+            }
+            
+        } else {
+            // 迁移失败
+            statusText.textContent = '优化失败';
+            statusDetails.innerHTML = `<div style="color: #dc3545;">优化失败: ${result.error}</div>`;
+            startMigrationBtn.disabled = false;
+            startMigrationBtn.textContent = '🚀 重试优化';
+            
+            console.error('图片数据迁移失败:', result);
+        }
+        
+    } catch (error) {
+        console.error('执行图片迁移失败:', error);
+        statusText.textContent = '优化失败';
+        statusDetails.innerHTML = `<div style="color: #dc3545;">优化失败: ${error.message}</div>`;
+        startMigrationBtn.disabled = false;
+        startMigrationBtn.textContent = '🚀 重试优化';
+        
+        if (typeof showToast === 'function') {
+            showToast('图片存储优化失败: ' + error.message);
+        }
+    } finally {
+        // 隐藏进度条
+        setTimeout(() => {
+            migrationProgress.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// === 聊天记录表情包迁移功能 ===
+
+/**
+ * 检查聊天记录表情包迁移状态
+ */
+async function checkChatEmojiMigrationStatus() {
+    const statusText = document.getElementById('chatEmojiMigrationStatusText');
+    const statusDetails = document.getElementById('chatEmojiMigrationStatusDetails');
+    const startMigrationBtn = document.getElementById('startChatEmojiMigrationBtn');
+    
+    try {
+        statusText.textContent = '检查中...';
+        statusDetails.innerHTML = '<div>正在检查聊天记录中的表情包状态...</div>';
+        
+        // 确保迁移管理器已初始化
+        if (!window.ChatEmojiMigrationManager) {
+            throw new Error('聊天记录表情包迁移管理器未加载');
+        }
+        
+        await window.ChatEmojiMigrationManager.init();
+        
+        // 检查迁移状态
+        const migrationStatus = await window.ChatEmojiMigrationManager.checkChatEmojiMigrationNeeded();
+        
+        if (migrationStatus.error) {
+            statusText.textContent = '检查失败';
+            statusDetails.innerHTML = `<div style="color: #dc3545;">错误: ${migrationStatus.error}</div>`;
+            return;
+        }
+        
+        if (!migrationStatus.needed) {
+            statusText.textContent = '✅ 已优化';
+            statusDetails.innerHTML = '<div style="color: #28a745;">太棒了！聊天记录中的表情包都已采用高效的存储格式。</div>';
+            startMigrationBtn.disabled = true;
+            startMigrationBtn.textContent = '✅ 无需优化';
+            return;
+        }
+        
+        // 需要迁移
+        const totalItems = migrationStatus.details.base64EmojisFound + migrationStatus.details.emojiImagesNeedingMigration;
+        statusText.textContent = `${totalItems} 个表情待优化`;
+        
+        let detailsHtml = '<div style="margin-bottom: 8px;"><strong>发现以下数据需要优化：</strong></div>';
+        
+        if (migrationStatus.details.base64EmojisFound > 0) {
+            detailsHtml += `<div>• 聊天记录中的表情: ${migrationStatus.details.base64EmojisFound} 个</div>`;
+            detailsHtml += `<div>• 涉及联系人: ${migrationStatus.details.contactsNeedingMigration} 个</div>`;
+        }
+        
+        if (migrationStatus.details.emojiImagesNeedingMigration > 0) {
+            detailsHtml += `<div>• 表情图片库: ${migrationStatus.details.emojiImagesNeedingMigration} 个</div>`;
+        }
+        
+        // 估算迁移效果
+        const benefits = await window.ChatEmojiMigrationManager.estimateMigrationBenefits(migrationStatus);
+        detailsHtml += `<div style="margin-top: 8px; color: #1890ff;"><strong>预计节省存储空间: ${benefits.formattedSavings}</strong></div>`;
+        detailsHtml += '<div style="color: #666; font-size: 11px;">优化后API调用将使用[emoji:意思]格式，提升兼容性</div>';
+        
+        statusDetails.innerHTML = detailsHtml;
+        startMigrationBtn.disabled = false;
+        startMigrationBtn.textContent = '💬 开始优化';
+        
+    } catch (error) {
+        console.error('检查聊天表情迁移状态失败:', error);
+        statusText.textContent = '检查失败';
+        statusDetails.innerHTML = `<div style="color: #dc3545;">检查失败: ${error.message}</div>`;
+    }
+}
+
+/**
+ * 开始聊天记录表情包迁移
+ */
+async function startChatEmojiMigration() {
+    const statusText = document.getElementById('chatEmojiMigrationStatusText');
+    const statusDetails = document.getElementById('chatEmojiMigrationStatusDetails');
+    const startMigrationBtn = document.getElementById('startChatEmojiMigrationBtn');
+    const migrationProgress = document.getElementById('chatEmojiMigrationProgress');
+    const progressBar = document.getElementById('chatEmojiMigrationProgressBar');
+    const progressText = document.getElementById('chatEmojiMigrationProgressText');
+    
+    try {
+        // 确认操作
+        const confirmed = confirm('开始聊天记录表情包优化？\n\n这个过程将：\n• 将聊天记录中的base64表情转换为高效的文件存储格式\n• 保持API调用兼容性（使用[emoji:意思]格式）\n• 显著减少存储空间占用\n• 提升聊天记录加载性能\n\n优化过程中请勿关闭页面。');
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // 禁用按钮，显示进度
+        startMigrationBtn.disabled = true;
+        startMigrationBtn.textContent = '优化中...';
+        migrationProgress.style.display = 'block';
+        statusText.textContent = '优化中...';
+        
+        // 进度回调函数
+        const progressCallback = (progress) => {
+            const percentage = Math.round((progress.current / progress.total) * 100);
+            progressBar.style.width = percentage + '%';
+            progressText.textContent = `正在优化 ${progress.type}: ${progress.item} (${progress.current}/${progress.total})`;
+        };
+        
+        // 执行迁移
+        const result = await window.ChatEmojiMigrationManager.performChatEmojiMigration(progressCallback);
+        
+        if (result.success) {
+            // 迁移成功
+            statusText.textContent = '✅ 优化完成';
+            progressBar.style.width = '100%';
+            progressText.textContent = '优化完成！';
+            
+            let successHtml = `<div style="color: #28a745; margin-bottom: 8px;"><strong>${result.message}</strong></div>`;
+            
+            if (result.results) {
+                successHtml += `<div>• 优化联系人: ${result.results.contactsMigrated} 个</div>`;
+                successHtml += `<div>• 优化表情: ${result.results.base64EmojisMigrated} 个</div>`;
+                successHtml += `<div>• 优化表情图片: ${result.results.emojiImagesMigrated} 个</div>`;
+                
+                if (result.results.errors.length > 0) {
+                    successHtml += `<div style="color: #ffc107;">• 优化失败: ${result.results.errors.length} 个</div>`;
+                }
+            }
+            
+            successHtml += '<div style="margin-top: 8px; color: #666; font-size: 11px;">聊天记录表情包已优化完成，API调用将使用[emoji:意思]格式。</div>';
+            
+            statusDetails.innerHTML = successHtml;
+            startMigrationBtn.textContent = '✅ 优化完成';
+            
+            // 显示成功消息
+            if (typeof showToast === 'function') {
+                showToast('聊天记录表情包优化完成！存储格式已统一。');
+            } else {
+                alert('聊天记录表情包优化完成！存储格式已统一。');
+            }
+            
+            // 刷新当前聊天显示
+            if (window.currentContact) {
+                await renderMessages();
+            }
+            
+        } else {
+            // 迁移失败
+            statusText.textContent = '优化失败';
+            statusDetails.innerHTML = `<div style="color: #dc3545;">优化失败: ${result.error}</div>`;
+            startMigrationBtn.disabled = false;
+            startMigrationBtn.textContent = '💬 重试优化';
+            
+            console.error('聊天表情迁移失败:', result);
+        }
+        
+    } catch (error) {
+        console.error('执行聊天表情迁移失败:', error);
+        statusText.textContent = '优化失败';
+        statusDetails.innerHTML = `<div style="color: #dc3545;">优化失败: ${error.message}</div>`;
+        startMigrationBtn.disabled = false;
+        startMigrationBtn.textContent = '💬 重试优化';
+        
+        if (typeof showToast === 'function') {
+            showToast('聊天记录表情包优化失败: ' + error.message);
+        }
+    } finally {
+        // 隐藏进度条
+        setTimeout(() => {
+            migrationProgress.style.display = 'none';
+        }, 3000);
+    }
+}
+
+// === 自动文件存储迁移功能（版本8→9） ===
+
+/**
+ * 执行文件存储迁移（版本8→9升级时自动调用）
+ */
+async function performFileStorageMigration() {
+    try {
+        console.log('开始执行文件存储自动迁移...');
+        
+        if (!isIndexedDBReady) {
+            console.error('数据库未准备就绪，无法执行迁移');
+            return;
+        }
+        
+        // 等待所有管理器初始化完成
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        while (attempts < maxAttempts) {
+            if (window.ImageMigrationManager && window.ChatEmojiMigrationManager) {
+                break;
+            }
+            console.log(`等待迁移管理器初始化... (${attempts + 1}/${maxAttempts})`);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+        }
+        
+        if (!window.ImageMigrationManager || !window.ChatEmojiMigrationManager) {
+            console.error('迁移管理器未加载，跳过自动迁移');
+            return;
+        }
+        
+        console.log('开始自动迁移步骤1：基础图片数据迁移');
+        
+        // 步骤1：首先执行基础图片迁移（头像、背景、表情包图片）
+        try {
+            await window.ImageMigrationManager.init();
+            const imageMigrationStatus = await window.ImageMigrationManager.checkMigrationNeeded();
+            
+            if (imageMigrationStatus.needed) {
+                console.log(`发现 ${imageMigrationStatus.totalFiles} 个图片文件需要迁移`);
+                
+                const imageResult = await window.ImageMigrationManager.performFullMigration((progress) => {
+                    console.log(`迁移进度: ${progress.type} - ${progress.item} (${progress.current}/${progress.total})`);
+                });
+                
+                if (imageResult.success) {
+                    console.log('基础图片数据迁移完成:', imageResult.summary);
+                } else {
+                    console.error('基础图片数据迁移失败:', imageResult.error);
+                }
+            } else {
+                console.log('无需进行基础图片数据迁移');
+            }
+        } catch (error) {
+            console.error('基础图片迁移过程出错:', error);
+        }
+        
+        console.log('开始自动迁移步骤2：聊天记录表情包迁移');
+        
+        // 步骤2：然后执行聊天记录表情包迁移
+        try {
+            await window.ChatEmojiMigrationManager.init();
+            const chatEmojiStatus = await window.ChatEmojiMigrationManager.checkChatEmojiMigrationNeeded();
+            
+            if (chatEmojiStatus.needed) {
+                const totalEmojis = chatEmojiStatus.details.base64EmojisFound + chatEmojiStatus.details.emojiImagesNeedingMigration;
+                console.log(`发现 ${totalEmojis} 个聊天表情需要迁移`);
+                
+                const chatResult = await window.ChatEmojiMigrationManager.performChatEmojiMigration((progress) => {
+                    console.log(`聊天表情迁移进度: ${progress.type} - ${progress.item} (${progress.current}/${progress.total})`);
+                });
+                
+                if (chatResult.success) {
+                    console.log('聊天记录表情包迁移完成:', chatResult.results);
+                } else {
+                    console.error('聊天记录表情包迁移失败:', chatResult.error);
+                }
+            } else {
+                console.log('无需进行聊天记录表情包迁移');
+            }
+        } catch (error) {
+            console.error('聊天表情迁移过程出错:', error);
+        }
+        
+        console.log('文件存储自动迁移流程完成');
+        
+        // 刷新当前聊天显示（如果有的话）
+        if (window.currentContact) {
+            try {
+                await renderMessages();
+                console.log('聊天界面已刷新');
+            } catch (error) {
+                console.warn('刷新聊天界面失败:', error);
+            }
+        }
+        
+    } catch (error) {
+        console.error('文件存储自动迁移失败:', error);
+    }
+}
+
+// 页面加载后自动检查迁移状态
+document.addEventListener('DOMContentLoaded', () => {
+    // 等待所有脚本加载完成后再检查
+    setTimeout(() => {
+        if (window.ImageMigrationManager && document.getElementById('migrationStatusText')) {
+            checkImageMigrationStatus();
+        }
+        
+        // 检查聊天表情迁移状态
+        if (window.ChatEmojiMigrationManager && document.getElementById('chatEmojiMigrationStatusText')) {
+            checkChatEmojiMigrationStatus();
+        }
+    }, 2000);
+});
