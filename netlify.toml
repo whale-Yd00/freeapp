@@ -18,3 +18,10 @@
   from = "/api/test-connection"
   to = "/.netlify/functions/test-connection"
   status = 200
+
+# 规则三：将数据传输请求转发到 transfer-data 函数
+# 请求路径: /api/transfer-data
+[[redirects]]
+  from = "/api/transfer-data"
+  to = "/.netlify/functions/transfer-data"
+  status = 200
