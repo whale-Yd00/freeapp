@@ -1646,3 +1646,277 @@ window.clearMemoryData = function() {
 // 将HTML中的script内容整合到这里
 window.triggerFileSelect = triggerFileSelect;
 window.handleFileSelect = handleFileSelect;
+
+// === 文件存储导入导出功能 ===
+
+/**
+ * 导出文件存储数据
+ */
+window.exportFileStorage = function() {
+    // 显示选项面板
+    const optionsPanel = document.getElementById('fileExportOptions');
+    if (optionsPanel) {
+        optionsPanel.style.display = optionsPanel.style.display === 'none' ? 'block' : 'none';
+    }
+};
+
+/**
+ * 确认文件导出
+ */
+window.confirmFileExport = async function() {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在导出文件存储数据...');
+        }
+
+        // 获取选项
+        const includeAvatars = document.getElementById('exportAvatars')?.checked ?? true;
+        const includeBackgrounds = document.getElementById('exportBackgrounds')?.checked ?? true;
+        const includeEmojis = document.getElementById('exportEmojis')?.checked ?? true;
+        const includeMoments = document.getElementById('exportMoments')?.checked ?? true;
+
+        const options = {
+            includeAvatars,
+            includeBackgrounds,
+            includeEmojis,
+            includeMoments
+        };
+
+        // 执行导出
+        const result = await window.FileStorageExporter.downloadFileStorageAsZip(options);
+
+        if (result.success) {
+            if (typeof showToast === 'function') {
+                showToast(result.message);
+            } else {
+                alert(result.message);
+            }
+        } else {
+            throw new Error(result.error || '导出失败');
+        }
+
+        // 隐藏选项面板
+        document.getElementById('fileExportOptions').style.display = 'none';
+
+    } catch (error) {
+        console.error('文件存储导出失败:', error);
+        if (typeof showToast === 'function') {
+            showToast('导出失败: ' + error.message);
+        } else {
+            alert('导出失败: ' + error.message);
+        }
+    }
+};
+
+/**
+ * 取消文件导出
+ */
+window.cancelFileExport = function() {
+    document.getElementById('fileExportOptions').style.display = 'none';
+};
+
+/**
+ * 触发文件存储导入
+ */
+window.triggerFileStorageImport = function() {
+    const fileInput = document.getElementById('fileStorageImportInput');
+    if (fileInput) {
+        fileInput.click();
+    } else {
+        console.error('未找到文件存储导入元素！');
+        if (typeof showToast === 'function') {
+            showToast('导入功能不可用，请刷新页面');
+        } else {
+            alert('导入功能不可用，请刷新页面');
+        }
+    }
+};
+
+/**
+ * 处理文件存储导入
+ */
+window.handleFileStorageImport = async function(event) {
+    const file = event.target.files[0];
+    
+    if (!file) {
+        return;
+    }
+
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在处理文件存储导入...');
+        }
+
+        // 检查文件类型
+        const isZipFile = file.name.toLowerCase().endsWith('.zip');
+        const fileTypeText = isZipFile ? 'ZIP文件' : 'JSON文件';
+        
+        // 显示确认对话框
+        const confirmMessage = `导入${fileTypeText}存储数据将会：\n\n` +
+                              '• 自动匹配现有的联系人、表情包等\n' +
+                              '• 对于匹配的项目，可选择覆盖或跳过\n' +
+                              '• 对于未匹配的项目，可选择创建新项\n\n' +
+                              '是否继续导入？';
+
+        if (!confirm(confirmMessage)) {
+            // 重置文件输入
+            event.target.value = '';
+            return;
+        }
+
+        // 显示导入选项对话框
+        const overwrite = confirm('对于已存在的文件，是否要覆盖？\n\n' +
+                                 '选择"确定"覆盖现有文件\n' +
+                                 '选择"取消"跳过已存在的文件');
+
+        const createMissing = confirm('对于无法匹配的文件，是否要创建新项？\n\n' +
+                                    '选择"确定"创建新的引用项\n' +
+                                    '选择"取消"跳过无法匹配的文件');
+
+        // 执行导入
+        await performFileStorageImport(file, {
+            overwrite,
+            createMissing,
+            autoMatch: true,
+            isZipFile: isZipFile
+        });
+
+    } catch (error) {
+        console.error('文件存储导入失败:', error);
+        if (typeof showToast === 'function') {
+            showToast('导入失败: ' + error.message);
+        } else {
+            alert('导入失败: ' + error.message);
+        }
+    } finally {
+        // 重置文件输入
+        event.target.value = '';
+    }
+};
+
+/**
+ * 执行文件存储导入
+ */
+async function performFileStorageImport(file, options) {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在分析文件存储数据...');
+        }
+
+        let result;
+        
+        if (options.isZipFile) {
+            // ZIP文件导入
+            if (typeof showToast === 'function') {
+                showToast('正在解析ZIP文件...');
+            }
+
+            // 直接执行ZIP导入（已包含预览功能）
+            result = await window.FileStorageImporter.importFromZipFile(file, {
+                ...options,
+                progressCallback: (progress) => {
+                    if (progress.phase === 'importing') {
+                        const message = `正在导入 ${getCategoryDisplayName(progress.folderName)}: ${progress.current}/${progress.total}`;
+                        if (typeof showToast === 'function') {
+                            showToast(message);
+                        }
+                    }
+                }
+            });
+        } else {
+            // JSON文件导入（原有逻辑）
+            const importData = await window.FileStorageExporter.readImportFile(file);
+            const preview = await window.FileStorageImporter.generateImportPreview(importData);
+
+            // 显示预览信息
+            const previewMessage = `文件存储导入预览：\n\n` +
+                                  `总文件数：${preview.totalFiles} 个\n` +
+                                  `分类情况：\n` +
+                                  Object.entries(preview.categories).map(([category, info]) => 
+                                      `• ${getCategoryDisplayName(category)}: ${info.fileCount} 个文件`
+                                  ).join('\n') + '\n\n' +
+                                  '是否继续导入？';
+
+            if (!confirm(previewMessage)) {
+                return;
+            }
+
+            if (typeof showToast === 'function') {
+                showToast('正在执行智能导入...');
+            }
+
+            // 执行智能导入
+            result = await window.FileStorageImporter.smartImport(importData, {
+                ...options,
+                progressCallback: (progress) => {
+                    if (progress.phase === 'importing') {
+                        const message = `正在导入 ${getCategoryDisplayName(progress.groupKey)}: ${progress.current}/${progress.total}`;
+                        if (typeof showToast === 'function') {
+                            showToast(message);
+                        }
+                    }
+                }
+            });
+        }
+
+        if (result.success) {
+            const results = result.results;
+            const successMessage = `文件存储导入完成！\n\n` +
+                                  `处理文件：${results.processed} 个\n` +
+                                  `成功匹配：${results.matched} 个\n` +
+                                  `新建项目：${results.created} 个\n` +
+                                  `跳过文件：${results.skipped} 个\n` +
+                                  `失败文件：${results.failed} 个`;
+
+            if (typeof showToast === 'function') {
+                showToast('导入成功！刷新页面以查看效果');
+            }
+
+            alert(successMessage + '\n\n页面将自动刷新以更新显示');
+
+            // 刷新页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            throw new Error(result.error || '导入失败');
+        }
+
+    } catch (error) {
+        console.error('performFileStorageImport 失败:', error);
+        throw error;
+    }
+}
+
+/**
+ * 获取分类显示名称
+ */
+function getCategoryDisplayName(category) {
+    const displayNames = {
+        'avatars': '头像图片',
+        'user_avatars': '用户头像',
+        'backgrounds': '聊天背景',
+        'emojis': '表情包',
+        'moments': '朋友圈图片'
+    };
+    return displayNames[category] || category;
+}
+
+/**
+ * 获取文件存储统计信息
+ */
+window.getFileStorageStats = async function() {
+    try {
+        const stats = await window.FileStorageExporter.getStorageStatistics();
+        return {
+            success: true,
+            stats: stats
+        };
+    } catch (error) {
+        console.error('获取文件存储统计失败:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+};
