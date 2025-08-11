@@ -1433,7 +1433,6 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         console.error('=== 生成论坛失败 ===');
         console.error('错误类型:', error.name);
         console.error('错误消息:', error.message);
-        console.error('错误堆栈:', error.stack);
         console.error('完整错误对象:', error);
         showToast('生成论坛失败: ' + error.message);
     } finally {
@@ -3699,7 +3698,6 @@ async function sendMessage() {
         console.error('错误详情:', {
             name: error.name,
             message: error.message,
-            stack: error.stack,
             timestamp: new Date().toISOString(),
             url: window.location.href
         });
@@ -3796,7 +3794,6 @@ async function sendGroupMessage() {
                 turnContextLength: turnContext.length,
                 errorName: error.name,
                 errorMessage: error.message,
-                errorStack: error.stack,
                 timestamp: new Date().toISOString()
             });
             hideTypingIndicator();
@@ -4765,7 +4762,6 @@ window.addEventListener('error', (event) => {
         error: event.error ? {
             name: event.error.name,
             message: event.error.message,
-            stack: event.error.stack
         } : null,
         timestamp: new Date().toISOString(),
         userAgent: navigator.userAgent,

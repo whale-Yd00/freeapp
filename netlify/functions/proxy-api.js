@@ -40,6 +40,7 @@ export async function handler(event, context) {
     }
 
     const data = await response.json();
+    console.log('API完整返回:', JSON.stringify(data, null, 2));
     return {
       statusCode: 200,
       body: JSON.stringify(data),

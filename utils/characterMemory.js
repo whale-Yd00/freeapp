@@ -623,6 +623,7 @@ class CharacterMemoryManager {
                     max_tokens: 5000
                 }
             );
+            console.log('记忆删除判断API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -667,6 +668,7 @@ class CharacterMemoryManager {
                     max_tokens: 10000
                 }
             );
+            console.log('删除记忆内容API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -742,6 +744,7 @@ class CharacterMemoryManager {
                     max_tokens: 5000
                 }
             );
+            console.log('记忆更新判断API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -786,6 +789,7 @@ class CharacterMemoryManager {
                     max_tokens: 7000
                 }
             );
+            console.log('全局记忆更新判断API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -831,6 +835,7 @@ class CharacterMemoryManager {
                     max_tokens: 10000
                 }
             );
+            console.log('生成记忆API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -875,6 +880,7 @@ class CharacterMemoryManager {
                     max_tokens: 10000
                 }
             );
+            console.log('生成全局记忆API完整返回:', JSON.stringify(response, null, 2));
             
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
