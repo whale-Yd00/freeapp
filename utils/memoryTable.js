@@ -181,15 +181,49 @@ class MemoryTableManager {
             return;
         }
 
-        // 确保 marked 库已加载
-        if (typeof marked !== 'undefined') {
-            viewDiv.innerHTML = markdown 
-                ? marked.parse(markdown) 
-                : this.getEmptyMemoryTableHtml();
-        } else {
-            // Fallback if marked is not loaded
-            viewDiv.innerHTML = `<pre>${markdown || '记忆表为空'}</pre>`;
+        // 检查内容是否为空
+        if (!markdown || markdown.trim() === '') {
+            viewDiv.innerHTML = this.getEmptyMemoryTableHtml();
+            return;
         }
+
+        try {
+            // 预处理markdown内容，防止表格单元格内容过长
+            const cleanedMarkdown = this.preprocessMarkdownTable(markdown);
+            
+            // 确保 marked 库已加载
+            if (typeof marked !== 'undefined') {
+                viewDiv.innerHTML = marked.parse(cleanedMarkdown);
+            } else {
+                // Fallback if marked is not loaded
+                console.warn('marked库未加载，使用预览模式');
+                viewDiv.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word;">${cleanedMarkdown}</pre>`;
+            }
+        } catch (error) {
+            console.error('渲染记忆表失败:', error);
+            viewDiv.innerHTML = `<div style="color: #e53e3e; padding: 20px; text-align: center;">
+                <p>记忆表渲染失败</p>
+                <small>请检查记忆表格式是否正确</small>
+            </div>`;
+        }
+    }
+
+    // 预处理markdown表格内容，防止单元格内容过长
+    preprocessMarkdownTable(markdown) {
+        if (!markdown || typeof markdown !== 'string') {
+            return '';
+        }
+
+        // 限制表格单元格内容的最大长度
+        const MAX_CELL_LENGTH = 500;
+        
+        return markdown.replace(/\|([^|\n]*?)\|/g, (match, cellContent) => {
+            if (cellContent && cellContent.length > MAX_CELL_LENGTH) {
+                const truncated = cellContent.substring(0, MAX_CELL_LENGTH).trim();
+                return `|${truncated}...|`;
+            }
+            return match;
+        });
     }
 
     // 获取空记忆表的HTML

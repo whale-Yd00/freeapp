@@ -636,6 +636,7 @@ body {
     border-radius: 8px;
     overflow: hidden; /* 确保圆角生效 */
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    table-layout: fixed; /* 固定表格布局避免内容撑破 */
 }
 
 .memory-table-view th,
@@ -643,6 +644,11 @@ body {
     padding: 12px 15px;
     text-align: left;
     border-bottom: 1px solid #f0f0f0; /* 水平分割线 */
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap; /* 保留换行但允许折行 */
+    max-width: 0; /* 配合table-layout: fixed使用 */
+    overflow-wrap: break-word;
 }
 
 .memory-table-view th {
