@@ -366,6 +366,7 @@ class MemoryTableManager {
                 },
                 (window.apiSettings.timeout || 60) * 1000
             );
+            console.log('记忆表格更新API完整返回:', JSON.stringify(response, null, 2));
 
             // 处理响应
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
