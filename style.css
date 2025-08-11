@@ -1885,13 +1885,12 @@ body {
 }
 
 .weibo-page {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 50px;
     background-color: #f7f8fa;
-    z-index: 130;
+    height: 100vh;
+    padding-top: calc(44px + env(safe-area-inset-top)); /* 为固定的header留出空间，自动适配刘海屏 */
+    padding-bottom: calc(50px + env(safe-area-inset-bottom)); /* 为固定的nav bar留出空间，适配底部安全区域 */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
@@ -1903,11 +1902,23 @@ body {
 .weibo-header {
     background-color: #ededed;
     padding: 10px 15px;
+    padding-top: calc(10px + env(safe-area-inset-top)); /* 自动避开刘海屏/状态栏 */
+    padding-left: calc(15px + env(safe-area-inset-left));
+    padding-right: calc(15px + env(safe-area-inset-right));
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 0.5px solid #d9d9d9;
-    flex-shrink: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: calc(44px + env(safe-area-inset-top)); /* 动态调整高度 */
+}
+
+.weibo-page:not(.active) .weibo-header {
+    display: none;
 }
 
 .weibo-container {
@@ -1915,7 +1926,6 @@ body {
     margin: 0 auto;
     background: #f7f8fa;
     min-height: 100%;
-    padding-bottom: 50px;
     display: flex;
     flex-direction: column;
     width: 100%;
