@@ -50,9 +50,12 @@ export const handler = async (event) => {
       
       // 把数据存进内存仓库，用ID作为钥匙
       // 数据只存15分钟，过期作废，非常安全！
+      // 添加来源信息和时间戳，方便浏览器间数据同步
       dataStore.set(uniqueId, {
         data: dataToStore,
-        expires: Date.now() + 15 * 60 * 1000 // 15分钟后过期
+        expires: Date.now() + 15 * 60 * 1000, // 15分钟后过期
+        created: Date.now(),
+        source: origin || 'unknown'
       });
 
       // 把取件码返回给前端
@@ -74,12 +77,41 @@ export const handler = async (event) => {
   // --- 情况二：根据ID，交出数据 (GET请求) ---
   if (event.httpMethod === 'GET') {
     try {
-      // 从URL里拿到取件码
-      const { id } = event.queryStringParameters || {};
+      const { id, action } = event.queryStringParameters || {};
+      
+      // 新增：列出所有可用的数据传输记录
+      if (action === 'list') {
+        const availableData = [];
+        const now = Date.now();
+        
+        for (const [key, value] of dataStore.entries()) {
+          if (value.expires > now) {
+            availableData.push({
+              id: key,
+              created: value.created,
+              source: value.source,
+              timeAgo: Math.floor((now - value.created) / 1000) + '秒前'
+            });
+          }
+        }
+        
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ 
+            success: true, 
+            data: availableData.sort((a, b) => b.created - a.created) // 按时间倒序
+          }),
+        };
+      }
+      
+      // 原有功能：根据ID获取数据
       if (!id) {
         throw new Error('没有提供ID。');
       }
 
+      const { peek } = event.queryStringParameters || {};
+      
       // 根据取件码去仓库里找数据
       const storedItem = dataStore.get(id);
 
@@ -93,8 +125,12 @@ export const handler = async (event) => {
         };
       }
       
-      // 重要！数据一旦被取走，立刻销毁，防止二次使用
-      dataStore.delete(id);
+      // 新增：如果是预览模式(peek=true)，则不删除数据，允许多次读取
+      // 用于浏览器间同步场景
+      if (!peek || peek !== 'true') {
+        // 重要！数据一旦被取走，立刻销毁，防止二次使用
+        dataStore.delete(id);
+      }
 
       // 把取到的数据交出去
       return {

@@ -67,16 +67,30 @@ body {
 /* 联系人列表页面特定样式 */
 .contact-list-page {
     background-color: #fff;
-    padding-bottom: 60px; /* 为底部dock栏留出空间 */
+    height: 100vh;
+    padding-top: 44px; /* 为固定的header留出空间 */
+    padding-bottom: 50px; /* 为固定的nav bar留出空间 */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-.wechat-header {
+.contact-list-page .wechat-header {
     background-color: #ededed;
     padding: 10px 15px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid #e5e5e5;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: 44px; /* 固定高度 */
+}
+
+.contact-list-page:not(.active) .wechat-header {
+    display: none;
 }
 
 .header-title {
@@ -112,7 +126,7 @@ body {
 
 /* 联系人列表容器 */
 #contactList {
-    padding-bottom: 20px; /* 确保最后的联系人项目不被遮挡 */
+    /* 联系人列表现在在整个页面的滚动容器中 */
 }
 
 /* 联系人项目 */
