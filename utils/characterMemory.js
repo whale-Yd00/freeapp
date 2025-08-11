@@ -724,10 +724,10 @@ class CharacterMemoryManager {
      */
     async checkMemoryUpdateNeeded(contact, currentContact) {
         const currentMemory = await this.getCharacterMemory(contact.id);
-        const userTextContext = this.buildUserTextContext(currentContact);
+        const completeMessageContext = this.buildCompleteMessageContext(currentContact);
         
         // 构建判断提示词
-        const prompt = this.buildMemoryCheckPrompt(currentMemory, userTextContext, contact);
+        const prompt = this.buildMemoryCheckPrompt(currentMemory, completeMessageContext, contact);
         
         try {
             // 使用次要模型进行判断
@@ -815,10 +815,10 @@ class CharacterMemoryManager {
      */
     async generateAndUpdateMemory(contact, currentContact) {
         const currentMemory = await this.getCharacterMemory(contact.id);
-        const userTextContext = this.buildUserTextContext(currentContact);
+        const completeMessageContext = this.buildCompleteMessageContext(currentContact);
         
         // 构建记忆生成提示词
-        const prompt = this.buildMemoryGeneratePrompt(currentMemory, userTextContext, contact);
+        const prompt = this.buildMemoryGeneratePrompt(currentMemory, completeMessageContext, contact);
         
         try {
             const response = await window.apiService.callOpenAIAPI(
@@ -900,31 +900,50 @@ class CharacterMemoryManager {
     }
 
     /**
-     * 构建用户文本输入上下文（仅用于记忆判断）
+     * 构建完整消息上下文（从lastProcessedIndex开始的所有消息）
      */
-    buildUserTextContext(contact) {
+    buildCompleteMessageContext(contact) {
         if (!contact.messages || contact.messages.length === 0) {
-            return '暂无用户输入';
+            return '暂无对话记录';
         }
 
         const lastProcessedIndex = this.lastProcessedMessageIndex.get(contact.id) || -1;
-        const userTexts = [];
+        const contextLines = [];
         
-        // 从最后处理位置开始，收集用户的文本输入
+        // 从最后处理位置开始，收集所有消息
         for (let i = lastProcessedIndex + 1; i < contact.messages.length; i++) {
             const message = contact.messages[i];
             
-            // 只包含用户的普通文本消息，排除emoji和红包
-            if (message.role === 'user' && !this.isSpecialMessageType(message)) {
-                userTexts.push(message.content);
+            const sender = message.role === 'user' ? 
+                (window.userProfile?.name || '用户') : 
+                (window.contacts && Array.isArray(window.contacts) ? 
+                    window.contacts.find(c => c.id === message.senderId)?.name || contact.name : 
+                    contact.name);
+                
+            let content = message.content;
+            
+            // 处理特殊消息类型
+            if (message.type === 'red_packet') {
+                try {
+                    const packet = JSON.parse(content);
+                    content = `[发送红包: ${packet.message}, 金额: ${packet.amount}元]`;
+                } catch (e) {
+                    content = '[发送红包]';
+                }
+            } else if (message.type === 'emoji') {
+                const emoji = window.emojis && Array.isArray(window.emojis) ? 
+                    window.emojis.find(e => e.url === message.content) : null;
+                content = `[表情: ${emoji?.meaning || '未知表情'}]`;
             }
+            
+            contextLines.push(`${sender}: ${content}`);
         }
         
-        if (userTexts.length === 0) {
-            return '暂无新的用户文本输入';
+        if (contextLines.length === 0) {
+            return '暂无新的对话记录';
         }
         
-        return userTexts.join('\n');
+        return contextLines.join('\n');
     }
 
     /**
@@ -970,19 +989,19 @@ class CharacterMemoryManager {
     /**
      * 构建记忆检查提示词
      */
-    buildMemoryCheckPrompt(currentMemory, userTextInput, contact) {
-        return `你是一个记忆分析助手。请判断用户的新输入是否需要更新角色记忆。
+    buildMemoryCheckPrompt(currentMemory, completeMessageContext, contact) {
+        return `你是一个记忆分析助手。请判断最近的对话内容是否需要更新角色记忆。
 
 当前角色记忆：
 ${currentMemory || '暂无记忆'}
 
-用户的新输入：
-${userTextInput}
+最近的对话内容：
+${completeMessageContext}
 
 判断标准：
-1. 用户新输入是否涉及到当前记忆中没有的个人信息？
+1. 对话中是否涉及到当前记忆中没有的个人信息？
 2. 用户是否主动说明自身的形象、生活状态、个人情况？（例如：用户正在接受心理治疗、用户正在准备演讲比赛、用户喜欢你称呼他为...等）
-3. 用户输入是否包含值得记住的事件、约定或重要细节？
+3. 对话中是否包含值得记住的事件、约定或重要细节？
 
 请仅回答"是"或"否"，不要其他解释。`;
     }
@@ -990,10 +1009,10 @@ ${userTextInput}
     /**
      * 构建记忆生成提示词
      */
-    buildMemoryGeneratePrompt(currentMemory, userTextInput, contact) {
+    buildMemoryGeneratePrompt(currentMemory, completeMessageContext, contact) {
         const userName = window.userProfile?.name || '用户';
         
-        return `你是一个记忆整理助手。请根据原有记忆和用户的新输入，更新角色记忆。
+        return `你是一个记忆整理助手。请根据原有记忆和最近的对话内容，更新角色记忆。
 
 角色信息：
 - 姓名：${contact.name}
@@ -1006,10 +1025,10 @@ ${userTextInput}
 原有记忆：
 ${currentMemory || '暂无原有记忆'}
 
-用户的新输入：
-${userTextInput}
+最近的对话内容：
+${completeMessageContext}
 
-请整合原有记忆和用户的新输入，生成更新后的完整记忆。记忆应该符合以下任意一条条件：
+请整合原有记忆和最近的对话内容，生成更新后的完整记忆。记忆应该符合以下任意一条条件：
 1. 用户主动说明的个人信息、生活状态、兴趣爱好
 2. 用户主动提到的事件、计划或约定
 3. 用户主动说明的自己的态度、偏好和个性特征

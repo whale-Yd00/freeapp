@@ -428,6 +428,19 @@ const MESSAGES_PER_PAGE = 15;
 let currentlyDisplayedMessageCount = 0;
 let isLoadingMoreMessages = false;
 
+// 论坛帖子分页相关变量
+const POSTS_PER_PAGE = 10;
+let currentlyDisplayedPostCount = 0;
+let isLoadingMorePosts = false;
+
+// 虚拟滚动相关变量
+const VIRTUAL_WINDOW_SIZE = 8; // 保持渲染的帖子数量（上下各4条，总共8条）
+const ESTIMATED_POST_HEIGHT = 300; // 估算的帖子高度（像素）
+let allPosts = []; // 扁平化的所有帖子列表
+let virtualScrollTop = 0;
+let currentStartIndex = 0;
+let currentEndIndex = 0;
+
 // 多选模式状态
 let isMultiSelectMode = false;
 let selectedMessages = new Set();
@@ -1093,6 +1106,12 @@ async function showPageAsync(pageIdToShow) {
     // Render Weibo posts when the page is shown
     if (pageIdToShow === 'weiboPage') {
         renderAllWeiboPosts();
+    } else {
+        // 离开论坛页面时清理虚拟滚动监听器
+        const weiboPage = document.getElementById('weiboPage');
+        if (weiboPage) {
+            weiboPage.onscroll = null;
+        }
     }
     // Render Moments only on the first time it's opened
     if (pageIdToShow === 'momentsPage' && !isMomentsRendered) {
@@ -1425,21 +1444,307 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
 }
 
 
-function renderAllWeiboPosts() {
-    const container = document.getElementById('weiboContainer');
-    container.innerHTML = '';
-
+// 扁平化帖子数据，每个帖子包含原始信息和位置信息
+function flattenPosts() {
     if (!weiboPosts || weiboPosts.length === 0) {
-        container.innerHTML = '<div class="loading-text">还没有任何帖子，点击右上角“+”来生成吧！</div>';
+        allPosts = [];
         return;
     }
 
-    // Sort posts by creation date, newest first
     const sortedPosts = weiboPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
+    allPosts = [];
+    
     sortedPosts.forEach(storedPost => {
-        renderSingleWeiboPost(storedPost);
+        if (storedPost.data?.posts) {
+            storedPost.data.posts.forEach((post, postIndex) => {
+                allPosts.push({
+                    storedPost,
+                    post,
+                    postIndex,
+                    height: ESTIMATED_POST_HEIGHT,
+                    rendered: false
+                });
+            });
+        }
     });
+}
+
+// 计算虚拟滚动的渲染范围
+function calculateRenderRange(scrollTop) {
+    const containerHeight = document.getElementById('weiboPage').clientHeight;
+    const visibleStartIndex = Math.floor(scrollTop / ESTIMATED_POST_HEIGHT);
+    const visibleEndIndex = Math.ceil((scrollTop + containerHeight) / ESTIMATED_POST_HEIGHT);
+    
+    // 上下各预留4条帖子，总共8条
+    const startIndex = Math.max(0, visibleStartIndex - 4);
+    const endIndex = Math.min(allPosts.length, visibleEndIndex + 4);
+    
+    return { startIndex, endIndex };
+}
+
+function renderAllWeiboPosts(isInitialLoad = true) {
+    const container = document.getElementById('weiboContainer');
+    
+    if (!weiboPosts || weiboPosts.length === 0) {
+        container.innerHTML = '<div class="loading-text">还没有任何帖子，点击右上角"+"来生成吧！</div>';
+        allPosts = [];
+        return;
+    }
+
+    // 扁平化帖子数据
+    flattenPosts();
+    
+    if (isInitialLoad) {
+        currentStartIndex = 0;
+        currentEndIndex = Math.min(allPosts.length, VIRTUAL_WINDOW_SIZE);
+        renderVirtualPosts();
+    }
+
+    // 设置虚拟滚动监听器
+    setupVirtualScrollListener();
+}
+
+// 虚拟滚动渲染函数
+function renderVirtualPosts() {
+    const container = document.getElementById('weiboContainer');
+    
+    // 创建虚拟容器，用于保持总高度
+    container.innerHTML = '';
+    
+    // 添加顶部占位符
+    const topSpacer = document.createElement('div');
+    topSpacer.style.height = `${currentStartIndex * ESTIMATED_POST_HEIGHT}px`;
+    topSpacer.className = 'virtual-spacer-top';
+    container.appendChild(topSpacer);
+    
+    // 渲染当前窗口内的帖子
+    const renderedPosts = [];
+    for (let i = currentStartIndex; i < currentEndIndex; i++) {
+        if (i >= allPosts.length) break;
+        const postElement = renderSingleVirtualPost(allPosts[i], i);
+        if (postElement) {
+            renderedPosts.push(postElement);
+        }
+    }
+    
+    // 添加底部占位符
+    const bottomSpacer = document.createElement('div');
+    const remainingHeight = Math.max(0, (allPosts.length - currentEndIndex) * ESTIMATED_POST_HEIGHT);
+    bottomSpacer.style.height = `${remainingHeight}px`;
+    bottomSpacer.className = 'virtual-spacer-bottom';
+    container.appendChild(bottomSpacer);
+    
+    console.log(`Virtual render: ${currentEndIndex - currentStartIndex} posts (${currentStartIndex}-${currentEndIndex}/${allPosts.length})`);
+    
+    // 调试容器宽度
+    const containerWidth = container.offsetWidth;
+    console.log(`Container width: ${containerWidth}px`);
+    
+    // 强制重排以修复布局问题
+    container.offsetHeight; // 触发重排
+    
+    // 测量实际高度并更新估算值（延迟执行避免布局抖动）
+    setTimeout(() => {
+        updatePostHeights(renderedPosts);
+    }, 50);
+}
+
+// 渲染单个虚拟帖子
+function renderSingleVirtualPost(postData, index) {
+    const container = document.getElementById('weiboContainer');
+    const { storedPost, post, postIndex } = postData;
+    
+    const contact = contacts.find(c => c.id === storedPost.contactId);
+    if (storedPost.contactId && !contact) return null;
+    
+    const postAuthorContact = post.author_type === 'User' ? userProfile : contact;
+    const postAuthorNickname = post.author_type === 'User' ? userProfile.name : (contact ? contact.name : '未知用户');
+    const postAuthorAvatar = postAuthorContact ? postAuthorContact.avatar : '';
+    const otherPartyName = post.author_type === 'User' ? (contact ? contact.name : '') : userProfile.name;
+
+    const postElement = document.createElement('div');
+    postElement.className = 'post';
+    postElement.id = `virtual-post-${index}`;
+    postElement.setAttribute('data-index', index);
+
+    // 使用固定的随机数，避免每次渲染都重新生成
+    const savedRandomRetweet = postData.randomRetweet || (postData.randomRetweet = Math.floor(Math.random() * 500));
+    const savedRandomLike = postData.randomLike || (postData.randomLike = Math.floor(Math.random() * 5000));
+
+    postElement.innerHTML = `
+        <div class="post-header">
+            <div class="avatar">
+                ${postAuthorAvatar ? `<img src="${postAuthorAvatar}" alt="${postAuthorNickname[0]}">` : postAuthorNickname[0]}
+            </div>
+            <div class="post-info">
+                <div class="user-name">
+                    ${postAuthorNickname}
+                    <span class="vip-badge">${post.author_type === 'User' ? '会员' : '蓝星'}</span>
+                </div>
+                <div class="post-time">${formatTime(post.timestamp)}</div>
+                <div class="post-source">来自 ${storedPost.relations} 研究所</div>
+            </div>
+            <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${postIndex})">
+                ...
+                <div class="post-menu-dropdown" id="weibo-menu-${storedPost.id}-${postIndex}">
+                    <div class="menu-item" onclick="deleteWeiboPost('${storedPost.id}', ${postIndex})">删除</div>
+                </div>
+            </div>
+        </div>
+        <div class="post-content">
+            <a href="#" class="hashtag">#${storedPost.hashtag || storedPost.data.relation_tag}#</a>
+            ${post.post_content}
+            ${otherPartyName ? `<a href="#" class="mention">@${otherPartyName}</a>` : ''}
+        </div>
+        <div class="post-image-desc">
+            ${post.image_description}
+        </div>
+        <div class="post-actions">
+            <a href="#" class="action-btn-weibo">
+                <span class="action-icon">🔄</span>
+                <span>${savedRandomRetweet}</span>
+            </a>
+            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}')">
+                <span class="action-icon">💬</span>
+                <span>${post.comments ? post.comments.length : 0}</span>
+            </a>
+            <a href="#" class="action-btn-weibo">
+                <span class="action-icon">👍</span>
+                <span>${savedRandomLike}</span>
+            </a>
+        </div>
+        <div class="comments-section"></div>
+    `;
+
+    container.appendChild(postElement);
+    
+    // 调试：检查帖子宽度
+    setTimeout(() => {
+        const postWidth = postElement.offsetWidth;
+        if (postWidth < 500) { // 如果宽度异常小
+            console.log(`Post ${index} width issue: ${postWidth}px`);
+        }
+    }, 10);
+    
+    // 渲染评论
+    if (post.comments && post.comments.length > 0) {
+        const commentsSection = postElement.querySelector('.comments-section');
+        post.comments.forEach(comment => {
+            const commenterType = comment.commenter_type ? ` (${comment.commenter_type})` : '';
+            
+            const commentDiv = document.createElement('div');
+            commentDiv.className = 'comment';
+            
+            commentDiv.innerHTML = `
+                <span class="comment-user">${comment.commenter_name}${commenterType}:</span>
+                <span class="comment-content">${comment.comment_content}</span>
+                <span class="comment-time">${formatTime(comment.timestamp)}</span>
+            `;
+
+            commentDiv.addEventListener('click', (event) => {
+                event.stopPropagation();
+                replyToComment(comment.commenter_name, `virtual-post-${index}`);
+            });
+            
+            commentsSection.appendChild(commentDiv);
+        });
+    }
+    
+    return postElement;
+}
+
+// 测量并更新帖子的实际高度
+function updatePostHeights(renderedPosts) {
+    if (!renderedPosts || renderedPosts.length === 0) return;
+    
+    let totalMeasuredHeight = 0;
+    let measuredCount = 0;
+    
+    renderedPosts.forEach(postElement => {
+        if (postElement && postElement.offsetHeight > 0) {
+            const index = parseInt(postElement.getAttribute('data-index'));
+            const actualHeight = postElement.offsetHeight + 8; // 包括margin-bottom
+            
+            if (allPosts[index]) {
+                allPosts[index].height = actualHeight;
+                totalMeasuredHeight += actualHeight;
+                measuredCount++;
+            }
+        }
+    });
+    
+    // 更新全局估算高度
+    if (measuredCount > 0) {
+        const newEstimatedHeight = Math.round(totalMeasuredHeight / measuredCount);
+        if (Math.abs(newEstimatedHeight - ESTIMATED_POST_HEIGHT) > 50) {
+            // 只有当差异较大时才更新全局估算值
+            console.log(`Updated estimated height: ${ESTIMATED_POST_HEIGHT} -> ${newEstimatedHeight}`);
+        }
+    }
+}
+
+// 虚拟滚动监听器
+function setupVirtualScrollListener() {
+    const scrollContainer = document.getElementById('weiboPage');
+    if (!scrollContainer) return;
+
+    // 移除旧的监听器
+    scrollContainer.onscroll = null;
+    
+    let ticking = false;
+    let lastScrollTime = 0;
+    
+    scrollContainer.onscroll = () => {
+        const now = performance.now();
+        if (now - lastScrollTime < 16) return; // 限制到60fps
+        lastScrollTime = now;
+        
+        if (!ticking) {
+            requestAnimationFrame(() => {
+                handleVirtualScroll();
+                ticking = false;
+            });
+            ticking = true;
+        }
+    };
+}
+
+function handleVirtualScroll() {
+    const scrollContainer = document.getElementById('weiboPage');
+    const scrollTop = scrollContainer.scrollTop;
+    
+    // 计算新的渲染范围
+    const { startIndex, endIndex } = calculateRenderRange(scrollTop);
+    
+    // 检查是否需要更新渲染范围（增加阈值避免频繁更新）
+    const threshold = 1; // 索引变化阈值
+    const startIndexChanged = Math.abs(startIndex - currentStartIndex) >= threshold;
+    const endIndexChanged = Math.abs(endIndex - currentEndIndex) >= threshold;
+    
+    if (startIndexChanged || endIndexChanged) {
+        const oldStart = currentStartIndex;
+        const oldEnd = currentEndIndex;
+        
+        currentStartIndex = startIndex;
+        currentEndIndex = endIndex;
+        
+        console.log(`Virtual scroll: ${currentStartIndex}-${currentEndIndex}, scroll: ${Math.round(scrollTop)}px`);
+        
+        renderVirtualPosts();
+    }
+}
+
+// 加载更多帖子数据的函数
+async function loadMorePostData() {
+    if (isLoadingMorePosts) return;
+    isLoadingMorePosts = true;
+    
+    // 这里可以实现加载更多帖子数据的逻辑
+    // 目前只是简单的延时，实际应用中可以调用API获取更多帖子
+    setTimeout(() => {
+        console.log('More posts loaded (placeholder)');
+        isLoadingMorePosts = false;
+    }, 1000);
 }
 
 function renderSingleWeiboPost(storedPost) {
