@@ -26,7 +26,6 @@
     <link rel="manifest" href="manifest.json">
     
     <link rel="stylesheet" href="style.css">
-    <script src="config/sync-config.js"></script>
 </head>
 <body>
     <!-- 页面主体内容保持不变 -->
@@ -201,48 +200,85 @@
                 
                 <!-- 导入导出操作 -->
                 <div class="import-export-actions" style="margin: 15px;">
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                        <button type="button" class="form-submit" onclick="exportDatabase()" 
-                                style="flex: 1; background-color: #28a745;">
-                            📤 导出数据
-                        </button>
+                    <!-- 数据库导入导出 -->
+                    <div style="margin-bottom: 15px; padding: 15px; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 4px;">
+                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #2e7d32;">
+                            💾 数据库完整备份
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="form-submit" onclick="exportDatabase()" 
+                                    style="flex: 1; background-color: #28a745;">
+                                📤 导出数据库
+                            </button>
+                            <button type="button" class="form-submit" onclick="triggerFileSelect()" 
+                                    style="flex: 1; background-color: #dc3545;">
+                                📥 导入数据库
+                            </button>
+                        </div>
+                    </div>
 
-                        <button type="button" class="form-submit" id="shareDataBtn" onclick="handleShareData()" style="flex: 1; background-color: #007bff;">
+                    <!-- 文件存储导入导出 -->
+                    <div style="margin-bottom: 15px; padding: 15px; background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px;">
+                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #ef6c00;">
+                            🖼️ 文件存储迁移（图片、表情包、背景）
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button type="button" class="form-submit" onclick="exportFileStorage()" 
+                                    style="flex: 1; background-color: #ff9800;">
+                                📤 导出文件
+                            </button>
+                            <button type="button" class="form-submit" onclick="triggerFileStorageImport()" 
+                                    style="flex: 1; background-color: #f57c00;">
+                                📥 导入文件
+                            </button>
+                        </div>
+                        <div style="font-size: 12px; color: #bf360c; margin-bottom: 10px;">
+                            导出为ZIP格式，保持原始文件格式（jpg/png/gif等），在新环境中导入时会自动匹配对应项目
+                        </div>
+                        
+                        <!-- 文件存储导出选项 -->
+                        <div id="fileExportOptions" style="display: none; margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 4px;">
+                            <div style="font-size: 13px; font-weight: bold; margin-bottom: 8px; color: #333;">选择要导出的文件类型：</div>
+                            <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+                                <input type="checkbox" id="exportAvatars" checked style="margin-right: 5px;">
+                                头像图片（联系人和用户头像）
+                            </label>
+                            <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+                                <input type="checkbox" id="exportBackgrounds" checked style="margin-right: 5px;">
+                                聊天背景图片
+                            </label>
+                            <label style="display: block; margin-bottom: 5px; font-size: 12px;">
+                                <input type="checkbox" id="exportEmojis" checked style="margin-right: 5px;">
+                                表情包图片
+                            </label>
+                            <label style="display: block; margin-bottom: 10px; font-size: 12px;">
+                                <input type="checkbox" id="exportMoments" checked style="margin-right: 5px;">
+                                朋友圈图片
+                            </label>
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" class="form-submit" onclick="confirmFileExport()" 
+                                        style="flex: 1; background-color: #4caf50; font-size: 12px; padding: 6px;">
+                                    ✅ 确认导出
+                                </button>
+                                <button type="button" class="form-submit" onclick="cancelFileExport()" 
+                                        style="flex: 1; background-color: #f44336; font-size: 12px; padding: 6px;">
+                                    ❌ 取消
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 其他功能 -->
+                    <div style="margin-bottom: 15px;">
+                        <button type="button" class="form-submit" id="shareDataBtn" onclick="handleShareData()" 
+                                style="width: 100%; background-color: #007bff;">
                             🔗 数据传输
                         </button>
-
-                        <button type="button" class="form-submit" onclick="triggerFileSelect()" 
-                                style="flex: 1; background-color: #dc3545;">
-                            📥 导入数据
-                        </button>
                     </div>
                     
-                    <!-- 云同步功能 -->
-                    <div style="margin-bottom: 15px; padding: 15px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px;">
-                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #1565c0;">
-                            🌐 云端数据同步
-                        </div>
-                        
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <button type="button" class="form-submit" onclick="uploadDataToCloud()" 
-                                    style="flex: 1; background-color: #4caf50;">
-                                ☁️ 上传到云端
-                            </button>
-                            <button type="button" class="form-submit" onclick="downloadDataFromCloud()" 
-                                    style="flex: 1; background-color: #2196f3;">
-                                ⬇️ 从云端下载
-                            </button>
-                        </div>
-                        
-                        <div style="margin-bottom: 10px;">
-                            <input type="text" id="syncKeyInput" placeholder="输入同步标识符" 
-                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                        </div>
-                        
-                        <div id="syncStatus" style="font-size: 12px; color: #666; text-align: center;"></div>
-                    </div>
                     
                     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+                    <input type="file" id="fileStorageImportInput" accept=".zip,.json" style="display: none;" onchange="handleFileStorageImport(event)">
                     
                     <!-- 手动复制区域 -->
                     <div id="manualCopyArea" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
@@ -1000,6 +1036,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="script.js"></script>
     <script src="js/api.js"></script>
     <script src="utils/promptBuilder.js"></script>
@@ -1010,6 +1047,8 @@
     <script src="utils/imageMigrationManager.js"></script>
     <script src="utils/chatEmojiMigrationManager.js"></script>
     <script src="utils/dataMigrator.js"></script>
+    <script src="utils/fileStorageExporter.js"></script>
+    <script src="utils/fileStorageImporter.js"></script>
     <script src="utils/announcementManager.js"></script>
     <script src="utils/characterMemory.js"></script>
     

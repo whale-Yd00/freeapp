@@ -1356,122 +1356,7 @@ window.DatabaseManager = {
         }
     },
     
-    /**
-     * 上传数据到云端
-     */
-    async uploadDataToCloud(syncKey) {
-        try {
-            // 获取所有数据（排除图片等大文件）
-            const allStores = Array.from(dbManager.db.objectStoreNames);
-            const exportStores = allStores.filter(store => !dbManager.excludedFromManualExport.includes(store));
-            
-            const data = await dbManager.exportDatabase({ stores: exportStores });
-            
-            // 清空头像base64数据以减少数据大小
-            this.clearAvatarData(data);
-            
-            // 调用上传API - 使用配置的URL
-            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('upload') : '/api/sync/upload';
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    syncKey: syncKey,
-                    data: data
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok) {
-                return { success: true, message: '数据上传成功！' };
-            } else {
-                return { success: false, error: result.error || '上传失败' };
-            }
-        } catch (error) {
-            console.error('上传数据失败:', error);
-            return { success: false, error: error.message };
-        }
-    },
     
-    /**
-     * 从云端下载数据
-     */
-    async downloadDataFromCloud(syncKey) {
-        try {
-            const apiUrl = window.SyncConfig ? window.SyncConfig.getApiUrl('download') : '/api/sync/download';
-            const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    syncKey: syncKey
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (response.ok) {
-                // 验证下载的数据
-                const validation = dbManager.validateFileIntegrity(result.data);
-                if (!validation.valid) {
-                    return { success: false, error: validation.error };
-                }
-                
-                // 导入数据（覆盖模式）
-                const importResult = await dbManager.importDatabase(result.data, { 
-                    overwrite: true,
-                    validateVersion: false 
-                });
-                
-                return { 
-                    success: true, 
-                    message: `数据下载成功！导入了 ${importResult.importedStores?.length || 0} 个数据表`,
-                    result: importResult
-                };
-            } else {
-                return { success: false, error: result.error || '下载失败' };
-            }
-        } catch (error) {
-            console.error('下载数据失败:', error);
-            return { success: false, error: error.message };
-        }
-    },
-    
-    /**
-     * 清空导出数据中的头像base64数据
-     */
-    clearAvatarData(data) {
-        // 清空用户资料中的头像
-        if (data.userProfile && Array.isArray(data.userProfile)) {
-            data.userProfile.forEach(profile => {
-                if (profile.avatar) {
-                    profile.avatar = '';
-                }
-            });
-        }
-        
-        // 清空联系人中的头像
-        if (data.contacts && Array.isArray(data.contacts)) {
-            data.contacts.forEach(contact => {
-                if (contact.avatar) {
-                    contact.avatar = '';
-                }
-            });
-        }
-        
-        // 清空朋友圈中的头像
-        if (data.moments && Array.isArray(data.moments)) {
-            data.moments.forEach(moment => {
-                if (moment.authorAvatar) {
-                    moment.authorAvatar = '';
-                }
-            });
-        }
-    }
 };
 
 // 页面加载完成后初始化
@@ -1499,124 +1384,6 @@ if (typeof document !== 'undefined') {
     }
 }
 
-// 云同步相关函数
-window.uploadDataToCloud = async function() {
-    const syncKeyInput = document.getElementById('syncKeyInput');
-    const syncStatus = document.getElementById('syncStatus');
-    
-    if (!syncKeyInput || !syncKeyInput.value.trim()) {
-        if (typeof showToast === 'function') {
-            showToast('请输入同步标识符');
-        } else {
-            alert('请输入同步标识符');
-        }
-        return;
-    }
-    
-    const syncKey = syncKeyInput.value.trim();
-    
-    try {
-        syncStatus.textContent = '正在上传数据到云端...';
-        syncStatus.style.color = '#1565c0';
-        
-        const result = await window.DatabaseManager.uploadDataToCloud(syncKey);
-        
-        if (result.success) {
-            syncStatus.textContent = '上传成功！数据已保存到云端';
-            syncStatus.style.color = '#2e7d32';
-            
-            if (typeof showToast === 'function') {
-                showToast('数据上传成功！');
-            }
-        } else {
-            const errorMessage = (typeof result.error === 'object' && result.error !== null)
-                ? JSON.stringify(result.error)
-                : result.error;
-            syncStatus.textContent = '上传失败: ' + errorMessage;
-            syncStatus.style.color = '#d32f2f';
-            
-            if (typeof showToast === 'function') {
-                showToast('上传失败: ' + errorMessage);
-            }
-        }
-    } catch (error) {
-        syncStatus.textContent = '上传出错: ' + error.message;
-        syncStatus.style.color = '#d32f2f';
-        
-        if (typeof showToast === 'function') {
-            showToast('上传出错: ' + error.message);
-        }
-        console.error('云端上传失败:', error);
-    }
-};
-
-window.downloadDataFromCloud = async function() {
-    const syncKeyInput = document.getElementById('syncKeyInput');
-    const syncStatus = document.getElementById('syncStatus');
-    
-    if (!syncKeyInput || !syncKeyInput.value.trim()) {
-        if (typeof showToast === 'function') {
-            showToast('请输入同步标识符');
-        } else {
-            alert('请输入同步标识符');
-        }
-        return;
-    }
-    
-    const syncKey = syncKeyInput.value.trim();
-    
-    const confirmMessage = '从云端下载数据将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
-    
-    if (!confirm(confirmMessage)) {
-        return;
-    }
-    
-    try {
-        syncStatus.textContent = '正在从云端下载数据...';
-        syncStatus.style.color = '#1565c0';
-        
-        const result = await window.DatabaseManager.downloadDataFromCloud(syncKey);
-        
-        if (result.success) {
-            syncStatus.textContent = '下载成功！正在刷新页面...';
-            syncStatus.style.color = '#2e7d32';
-            
-            // 刷新统计信息
-            if (typeof window.refreshDatabaseStats === 'function') {
-                window.refreshDatabaseStats();
-            }
-            
-            // 清空内存数据
-            window.clearMemoryData();
-            
-            if (typeof showToast === 'function') {
-                showToast('下载成功！正在刷新页面...');
-            }
-            
-            alert(result.message + '\n页面将自动刷新以更新显示');
-            
-            // 自动刷新页面
-            setTimeout(() => {
-                window.location.reload();
-            }, 1000);
-        } else {
-            syncStatus.textContent = '下载失败: ' + result.error;
-            syncStatus.style.color = '#d32f2f';
-            
-            if (typeof showToast === 'function') {
-                showToast('下载失败: ' + result.error);
-            }
-        }
-    } catch (error) {
-        syncStatus.textContent = '下载出错: ' + error.message;
-        syncStatus.style.color = '#d32f2f';
-        
-        if (typeof showToast === 'function') {
-            showToast('下载出错: ' + error.message);
-        }
-        console.error('云端下载失败:', error);
-    }
-};
 
 // 清空内存数据的辅助函数
 window.clearMemoryData = function() {
@@ -1646,3 +1413,277 @@ window.clearMemoryData = function() {
 // 将HTML中的script内容整合到这里
 window.triggerFileSelect = triggerFileSelect;
 window.handleFileSelect = handleFileSelect;
+
+// === 文件存储导入导出功能 ===
+
+/**
+ * 导出文件存储数据
+ */
+window.exportFileStorage = function() {
+    // 显示选项面板
+    const optionsPanel = document.getElementById('fileExportOptions');
+    if (optionsPanel) {
+        optionsPanel.style.display = optionsPanel.style.display === 'none' ? 'block' : 'none';
+    }
+};
+
+/**
+ * 确认文件导出
+ */
+window.confirmFileExport = async function() {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在导出文件存储数据...');
+        }
+
+        // 获取选项
+        const includeAvatars = document.getElementById('exportAvatars')?.checked ?? true;
+        const includeBackgrounds = document.getElementById('exportBackgrounds')?.checked ?? true;
+        const includeEmojis = document.getElementById('exportEmojis')?.checked ?? true;
+        const includeMoments = document.getElementById('exportMoments')?.checked ?? true;
+
+        const options = {
+            includeAvatars,
+            includeBackgrounds,
+            includeEmojis,
+            includeMoments
+        };
+
+        // 执行导出
+        const result = await window.FileStorageExporter.downloadFileStorageAsZip(options);
+
+        if (result.success) {
+            if (typeof showToast === 'function') {
+                showToast(result.message);
+            } else {
+                alert(result.message);
+            }
+        } else {
+            throw new Error(result.error || '导出失败');
+        }
+
+        // 隐藏选项面板
+        document.getElementById('fileExportOptions').style.display = 'none';
+
+    } catch (error) {
+        console.error('文件存储导出失败:', error);
+        if (typeof showToast === 'function') {
+            showToast('导出失败: ' + error.message);
+        } else {
+            alert('导出失败: ' + error.message);
+        }
+    }
+};
+
+/**
+ * 取消文件导出
+ */
+window.cancelFileExport = function() {
+    document.getElementById('fileExportOptions').style.display = 'none';
+};
+
+/**
+ * 触发文件存储导入
+ */
+window.triggerFileStorageImport = function() {
+    const fileInput = document.getElementById('fileStorageImportInput');
+    if (fileInput) {
+        fileInput.click();
+    } else {
+        console.error('未找到文件存储导入元素！');
+        if (typeof showToast === 'function') {
+            showToast('导入功能不可用，请刷新页面');
+        } else {
+            alert('导入功能不可用，请刷新页面');
+        }
+    }
+};
+
+/**
+ * 处理文件存储导入
+ */
+window.handleFileStorageImport = async function(event) {
+    const file = event.target.files[0];
+    
+    if (!file) {
+        return;
+    }
+
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在处理文件存储导入...');
+        }
+
+        // 检查文件类型
+        const isZipFile = file.name.toLowerCase().endsWith('.zip');
+        const fileTypeText = isZipFile ? 'ZIP文件' : 'JSON文件';
+        
+        // 显示确认对话框
+        const confirmMessage = `导入${fileTypeText}存储数据将会：\n\n` +
+                              '• 自动匹配现有的联系人、表情包等\n' +
+                              '• 对于匹配的项目，可选择覆盖或跳过\n' +
+                              '• 对于未匹配的项目，可选择创建新项\n\n' +
+                              '是否继续导入？';
+
+        if (!confirm(confirmMessage)) {
+            // 重置文件输入
+            event.target.value = '';
+            return;
+        }
+
+        // 显示导入选项对话框
+        const overwrite = confirm('对于已存在的文件，是否要覆盖？\n\n' +
+                                 '选择"确定"覆盖现有文件\n' +
+                                 '选择"取消"跳过已存在的文件');
+
+        const createMissing = confirm('对于无法匹配的文件，是否要创建新项？\n\n' +
+                                    '选择"确定"创建新的引用项\n' +
+                                    '选择"取消"跳过无法匹配的文件');
+
+        // 执行导入
+        await performFileStorageImport(file, {
+            overwrite,
+            createMissing,
+            autoMatch: true,
+            isZipFile: isZipFile
+        });
+
+    } catch (error) {
+        console.error('文件存储导入失败:', error);
+        if (typeof showToast === 'function') {
+            showToast('导入失败: ' + error.message);
+        } else {
+            alert('导入失败: ' + error.message);
+        }
+    } finally {
+        // 重置文件输入
+        event.target.value = '';
+    }
+};
+
+/**
+ * 执行文件存储导入
+ */
+async function performFileStorageImport(file, options) {
+    try {
+        if (typeof showToast === 'function') {
+            showToast('正在分析文件存储数据...');
+        }
+
+        let result;
+        
+        if (options.isZipFile) {
+            // ZIP文件导入
+            if (typeof showToast === 'function') {
+                showToast('正在解析ZIP文件...');
+            }
+
+            // 直接执行ZIP导入（已包含预览功能）
+            result = await window.FileStorageImporter.importFromZipFile(file, {
+                ...options,
+                progressCallback: (progress) => {
+                    if (progress.phase === 'importing') {
+                        const message = `正在导入 ${getCategoryDisplayName(progress.folderName)}: ${progress.current}/${progress.total}`;
+                        if (typeof showToast === 'function') {
+                            showToast(message);
+                        }
+                    }
+                }
+            });
+        } else {
+            // JSON文件导入（原有逻辑）
+            const importData = await window.FileStorageExporter.readImportFile(file);
+            const preview = await window.FileStorageImporter.generateImportPreview(importData);
+
+            // 显示预览信息
+            const previewMessage = `文件存储导入预览：\n\n` +
+                                  `总文件数：${preview.totalFiles} 个\n` +
+                                  `分类情况：\n` +
+                                  Object.entries(preview.categories).map(([category, info]) => 
+                                      `• ${getCategoryDisplayName(category)}: ${info.fileCount} 个文件`
+                                  ).join('\n') + '\n\n' +
+                                  '是否继续导入？';
+
+            if (!confirm(previewMessage)) {
+                return;
+            }
+
+            if (typeof showToast === 'function') {
+                showToast('正在执行智能导入...');
+            }
+
+            // 执行智能导入
+            result = await window.FileStorageImporter.smartImport(importData, {
+                ...options,
+                progressCallback: (progress) => {
+                    if (progress.phase === 'importing') {
+                        const message = `正在导入 ${getCategoryDisplayName(progress.groupKey)}: ${progress.current}/${progress.total}`;
+                        if (typeof showToast === 'function') {
+                            showToast(message);
+                        }
+                    }
+                }
+            });
+        }
+
+        if (result.success) {
+            const results = result.results;
+            const successMessage = `文件存储导入完成！\n\n` +
+                                  `处理文件：${results.processed} 个\n` +
+                                  `成功匹配：${results.matched} 个\n` +
+                                  `新建项目：${results.created} 个\n` +
+                                  `跳过文件：${results.skipped} 个\n` +
+                                  `失败文件：${results.failed} 个`;
+
+            if (typeof showToast === 'function') {
+                showToast('导入成功！刷新页面以查看效果');
+            }
+
+            alert(successMessage + '\n\n页面将自动刷新以更新显示');
+
+            // 刷新页面
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            throw new Error(result.error || '导入失败');
+        }
+
+    } catch (error) {
+        console.error('performFileStorageImport 失败:', error);
+        throw error;
+    }
+}
+
+/**
+ * 获取分类显示名称
+ */
+function getCategoryDisplayName(category) {
+    const displayNames = {
+        'avatars': '头像图片',
+        'user_avatars': '用户头像',
+        'backgrounds': '聊天背景',
+        'emojis': '表情包',
+        'moments': '朋友圈图片'
+    };
+    return displayNames[category] || category;
+}
+
+/**
+ * 获取文件存储统计信息
+ */
+window.getFileStorageStats = async function() {
+    try {
+        const stats = await window.FileStorageExporter.getStorageStatistics();
+        return {
+            success: true,
+            stats: stats
+        };
+    } catch (error) {
+        console.error('获取文件存储统计失败:', error);
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+};
