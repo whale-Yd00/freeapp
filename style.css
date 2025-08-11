@@ -1916,12 +1916,25 @@ body {
     background: #f7f8fa;
     min-height: 100%;
     padding-bottom: 50px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 确保虚拟滚动时的布局稳定 */
+.weibo-container > .post {
+    min-width: 0; /* 防止flex项目收缩过度 */
+    max-width: 100%;
 }
 
 .post {
     background: white;
     margin-bottom: 8px;
     padding: 16px;
+    width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
 }
 
 .post-header {
@@ -2130,6 +2143,34 @@ body {
 }
 .load-more-messages:hover {
     text-decoration: underline;
+}
+
+/* 加载更多帖子按钮 */
+.load-more-posts {
+    text-align: center;
+    padding: 15px;
+    color: #576b95;
+    font-size: 14px;
+    cursor: pointer;
+    margin: 10px 0;
+    border: 1px dashed #d0d0d0;
+    border-radius: 8px;
+    background: #f9f9f9;
+}
+.load-more-posts:hover {
+    background: #f0f0f0;
+    text-decoration: underline;
+}
+
+/* 虚拟滚动占位符样式 */
+.virtual-spacer-top,
+.virtual-spacer-bottom {
+    width: 100%;
+    background: transparent;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 /* 确认对话框样式 */
