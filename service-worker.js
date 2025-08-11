@@ -5,8 +5,6 @@ const urlsToCache = [
   '/style.css',
   '/script.js',
   '/js/api.js',
-  '/lib/db.js',
-  '/config/sync-config.js',
   '/utils/promptBuilder.js',
   '/utils/memoryTable.js',
   '/utils/fileStorageManager.js',
