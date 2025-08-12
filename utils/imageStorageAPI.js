@@ -268,6 +268,96 @@ class ImageStorageAPI {
     }
 
     /**
+     * 存储朋友圈多图片
+     * @param {Array} imageDataArray - 图片数据数组
+     * @param {string} momentId - 朋友圈动态ID
+     * @returns {Promise<Array>} 返回fileId数组
+     */
+    async storeMomentImages(imageDataArray, momentId) {
+        await this.init();
+
+        try {
+            const fileIds = [];
+            for (let i = 0; i < imageDataArray.length; i++) {
+                const imageData = imageDataArray[i];
+                const result = await this.fileManager.storeFile(imageData, {
+                    type: 'moment',
+                    momentId: momentId,
+                    imageIndex: i
+                });
+
+                await this.fileManager.createFileReference(
+                    result.fileId,
+                    'moment_image',
+                    `${momentId}_${i}`, // 使用索引区分多张图片
+                    {
+                        storedAt: new Date().toISOString(),
+                        imageIndex: i,
+                        momentId: momentId
+                    }
+                );
+
+                fileIds.push(result.fileId);
+            }
+
+            console.log(`朋友圈多图片存储成功: ${fileIds.length}张图片`);
+            return fileIds;
+
+        } catch (error) {
+            console.error('存储朋友圈多图片失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取朋友圈多图片URLs
+     * @param {string} momentId - 朋友圈动态ID
+     * @param {number} imageCount - 图片数量
+     * @returns {Promise<Array>} 返回图片URL数组
+     */
+    async getMomentImagesURLs(momentId, imageCount) {
+        await this.init();
+
+        try {
+            const urls = [];
+            for (let i = 0; i < imageCount; i++) {
+                const referenceKey = `${momentId}_${i}`;
+                const reference = await this.fileManager.getFileReference('moment_image', referenceKey);
+                if (reference) {
+                    const url = await this.fileManager.createFileURL(reference.fileId);
+                    urls.push(url);
+                } else {
+                    console.warn(`朋友圈图片不存在: ${referenceKey}`);
+                }
+            }
+            return urls;
+        } catch (error) {
+            console.error('获取朋友圈多图片失败:', error);
+            return [];
+        }
+    }
+
+    /**
+     * 删除朋友圈所有图片
+     * @param {string} momentId - 朋友圈动态ID
+     * @param {number} imageCount - 图片数量
+     */
+    async deleteMomentImages(momentId, imageCount) {
+        await this.init();
+
+        try {
+            for (let i = 0; i < imageCount; i++) {
+                const referenceKey = `${momentId}_${i}`;
+                await this.deleteImage('moment_image', referenceKey);
+            }
+            console.log(`朋友圈图片删除成功: ${momentId}`);
+        } catch (error) {
+            console.error('删除朋友圈图片失败:', error);
+            throw error;
+        }
+    }
+
+    /**
      * 删除图片
      * @param {string} referenceType - 引用类型
      * @param {string} referenceKey - 引用键
@@ -428,6 +518,85 @@ class ImageStorageAPI {
         } catch (error) {
             console.error('检查迁移需求失败:', error);
             return false;
+        }
+    }
+
+    /**
+     * 存储banner图片
+     * @param {string|File|Blob} imageData - 图片数据（base64字符串、File对象或Blob对象）
+     * @param {string} bannerId - banner标识符
+     * @returns {Promise<string>} 文件ID
+     */
+    async storeBanner(imageData, bannerId) {
+        await this.init();
+        
+        try {
+            console.log('开始存储banner图片，bannerId:', bannerId);
+            
+            // 处理不同类型的图片数据
+            let blob;
+            if (imageData instanceof Blob) {
+                blob = imageData;
+                console.log('处理Blob数据，大小:', blob.size);
+            } else if (imageData instanceof File) {
+                blob = imageData;
+                console.log('处理File数据，大小:', blob.size);
+            } else if (typeof imageData === 'string' && imageData.startsWith('data:image/')) {
+                // 处理base64数据
+                blob = await this._base64ToBlob(imageData);
+                console.log('处理base64数据，转换后大小:', blob.size);
+            } else {
+                throw new Error('不支持的图片数据格式');
+            }
+
+            // 存储文件
+            const fileResult = await this.fileManager.storeFile(blob, 'image/jpeg');
+            console.log('文件存储完成，结果:', fileResult);
+            
+            const fileId = fileResult.fileId; // 提取实际的文件ID字符串
+            console.log('提取的文件ID字符串:', fileId);
+            
+            // 创建引用
+            const referenceId = `banner_${bannerId}`;
+            console.log('创建文件引用，引用ID:', referenceId, '文件ID:', fileId);
+            await this.fileManager.createFileReference(fileId, 'banner', bannerId);
+            
+            console.log(`Banner图片存储成功: ${bannerId} -> ${fileId}`);
+            return fileId;
+            
+        } catch (error) {
+            console.error('存储banner图片失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取banner图片URL
+     * @param {string} bannerId - banner标识符
+     * @returns {Promise<string|null>} 图片URL，如果不存在返回null
+     */
+    async getBannerURL(bannerId) {
+        await this.init();
+        
+        try {
+            console.log('查找banner，bannerId:', bannerId);
+            const referenceResult = await this.fileManager.getFileReference('banner', bannerId);
+            console.log('获取到的引用结果:', referenceResult);
+            
+            if (!referenceResult || !referenceResult.fileId) {
+                console.log('未找到banner文件引用或文件ID');
+                return null;
+            }
+            
+            const fileId = referenceResult.fileId;
+            console.log('提取的文件ID:', fileId);
+            const url = await this.fileManager.createFileURL(fileId);
+            console.log('生成的banner URL:', url);
+            return url;
+            
+        } catch (error) {
+            console.error('获取banner图片URL失败:', error);
+            return null;
         }
     }
 }

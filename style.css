@@ -716,6 +716,188 @@ body {
     display: flex;
     flex-direction: column;
     z-index: 120;
+    padding-bottom: calc(50px + env(safe-area-inset-bottom)); /* 只保留底部padding */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+
+/* 朋友圈图片网格样式 */
+.moment-images-preview {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin-top: 10px;
+    max-width: 300px;
+}
+
+.moment-image-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+.moment-image-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.moment-image-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    background-color: rgba(255, 0, 0, 0.8);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* 朋友圈展示图片网格 */
+.moment-images-grid {
+    display: grid;
+    gap: 4px;
+    margin: 10px 0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.moment-images-grid.grid-1 {
+    grid-template-columns: 1fr;
+    max-width: 200px;
+}
+
+.moment-images-grid.grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 200px;
+}
+
+.moment-images-grid.grid-3,
+.moment-images-grid.grid-4,
+.moment-images-grid.grid-5,
+.moment-images-grid.grid-6,
+.moment-images-grid.grid-7,
+.moment-images-grid.grid-8,
+.moment-images-grid.grid-9 {
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 200px;
+}
+
+.moment-image-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+}
+
+.moment-grid-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+}
+
+.moment-image-error {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 12px;
+}
+
+.image-error-icon {
+    font-size: 24px;
+    margin-bottom: 4px;
+    opacity: 0.6;
+}
+
+.image-error-text {
+    font-size: 10px;
+    text-align: center;
+}
+
+/* 评论时间样式 */
+.comment-time {
+    font-size: 11px;
+    color: #999;
+    margin-left: 8px;
+}
+
+/* 朋友圈三点菜单按钮 */
+.moment-menu-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    background-color: rgba(0, 0, 0, 0.1);
+    color: #666;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s;
+}
+
+.moment-menu-btn:hover {
+    background-color: rgba(0, 0, 0, 0.2);
+    color: #333;
+}
+
+/* 朋友圈菜单 */
+.moment-menu {
+    position: absolute;
+    top: 32px;
+    right: 0px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    min-width: 120px;
+}
+
+.moment-menu-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.2s;
+}
+
+.moment-menu-item:last-child {
+    border-bottom: none;
+}
+
+.moment-menu-item:hover {
+    background-color: #f5f5f5;
+}
+
+.moment-menu-item:first-child:hover {
+    color: #e53e3e;
+}
+
+.moment-header {
+    position: relative;
 }
 
 .moments-page.active {
@@ -736,6 +918,8 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: 15px;
+    padding-bottom: calc(65px + env(safe-area-inset-bottom)); /* 确保内容不被导航栏遮挡 */
+    -webkit-overflow-scrolling: touch;
 }
 
 .moments-empty {
@@ -775,6 +959,7 @@ body {
     border-radius: 8px;
     padding: 15px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-top: 8px;
 }
 
 .moment-header {
@@ -783,19 +968,6 @@ body {
     margin-bottom: 10px;
 }
 
-.moment-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 4px;
-    margin-right: 10px;
-    background-color: #07c160;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 16px;
-    overflow: hidden;
-}
 
 .moment-avatar img {
     width: 100%;
@@ -821,7 +993,6 @@ body {
 .moment-content {
     font-size: 15px;
     line-height: 1.5;
-    margin-bottom: 10px;
 }
 
 .moment-image {
@@ -2925,4 +3096,539 @@ body {
     font-size: 12px;
     color: #999;
     margin-top: 5px;
+}
+
+/* === 个人主页样式 === */
+.user-profile-page {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease-in-out;
+    background-color: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+}
+
+.user-profile-page.active {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 10;
+}
+
+.user-profile-header {
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 10px 15px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    padding-left: calc(15px + env(safe-area-inset-left));
+    padding-right: calc(15px + env(safe-area-inset-right));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 0.5px solid rgba(0, 0, 0, 0.1);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: calc(44px + env(safe-area-inset-top));
+}
+
+.user-profile-content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-top: calc(44px + env(safe-area-inset-top));
+    padding-bottom: calc(50px + env(safe-area-inset-bottom)); /* 为底部导航栏留空间 */
+    position: relative; /* 创建堆叠上下文 */
+    z-index: 0; /* 设置基础层级 */
+}
+
+/* Banner区域 - 占屏幕2/5高度 */
+.user-profile-banner {
+    width: 100%;
+    height: 40vh; /* 2/5屏幕高度 */
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    position: relative;
+    overflow: visible; /* 允许avatar超出banner边界 */
+    z-index: 2; /* 确保banner在朋友圈内容之上 */
+}
+
+/* Avatar容器 - 在banner右下角 */
+.user-profile-avatar-container {
+    position: absolute;
+    right: 20px;
+    bottom: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 15px; /* 名字和头像之间的间距 */
+    z-index: 20; /* 确保整个容器在最上层 */
+}
+
+/* Avatar样式 */
+.user-profile-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    background-color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+    border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    background-size: cover;
+    background-position: center;
+    transform: translateY(50%); /* 下三等分线与banner底部齐平 */
+    z-index: 25; /* 确保头像在所有内容之上 */
+    position: relative; /* 使z-index生效 */
+}
+
+/* 用户名 - 在avatar上三等分线左侧，右对齐 */
+.user-profile-name {
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    text-align: right;
+    max-width: 200px;
+    word-wrap: break-word;
+    align-self: flex-end; /* 与avatar底部对齐 */
+    margin-bottom: 13px; /* 向上偏移，对齐avatar的上三等分线（40px-27px=13px） */
+}
+
+/* 朋友圈内容区域 */
+.user-profile-moments {
+    background-color: #f5f5f5; /* 改为灰色背景，与页面背景一致 */
+    min-height: 60vh;
+    padding-top: 40px; /* 给avatar留出空间 */
+    position: relative;
+    z-index: 1; /* 确保在头像下方 */
+    overflow: visible;
+}
+
+.user-profile-moments-empty {
+    text-align: center;
+    padding: 80px 20px;
+    color: #999;
+}
+
+.user-profile-moments-list {
+    padding: 0 15px;
+    background-color: #f5f5f5; /* 确保列表背景也是灰色 */
+    overflow: visible;
+}
+
+/* 朋友圈动态项样式 */
+.user-profile-moment-item {
+    background-color: #fff;
+    margin-bottom: 8px;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: visible;
+}
+
+.user-profile-moment-content {
+    font-size: 16px;
+    line-height: 1.5;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.user-profile-moment-images {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.user-profile-moment-image {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.user-profile-moment-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #999;
+}
+
+.user-profile-moment-time {
+    flex: 1;
+}
+
+.user-profile-moment-actions {
+    display: flex;
+    gap: 15px;
+}
+
+.user-profile-moment-action {
+    color: #999;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.user-profile-moment-action:hover {
+    color: #07c160;
+}
+
+/* === 朋友圈交互功能样式 === */
+.moment-actions-container {
+    position: relative;
+    display: inline-block;
+}
+
+.moment-collapse-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 20px;
+    background: #f0f0f0;
+    border: none;
+    border-radius: 10px;
+    font-size: 12px;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.moment-collapse-btn:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.moment-actions-menu {
+    position: absolute;
+    display: flex;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+        bottom: 120%;
+    left: 50%;
+    transform: translate(-50%, 10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 9999;
+}
+
+.moment-actions-menu.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+}
+
+.moment-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    user-select: none;
+}
+
+.moment-action-btn:first-child {
+    border-radius: 15px 0 0 15px;
+}
+
+.moment-action-btn:last-child {
+    border-radius: 0 15px 15px 0;
+}
+
+.moment-action-btn:only-child {
+    border-radius: 15px;
+}
+
+.moment-action-btn:hover {
+    background: #f5f5f5;
+}
+
+.moment-likes {
+    margin-top: 8px;
+    padding: 8px 0;
+    font-size: 13px;
+    color: #576b95;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.moment-likes:empty {
+    display: none;
+}
+
+.moment-comments {
+    margin-top: 8px;
+}
+
+.moment-comment {
+    margin-bottom: 8px;
+    padding: 8px;
+    background: #f8f8f8;
+    border-radius: 4px;
+    font-size: 13px;
+    position: relative;
+}
+
+.moment-comment-author {
+    color: #576b95;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.moment-comment-content {
+    color: #333;
+}
+
+.moment-comment-reply-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: all 0.3s ease;
+}
+
+.moment-comment-reply-btn:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.moment-reply-input-container {
+    margin-top: 8px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    display: none;
+}
+
+.moment-reply-input-container.active {
+    display: block;
+}
+
+.moment-reply-input {
+    width: 100%;
+    border: none;
+    outline: none;
+    resize: none;
+    font-size: 13px;
+    padding: 8px;
+    min-height: 60px;
+    border-radius: 4px;
+    background: #f8f8f8;
+}
+
+.moment-reply-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.moment-reply-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.moment-reply-submit {
+    background: #07c160;
+    color: white;
+}
+
+.moment-reply-submit:hover {
+    background: #06ad56;
+}
+
+.moment-reply-cancel {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.moment-reply-cancel:hover {
+    background: #e0e0e0;
+}
+
+/* === Banner上传模态框样式 === */
+.user-profile-banner:hover .banner-upload-hint {
+    opacity: 1 !important;
+}
+
+.banner-upload-container {
+    margin-bottom: 20px;
+}
+
+.banner-upload-area {
+    border: 2px dashed #ddd;
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: #fafafa;
+}
+
+.banner-upload-area:hover {
+    border-color: #667eea;
+    background: #f8f9ff;
+}
+
+.banner-upload-area.dragover {
+    border-color: #667eea;
+    background: #e8f0ff;
+}
+
+.banner-upload-icon {
+    font-size: 48px;
+    margin-bottom: 15px;
+    opacity: 0.6;
+}
+
+.banner-upload-text {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.banner-upload-hint {
+    font-size: 12px;
+    color: #999;
+}
+
+.banner-preview-container {
+    margin-top: 20px;
+}
+
+.banner-preview-title {
+    font-size: 16px;
+    color: #333;
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.banner-preview-wrapper {
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 15px;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#bannerPreviewCanvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.banner-crop-controls {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.banner-crop-controls label {
+    font-size: 14px;
+    color: #333;
+    min-width: 100px;
+}
+
+#bannerCropSlider {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: #ddd;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+#bannerCropSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+#bannerCropSlider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #667eea;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.banner-upload-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-secondary {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    color: #666;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    background: #f5f5f5;
+    border-color: #bbb;
+}
+
+.btn-primary {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    background: #667eea;
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background: #5a67d8;
 }

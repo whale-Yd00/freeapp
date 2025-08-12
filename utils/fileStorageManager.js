@@ -325,14 +325,25 @@ class FileStorageManager {
                 metadata: metadata
             };
 
+            console.log('准备存储文件引用:', reference);
             const request = store.put(reference);
 
             request.onsuccess = () => {
+                console.log('文件引用存储成功:', reference);
                 resolve(reference);
             };
 
             request.onerror = () => {
+                console.error('文件引用存储失败:', request.error);
                 reject(request.error);
+            };
+
+            transaction.oncomplete = () => {
+                console.log('文件引用事务完成');
+            };
+
+            transaction.onerror = () => {
+                console.error('文件引用事务失败:', transaction.error);
             };
         });
     }
@@ -349,13 +360,17 @@ class FileStorageManager {
             const transaction = this.db.transaction(['fileReferences'], 'readonly');
             const store = transaction.objectStore('fileReferences');
             const referenceId = `${referenceType}_${referenceKey}`;
+            console.log('查找文件引用，引用ID:', referenceId);
             const request = store.get(referenceId);
 
             request.onsuccess = () => {
-                resolve(request.result || null);
+                const result = request.result;
+                console.log('文件引用查找结果:', result);
+                resolve(result || null);
             };
 
             request.onerror = () => {
+                console.error('文件引用查找失败:', request.error);
                 reject(request.error);
             };
         });
