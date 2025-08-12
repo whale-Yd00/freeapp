@@ -2210,16 +2210,17 @@ async function handleGenerateMoment(event) {
         // 获取用户信息
         const userProfile = await getUserProfile();
         
-        // 一次性生成朋友圈内容和评论
+        // 一次性生成朋友圈内容、图片关键词和评论
         const momentData = await generateMomentAndComments(character, userProfile, topic);
         
         let imageUrl = null;
         
-        // 如果提供了Unsplash API Key，尝试获取配图
-        if (unsplashKey) {
+        // 如果提供了Unsplash API Key 且 AI返回了关键词，尝试获取配图
+        if (unsplashKey && momentData.imageKeyword) {
             showToast('正在获取配图...');
             try {
-                imageUrl = await getUnsplashImage(momentData.content, unsplashKey);
+                // 使用AI返回的关键词进行搜索
+                imageUrl = await getUnsplashImage(momentData.imageKeyword, unsplashKey);
             } catch (imageError) {
                 console.warn('获取Unsplash图片失败:', imageError);
                 // 即使图片获取失败也继续发布朋友圈
@@ -2253,8 +2254,9 @@ async function handleGenerateMoment(event) {
 }
 
 // 获取Unsplash图片
-async function getUnsplashImage(content, apiKey) {
-    return await fetchMatchingImageForPublish(content, apiKey);
+async function getUnsplashImage(searchQuery, apiKey) {
+    // 现在此函数直接调用新的 fetchMatchingImageForPublish
+    return await fetchMatchingImageForPublish(searchQuery, apiKey);
 }
 
 // 一次性生成朋友圈内容和评论
@@ -2292,7 +2294,9 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
             [{ role: 'user', content: systemPrompt }],
             {
                 temperature: 0.9,
-                max_tokens: 2000
+                max_tokens: 2000,
+                // 强制要求返回JSON格式，以匹配新的提示词结构
+                response_format: { type: "json_object" },
             },
             apiSettings.timeout * 1000 || 60000
         );
@@ -2311,18 +2315,7 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
             momentData = JSON.parse(rawContent);
         } catch (parseError) {
             console.error('解析JSON失败:', parseError, '原始内容:', rawContent);
-            // 如果JSON解析失败，尝试提取内容
-            const contentMatch = rawContent.match(/"content"\s*:\s*"([^"]+)"/);
-            const content = contentMatch ? contentMatch[1] : null;
-            
-            if (!content) {
-                throw new Error('无法从响应中提取朋友圈内容: ' + rawContent);
-            }
-            
-            momentData = {
-                content: content,
-                comments: []
-            };
+            throw new Error('AI返回的数据格式不正确，无法解析为JSON。');
         }
         
         // 确保返回格式正确
@@ -2333,6 +2326,9 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
         if (!Array.isArray(momentData.comments)) {
             momentData.comments = [];
         }
+
+        // 获取图片关键词，可能为 null
+        const imageKeyword = momentData.imageKeyword || null;
         
         // 转换评论格式以兼容现有系统
         const formattedComments = momentData.comments.map(comment => ({
@@ -2344,6 +2340,7 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
         
         const result = {
             content: momentData.content,
+            imageKeyword: imageKeyword, // 添加新的字段
             comments: formattedComments
         };
         
@@ -2729,10 +2726,8 @@ async function generateMomentContent() {
  */
 async function fetchMatchingImageForPublish(content, apiKey) {
     try {
-        let searchQuery = await generateImageSearchQuery(content);
-        if (!searchQuery) {
-            searchQuery = extractImageKeywords(content);
-        }
+        // 暂时直接使用moment文字内容作为搜索关键词，后续需要修改
+        const searchQuery = content;
         // 这是直接从浏览器向Unsplash API发起的请求
         const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=3&orientation=landscape`, {
             headers: {
@@ -2741,6 +2736,7 @@ async function fetchMatchingImageForPublish(content, apiKey) {
         });
         if (!response.ok) throw new Error('Unsplash API请求失败');
         const data = await response.json();
+        console.log(response);
         return (data.results && data.results.length > 0) ? data.results[0].urls.regular : null;
     } catch (error) {
         console.error('获取配图失败:', error);
@@ -6320,18 +6316,12 @@ function loadCharacterSelector() {
         console.warn('contacts数组不可用，无法加载角色');
         return;
     }
-    
-    console.log('开始遍历contacts数组，长度:', window.contacts.length);
-    
+        
     let aiContactCount = 0;
     let totalContactCount = 0;
     window.contacts.forEach(contact => {
         totalContactCount++;
-        console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
-        console.log(`  - 类型检查: contact.type === 'private' = ${contact.type === 'private'}`);
-        console.log(`  - 类型值调试: '${contact.type}' (长度: ${contact.type?.length})`);
         if (contact.type === 'private') {
-            console.log(`  - 添加联系人 ${contact.name} 到选择器`);
             const option = document.createElement('option');
             option.value = contact.id;
             option.textContent = contact.name;
