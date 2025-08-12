@@ -358,19 +358,22 @@ ${characterMemory}
     }
 
     /**
-     * 构建朋友圈评论生成提示词
+     * 构建朋友圈评论生成提示词 - 使用所有用户创建的角色
      */
-    async buildCommentsPrompt(momentContent, selectedContacts) {
+    async buildCommentsPrompt(momentContent, contacts) {
         // 获取全局记忆
         let globalMemory = '';
         if (window.characterMemoryManager) {
             globalMemory = await window.characterMemoryManager.getGlobalMemory();
         }
         
-        // 为参与评论的角色获取记忆
+        // 获取所有用户创建的角色
+        const allCharacters = contacts ? contacts.filter(c => c.type === 'private') : [];
+        
+        // 为所有角色获取记忆
         let charactersMemory = '';
-        if (selectedContacts && Array.isArray(selectedContacts) && window.characterMemoryManager) {
-            const memoryPromises = selectedContacts.map(async (contact) => {
+        if (allCharacters.length > 0 && window.characterMemoryManager) {
+            const memoryPromises = allCharacters.map(async (contact) => {
                 const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
                 return memory ? `【${contact.name}的记忆（只有${contact.name}了解）】：${memory}` : null;
             });
@@ -378,7 +381,7 @@ ${characterMemory}
             charactersMemory = memories.filter(m => m).join('\n\n');
         }
         
-        let prompt = `你是一个朋友圈评论生成器，需要根据朋友圈文案生成3-5条路人评论。\n\n`;
+        let prompt = `你是一个朋友圈评论生成器，需要为朋友圈文案生成评论。\n\n`;
         
         // 添加全局记忆
         if (globalMemory) {
@@ -390,24 +393,50 @@ ${characterMemory}
             prompt += `--- 角色记忆 ---\n${charactersMemory}\n--- 结束 ---\n\n`;
         }
         
-        prompt += `要求：
-1. 根据文案内容生成3-5条相关评论
-2. 路人角色类型包括：CP头子、乐子人、搅混水的、理性分析党、颜狗等
-3. 模仿网络语气，使用当代流行语。
-4. 评论要有不同观点和立场
-5. 每条评论至少15字
-6. 评论者名称使用：路人甲、小明、小红、隔壁老王、神秘网友、热心市民、吃瓜群众等
-7. 必须以一个JSON对象格式输出，不要包含任何其他解释性文字或markdown标记。
+        // 构建角色信息
+        if (allCharacters.length > 0) {
+            const characterDescriptions = allCharacters.map(c => 
+                `【${c.name}】（人设：${c.personality}）`
+            ).join('、');
+            
+            prompt += `# 评论角色设定
+你需要为以下所有角色生成评论：${characterDescriptions}
+
+要求：
+1. 为每个角色都生成一条评论，总共${allCharacters.length}条评论
+2. 每条评论都要符合对应角色的人设和性格特点
+3. 根据角色记忆和全局记忆来生成更符合角色背景的评论
+4. 评论要针对朋友圈内容，体现角色的个性和观点
+5. 模仿网络语气，使用当代流行语，但要符合角色特色
+6. 每条评论10-50字之间
+7. 根据角色性格和朋友圈内容，决定是否点赞（like: true/false）
+8. 必须以JSON格式输出，不要包含任何其他解释性文字或markdown标记
 
 输出格式 (必须严格遵守此JSON结构):
 {
   "comments": [
-    { "author": "路人甲", "content": "评论内容1..." },
-    { "author": "小明", "content": "评论内容2..." }
+    { "author": "${allCharacters[0]?.name || '角色1'}", "content": "评论内容1...", "like": true }${allCharacters.length > 1 ? `,
+    { "author": "${allCharacters[1]?.name || '角色2'}", "content": "评论内容2...", "like": false }` : ''}${allCharacters.length > 2 ? `
+    // ... 更多角色的评论` : ''}
   ]
 }
 
-朋友圈文案：${momentContent}`;
+点赞规则：
+- 根据角色性格决定点赞概率（活泼外向的角色更容易点赞）
+- 根据朋友圈内容的积极程度决定（正面内容更容易被点赞）
+- 大约50-70%的角色会点赞`;
+        } else {
+            // 如果没有角色，返回提示
+            prompt += `# 注意
+当前没有创建任何角色，无法生成角色评论。请先创建一些角色。
+
+输出格式:
+{
+  "comments": []
+}`;
+        }
+        
+        prompt += `\n\n朋友圈文案：${momentContent}`;
         
         return prompt;
     }
@@ -562,6 +591,135 @@ ${userReply}
   ]
 }`;
 
+        return systemPrompt;
+    }
+
+    /**
+     * 构建朋友圈内容和评论一次性生成提示词
+     */
+    async buildMomentAndCommentsPrompt(contact, userProfile, apiSettings, contacts, topic = '') {
+        // 获取全局记忆
+        let globalMemory = '';
+        if (window.characterMemoryManager) {
+            globalMemory = await window.characterMemoryManager.getGlobalMemory();
+        }
+        
+        // 获取发布角色的记忆
+        let characterMemory = '';
+        if (window.characterMemoryManager) {
+            const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+            if (memory) {
+                characterMemory = memory;
+            }
+        }
+        
+        // 获取所有其他角色的记忆（用于评论生成）
+        const allCharacters = contacts ? contacts.filter(c => c.type === 'private' && c.id !== contact.id) : [];
+        let otherCharactersMemory = '';
+        if (allCharacters.length > 0 && window.characterMemoryManager) {
+            const memoryPromises = allCharacters.map(async (c) => {
+                const memory = await window.characterMemoryManager.getCharacterMemory(c.id);
+                return memory ? `【${c.name}的记忆（只有${c.name}了解）】：${memory}` : null;
+            });
+            const memories = await Promise.all(memoryPromises);
+            otherCharactersMemory = memories.filter(m => m).join('\n\n');
+        }
+        
+        let systemPrompt = `你需要为角色${contact.name}生成一条朋友圈内容，并为这条朋友圈生成评论。\n\n`;
+        
+        // 添加全局记忆
+        if (globalMemory) {
+            systemPrompt += `--- 全局记忆 ---\n${globalMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 添加发布角色的记忆
+        if (characterMemory) {
+            systemPrompt += `--- ${contact.name}的记忆（只有${contact.name}了解） ---\n${characterMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 添加其他角色的记忆
+        if (otherCharactersMemory) {
+            systemPrompt += `--- 其他角色记忆 ---\n${otherCharactersMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 构建聊天背景
+        let chatContext = '';
+        if (contact.messages && contact.messages.length > 0) {
+            const recentMessages = contact.messages.slice(-apiSettings.contextMessageCount);
+            chatContext = recentMessages.map(msg => {
+                if (msg.role === 'user') {
+                    return `${userProfile.name}: ${msg.content}`;
+                } else {
+                    return `${contact.name}: ${msg.content}`;
+                }
+            }).join('\n');
+        }
+        
+        systemPrompt += `# 角色设定
+- 发布者：${contact.name}
+- 人设：${contact.personality}
+- 用户：${userProfile.name}
+- 用户人设：${userProfile.personality || '用户'}
+${topic ? `- 朋友圈主题：${topic}` : ''}
+
+# 最近聊天记录
+${chatContext || '暂无聊天记录'}
+
+# 评论角色设定
+`;
+        
+        if (allCharacters.length > 0) {
+            const characterDescriptions = allCharacters.map(c => 
+                `【${c.name}】（人设：${c.personality}）`
+            ).join('、');
+            
+            systemPrompt += `你需要为以下角色生成评论：${characterDescriptions}
+
+# 要求
+1. 首先生成一条符合${contact.name}人设的朋友圈内容（50字以内）
+2. 根据朋友圈内容生成合适的图片搜索关键词，如果不需要配图则返回null
+3. 然后为这条朋友圈生成${allCharacters.length}条评论，每个角色一条
+4. 朋友圈内容要根据角色记忆、全局记忆和聊天记录来生成
+5. 评论要符合各角色的人设和记忆，针对朋友圈内容进行回复
+6. 模仿网络语气，使用当代流行语，但要符合角色特色
+7. 每条评论10-50字之间
+8. 根据角色性格和朋友圈内容，决定是否点赞（like: true/false）
+9. 图片关键词应该是英文，简洁明确，适合搜索配图
+10. 必须以JSON格式输出，不要包含任何其他解释性文字或markdown标记
+
+# 输出格式 (必须严格遵守此JSON结构)
+{
+  "content": "朋友圈内容...",
+  "imageKeyword": "图片搜索关键词或null",
+  "comments": [
+    { "author": "${allCharacters[0]?.name || '角色1'}", "content": "评论内容1...", "like": true }${allCharacters.length > 1 ? `,
+    { "author": "${allCharacters[1]?.name || '角色2'}", "content": "评论内容2...", "like": false }` : ''}${allCharacters.length > 2 ? `,
+    // ... 更多角色的评论` : ''}
+  ]
+}
+
+点赞规则：
+- 根据角色性格决定点赞概率（活泼外向的角色更容易点赞）
+- 根据朋友圈内容的积极程度决定（正面内容更容易被点赞）
+- 大约50-70%的角色会点赞`;
+        } else {
+            systemPrompt += `当前没有其他角色，只生成朋友圈内容。
+
+# 要求
+1. 生成一条符合${contact.name}人设的朋友圈内容（50字以内）
+2. 根据朋友圈内容生成合适的图片搜索关键词，如果不需要配图则返回null
+3. 朋友圈内容要根据角色记忆、全局记忆和聊天记录来生成
+4. 图片关键词应该是英文，简洁明确，适合搜索配图
+5. 必须以JSON格式输出
+
+# 输出格式
+{
+  "content": "朋友圈内容...",
+  "imageKeyword": "图片搜索关键词或null",
+  "comments": []
+}`;
+        }
+        
         return systemPrompt;
     }
 

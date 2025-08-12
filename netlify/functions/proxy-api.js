@@ -41,6 +41,36 @@ export async function handler(event, context) {
 
     const data = await response.json();
     console.log('API完整返回:', JSON.stringify(data, null, 2));
+    
+    // 自动清理响应中的markdown代码块标记
+    if (data && data.choices && Array.isArray(data.choices)) {
+      data.choices.forEach(choice => {
+        if (choice.message && choice.message.content && typeof choice.message.content === 'string') {
+          const originalContent = choice.message.content;
+          let cleanedContent = originalContent.trim();
+          
+          // 移除```json前缀
+          if (cleanedContent.startsWith('```json')) {
+            cleanedContent = cleanedContent.substring(7).trim();
+            console.log('API层移除了```json前缀');
+          }
+          
+          // 移除```后缀
+          if (cleanedContent.endsWith('```')) {
+            cleanedContent = cleanedContent.slice(0, -3).trim();
+            console.log('API层移除了```后缀');
+          }
+          
+          // 如果内容有变化，更新并记录
+          if (originalContent !== cleanedContent) {
+            choice.message.content = cleanedContent;
+            console.log('API层清理前内容长度:', originalContent.length);
+            console.log('API层清理后内容长度:', cleanedContent.length);
+          }
+        }
+      });
+    }
+    
     return {
       statusCode: 200,
       body: JSON.stringify(data),
