@@ -7424,8 +7424,8 @@ async function handleShareData() {
         // 1. 使用你已有的 IndexedDBManager 导出整个数据库的数据
         const exportData = await dbManager.exportDatabase();
 
-        // 2. 将数据发送到我们的云函数中转站
-        const response = await fetch('/api/transfer-data', {
+        // 2. 将数据发送到我们的Vercel中转站
+        const response = await fetch('https://transfer.cdsv.cc/api/transfer-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(exportData),
@@ -7505,10 +7505,9 @@ async function handleAutoImport(importId) {
     showToast('检测到分享数据，正在导入...');
 
     try {
-        // 3. 去Netlify中转站取回数据
-        // !!! 注意：请把下面的 'https://your-app.netlify.app' 换成你Netlify应用的真实地址
-        const netlifyFunctionUrl = `https://velvety-belekoy-02a99e.netlify.app/.netlify/functions/transfer-data?id=${importId}`;
-        const response = await fetch(netlifyFunctionUrl);
+        // 3. 去Vercel中转站取回数据
+        const transferUrl = `https://transfer.cdsv.cc/api/transfer-data?id=${importId}`;
+        const response = await fetch(transferUrl);
 
         if (!response.ok) {
             const error = await response.json().catch(() => null);
