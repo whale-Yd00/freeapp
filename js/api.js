@@ -23,25 +23,20 @@ class APIService {
 
         for (let i = 0; i < this.maxRetries; i++) {
             try {
-                const requestBody = {
-                    apiUrl: apiUrl,
-                    apiKey: apiKey,
-                    model: model,
-                    messages: messages,
-                    ...options
-                };
-                
                 // 创建AbortController用于超时控制
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), timeout);
                 
-                // 将请求路径修改为 /api/proxy/ 以匹配 netlify.toml 中的规则
-                const response = await fetch('/api/proxy/', {
+                // 直接调用API，不再通过Netlify函数
+                const response = await fetch(apiUrl + '/chat/completions', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`,
+                        // UA 伪装
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
                     },
-                    body: JSON.stringify(requestBody),
+                    body: JSON.stringify(payload),
                     signal: controller.signal
                 });
                 
@@ -54,11 +49,11 @@ class APIService {
                     }
                     
                     try {
-                        const errorBody = await response.json();
-                        throw new Error(`代理请求失败: ${response.status} - ${errorBody.error}`);
+                        const errorBody = await response.text();
+                        throw new Error(`API Error: ${errorBody}`);
                     } catch (parseError) {
-                        // 如果错误响应也无法解析JSON，返回状态码
-                        throw new Error(`代理请求失败: ${response.status} - ${response.statusText}`);
+                        // 如果错误响应也无法解析，返回状态码
+                        throw new Error(`API请求失败: ${response.status} - ${response.statusText}`);
                     }
                 }
                 
@@ -94,27 +89,29 @@ class APIService {
      * @returns {Promise} 连接测试结果
      */
     async testConnection(apiUrl, apiKey) {
-        const requestBody = {
-            apiUrl: apiUrl,
-            apiKey: apiKey,
-        };
+        try {
+            // 直接调用API，不再通过Netlify函数
+            const response = await fetch(apiUrl + '/models', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    // UA 伪装
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+                }
+            });
 
-        // 【【【【【修改点 2】】】】】
-        // 将请求路径修改为 /api/test-connection 以匹配 netlify.toml 中的规则
-        const response = await fetch('/api/test-connection', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody),
-        });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`API Error: ${errorBody}`);
+            }
+            
+            const data = await response.json();
+            console.log('API测试连接完整返回:', JSON.stringify(data, null, 2));
+            return data;
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`连接失败: ${response.status} - ${errorData.error}`);
+        } catch (error) {
+            throw new Error(`连接失败: ${error.message}`);
         }
-
-        return await response.json();
     }
 }
 
