@@ -142,6 +142,10 @@
                     <div class="profile-item-label">编辑个人信息</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
+                <div class="profile-item" onclick="showUserProfile()">
+                    <div class="profile-item-label">我的个人主页</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
                 <div class="profile-item" onclick="showPage('dataManagementPage')">
                     <div class="profile-item-label">数据管理</div>
                     <div class="profile-item-arrow">›</div>
@@ -398,6 +402,43 @@
             </div>
         </div>
 
+        <!-- 个人主页页面 -->
+        <div class="user-profile-page" id="userProfilePage">
+            <div class="user-profile-header">
+                <div class="back-btn" onclick="goBackFromUserProfile()">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="user-profile-actions">
+                    <span class="header-icon">⋯</span>
+                </div>
+            </div>
+            
+            <div class="user-profile-content">
+                <!-- Banner区域，占屏幕2/5高度 -->
+                <div class="user-profile-banner" id="userProfileBanner" onclick="openBannerUploadModal()" style="cursor: pointer;">
+                    <div class="banner-upload-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.7); font-size: 14px; pointer-events: none; opacity: 0; transition: opacity 0.3s;">
+                        点击更换背景图片
+                    </div>
+                    <!-- Avatar在banner右下角 -->
+                    <div class="user-profile-avatar-container" onclick="event.stopPropagation()">
+                        <!-- 用户名在avatar上三等分线左侧，右对齐 -->
+                        <div class="user-profile-name" id="userProfileName">我的昵称</div>
+                        <div class="user-profile-avatar" id="userProfileAvatar">我</div>
+                    </div>
+                </div>
+                
+                <!-- 朋友圈瀑布流 -->
+                <div class="user-profile-moments" id="userProfileMoments">
+                    <div class="user-profile-moments-empty">
+                        <div class="moments-empty-icon">📝</div>
+                        <div class="moments-empty-text">还没有朋友圈动态</div>
+                    </div>
+                    <div class="user-profile-moments-list" id="userProfileMomentsList"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-menu" id="settingsMenu">
             <div class="menu-item" onclick="showEditContactModal()">编辑联系人</div>
             <div class="menu-item" onclick="showBackgroundModal()">设置背景</div>
@@ -473,32 +514,84 @@
         </div>
     </div>
 
-    <div class="publish-moment-modal" id="publishMomentModal">
-        <div class="publish-moment-content">
-            <div class="publish-moment-header">
-                <div class="publish-moment-title">生成朋友圈</div>
-                <div class="publish-moment-close" onclick="closePublishMomentModal()">取消</div>
+    <!-- 朋友圈发布方式选择模态框 -->
+    <div class="modal" id="momentChoiceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发布朋友圈</div>
+                <div class="modal-close" onclick="closeModal('momentChoiceModal')">取消</div>
             </div>
-            <div class="publish-moment-body">
-                <div class="generate-moment-section">
-                    <button class="generate-moment-btn" onclick="generateMomentContent()">生成朋友圈</button>
-                    <div class="generate-moment-hint">
-                        点击上方按钮，AI将根据当前角色的人设和聊天记录自动生成朋友圈内容
+            <div class="modal-body">
+                <div class="post-choice-container">
+                    <div class="choice-option" onclick="selectMomentType('manual')">
+                        <div class="choice-icon">✍️</div>
+                        <div class="choice-title">自己发朋友圈</div>
+                        <div class="choice-description">手动输入朋友圈内容，系统会生成评论</div>
+                    </div>
+                    <div class="choice-option" onclick="selectMomentType('generate')">
+                        <div class="choice-icon">✨</div>
+                        <div class="choice-title">生成朋友圈</div>
+                        <div class="choice-description">AI根据聊天记录自动生成朋友圈和评论</div>
                     </div>
                 </div>
-                
-                <div class="moment-preview" id="momentPreview">
-                    <div class="moment-preview-title">预览</div>
-                    <div class="moment-preview-content" id="momentPreviewContent"></div>
-                    <img class="moment-preview-image" id="momentPreviewImage" style="display: none;">
-                </div>
-                
-                <div class="unsplash-key-section">
-                    <label class="unsplash-key-label">Unsplash API Key</label>
-                    <input type="text" class="unsplash-key-input" id="unsplashApiKey" placeholder="请输入你的Unsplash API Key">
-                </div>
-                
-                <button class="publish-moment-submit" id="publishMomentBtn" onclick="publishMoment()" disabled>发布</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动发朋友圈模态框 -->
+    <div class="modal" id="manualMomentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发布朋友圈</div>
+                <div class="modal-close" onclick="closeModal('manualMomentModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleManualMoment(event)">
+                    <div class="form-group">
+                        <label class="form-label">发布人</label>
+                        <input type="text" class="form-input" id="manualMomentAuthor" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">朋友圈内容</label>
+                        <textarea class="form-input" id="manualMomentContent" placeholder="输入你的朋友圈内容..." rows="4" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">上传图片（最多9张）</label>
+                        <input type="file" id="momentImagesInput" accept="image/*" multiple style="margin-bottom: 10px;" onchange="handleMomentImagesUpload(event)">
+                        <div class="moment-images-preview" id="momentImagesPreview"></div>
+                    </div>
+                    <button type="submit" class="form-submit">发布并生成评论</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI生成朋友圈模态框 -->
+    <div class="modal" id="generateMomentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">生成朋友圈</div>
+                <div class="modal-close" onclick="closeModal('generateMomentModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleGenerateMoment(event)">
+                    <div class="form-group">
+                        <label class="form-label">选择角色</label>
+                        <select class="form-input" id="momentGenCharacterSelect" required>
+                            <option value="">请选择...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">朋友圈主题</label>
+                        <input type="text" class="form-input" id="momentGenTopic" placeholder="例如：日常生活、工作感悟、美食分享等（可选）">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Unsplash API Key（可选）</label>
+                        <input type="text" class="form-input" id="momentUnsplashKey" placeholder="填写后可自动配图，留空则无图片">
+                        <div class="form-hint">在 <a href="https://unsplash.com/developers" target="_blank">Unsplash Developers</a> 获取API Key</div>
+                    </div>
+                    <button type="submit" class="form-submit">生成朋友圈</button>
+                </form>
             </div>
         </div>
     </div>
@@ -1035,12 +1128,48 @@
         </div>
     </div>
 
+    <!-- Banner上传模态框 -->
+    <div class="modal" id="bannerUploadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">更换背景图片</div>
+                <div class="modal-close" onclick="closeModal('bannerUploadModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <div class="banner-upload-container">
+                    <div class="banner-upload-area" id="bannerUploadArea" onclick="triggerBannerFileInput()">
+                        <div class="banner-upload-icon">📷</div>
+                        <div class="banner-upload-text">点击选择图片</div>
+                        <div class="banner-upload-hint">支持 JPG、PNG 格式，推荐横图</div>
+                    </div>
+                    <input type="file" id="bannerFileInput" accept="image/jpeg,image/jpg,image/png" style="display: none;" onchange="handleBannerFileSelect(event)">
+                </div>
+                
+                <!-- 预览和裁剪区域 -->
+                <div class="banner-preview-container" id="bannerPreviewContainer" style="display: none;">
+                    <div class="banner-preview-title">预览效果</div>
+                    <div class="banner-preview-wrapper">
+                        <canvas id="bannerPreviewCanvas" width="400" height="160"></canvas>
+                    </div>
+                    <div class="banner-crop-controls">
+                        <label>垂直位置调整：</label>
+                        <input type="range" id="bannerCropSlider" min="0" max="100" value="50" oninput="updateBannerPreview()">
+                    </div>
+                    <div class="banner-upload-buttons">
+                        <button class="btn-secondary" onclick="resetBannerUpload()">重新选择</button>
+                        <button class="btn-primary" onclick="saveBannerImage()">应用背景</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=1.1"></script>
     <script src="js/api.js"></script>
-    <script src="utils/promptBuilder.js"></script>
-    <script src="utils/memoryTable.js"></script>
+    <script src="utils/promptBuilder.js?v=1.1"></script>
+    <script src="utils/memoryTable.js?v=1.1"></script>
     <script src="utils/fileStorageManager.js"></script>
     <script src="utils/imageStorageAPI.js"></script>
     <script src="utils/imageDisplayHelper.js"></script>

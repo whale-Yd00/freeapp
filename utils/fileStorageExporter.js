@@ -12,7 +12,7 @@ class FileStorageExporter {
         this.fileManager = null;
         
         // 支持的文件类型
-        this.supportedFileTypes = ['avatar', 'background', 'emoji', 'moment'];
+        this.supportedFileTypes = ['avatar', 'background', 'emoji', 'moment', 'banner'];
         
         // 文件夹映射
         this.folderMapping = {
@@ -20,7 +20,8 @@ class FileStorageExporter {
             'avatar_user': 'user_avatars', 
             'background': 'backgrounds',
             'emoji': 'emojis',
-            'moment_image': 'moments'
+            'moment_image': 'moments',
+            'banner': 'banners'
         };
 
         // 文件扩展名映射

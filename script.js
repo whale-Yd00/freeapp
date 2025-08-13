@@ -291,6 +291,16 @@ let apiSettings = {
     minimaxGroupId: '',
     minimaxApiKey: ''
 };
+
+// --- 用户配置获取函数 ---
+async function getUserProfile() {
+    // 返回全局的 userProfile 对象
+    return userProfile || {
+        name: '我的昵称',
+        avatar: null,
+        personality: ''
+    };
+}
 // 确保暴露到全局对象
 window.apiSettings = apiSettings;
 let emojis = [];
@@ -452,17 +462,32 @@ let currentPlayingElement = null; // 跟踪当前播放的语音元素
 
 // --- 初始化 ---
 async function init() {
-    await openDB(); // 确保IndexedDB先打开
-    
-    // 检查数据库版本并提示用户
-    if (!db.objectStoreNames.contains('emojiImages')) {
-        console.log('检测到数据库需要升级，表情包功能将使用兼容模式。');
-        if (typeof showToast === 'function') {
-            showToast('数据库已更新，表情包功能已优化！如需使用新功能，请点击"🚀数据库优化"按钮');
+    try {
+        console.log('开始应用初始化...');
+        
+        // 使用增强的重试机制打开数据库
+        await executeWithRetry(async () => {
+            await openDB();
+            console.log('数据库连接建立成功');
+        }, '应用初始化 - 数据库连接');
+        
+        // 检查数据库版本并提示用户
+        if (!db.objectStoreNames.contains('emojiImages')) {
+            console.log('检测到数据库需要升级，表情包功能将使用兼容模式。');
+            if (typeof showToast === 'function') {
+                showToast('数据库已更新，表情包功能已优化！如需使用新功能，请点击"🚀数据库优化"按钮');
+            }
         }
+        
+        // 从IndexedDB加载数据
+        await loadDataFromDB();
+        console.log('应用数据加载完成');
+        
+    } catch (error) {
+        console.error('应用初始化失败:', error);
+        showDatabaseErrorDialog(error, false);
+        throw error;
     }
-    
-    await loadDataFromDB(); // 从IndexedDB加载数据
 
     await renderContactList();
     await updateUserProfileUI();
@@ -590,8 +615,208 @@ async function upgradeToAddEmojiImages() {
     });
 }
 
+// 数据库重试配置
+const DB_RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelay: 1000,
+    maxDelay: 5000,
+    connectionRetries: 10,
+    connectionRetryInterval: 5000
+};
+
+// 数据库状态跟踪
+let dbConnectionAttempts = 0;
+let dbConnectionTimer = null;
+let dbReadinessCheckInterval = null;
+
+// 用户友好的错误对话框
+function showDatabaseErrorDialog(error, isRetrying = false) {
+    const title = isRetrying ? '数据库重试中...' : '数据库连接失败';
+    const message = isRetrying 
+        ? `数据库连接异常，正在自动重试... (${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries})\n\n错误信息: ${error.message}`
+        : `数据库连接失败，所有重试都已用尽。\n\n错误信息: ${error.message}\n\n建议:\n1. 刷新页面重试\n2. 清除浏览器缓存\n3. 检查浏览器是否支持IndexedDB`;
+    
+    // 创建自定义对话框
+    if (!document.getElementById('db-error-dialog')) {
+        const dialog = document.createElement('div');
+        dialog.id = 'db-error-dialog';
+        dialog.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); display: flex; align-items: center; 
+            justify-content: center; z-index: 10000; font-family: Arial, sans-serif;
+        `;
+        
+        const dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background: white; padding: 30px; border-radius: 12px; 
+            max-width: 500px; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        dialog.appendChild(dialogContent);
+        document.body.appendChild(dialog);
+    }
+    
+    const dialog = document.getElementById('db-error-dialog');
+    const content = dialog.querySelector('div');
+    content.innerHTML = `
+        <h3 style="color: ${isRetrying ? '#ffa500' : '#dc3545'}; margin-top: 0;">${title}</h3>
+        <p style="margin: 15px 0; line-height: 1.6; white-space: pre-line;">${message}</p>
+        ${!isRetrying ? `
+            <div style="text-align: right; margin-top: 20px;">
+                <button onclick="location.reload()" style="
+                    background: #007bff; color: white; border: none; 
+                    padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                ">刷新页面</button>
+            </div>
+        ` : ''}
+    `;
+    
+    dialog.style.display = 'flex';
+    
+    if (isRetrying) {
+        setTimeout(() => {
+            if (dialog && dialog.parentNode) {
+                dialog.style.display = 'none';
+            }
+        }, 3000);
+    }
+}
+
+// 带递增等待时间的重试机制
+async function retryWithBackoff(operation, context = '', retries = DB_RETRY_CONFIG.maxRetries) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`${context} - 尝试第 ${attempt}/${retries} 次`);
+            const result = await operation();
+            if (attempt > 1) {
+                console.log(`${context} - 第 ${attempt} 次尝试成功`);
+                showToast('数据库连接已恢复', 'success');
+            }
+            return result;
+        } catch (error) {
+            console.error(`${context} - 第 ${attempt}/${retries} 次尝试失败:`, error);
+            
+            if (attempt === retries) {
+                console.error(`${context} - 所有重试都已失败，抛出最终错误`);
+                throw error;
+            }
+            
+            // 计算递增等待时间
+            const delay = Math.min(
+                DB_RETRY_CONFIG.baseDelay * Math.pow(2, attempt - 1),
+                DB_RETRY_CONFIG.maxDelay
+            );
+            
+            console.log(`${context} - 等待 ${delay}ms 后重试...`);
+            showToast(`${context}失败，${delay/1000}秒后重试 (${attempt}/${retries})`, 'warning');
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+// IndexedDB就绪状态检查
+function waitForIndexedDBReady(timeout = 30000) {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        
+        function checkReady() {
+            if (isIndexedDBReady && db) {
+                console.log('IndexedDB就绪状态检查: 已就绪');
+                resolve(true);
+                return;
+            }
+            
+            if (Date.now() - startTime > timeout) {
+                console.error('IndexedDB就绪状态检查: 超时');
+                reject(new Error(`IndexedDB就绪检查超时 (${timeout}ms)`));
+                return;
+            }
+            
+            setTimeout(checkReady, 100);
+        }
+        
+        checkReady();
+    });
+}
+
+// 增强版数据库连接监控
+function startConnectionMonitoring() {
+    if (dbReadinessCheckInterval) {
+        clearInterval(dbReadinessCheckInterval);
+    }
+    
+    dbReadinessCheckInterval = setInterval(() => {
+        if (!isIndexedDBReady || !db) {
+            console.warn('检测到数据库连接断开，准备自动重连...');
+            clearInterval(dbReadinessCheckInterval);
+            handleConnectionLoss();
+        }
+    }, 30000); // 每30秒检查一次连接状态
+}
+
+// 数据库连接断开处理
+async function handleConnectionLoss() {
+    dbConnectionAttempts = 0;
+    
+    const attemptReconnection = async () => {
+        dbConnectionAttempts++;
+        console.log(`数据库自动重连 - 第 ${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries} 次尝试`);
+        
+        try {
+            // 关闭现有连接
+            if (db) {
+                db.close();
+                db = null;
+            }
+            isIndexedDBReady = false;
+            
+            // 显示重试对话框
+            showDatabaseErrorDialog(
+                new Error('连接中断，正在自动重连...'), 
+                true
+            );
+            
+            // 尝试重新连接
+            const newDb = await openDB();
+            
+            // 重连成功
+            console.log('数据库自动重连成功');
+            showToast('数据库连接已自动恢复', 'success');
+            startConnectionMonitoring();
+            
+            // 隐藏错误对话框
+            const dialog = document.getElementById('db-error-dialog');
+            if (dialog) {
+                dialog.style.display = 'none';
+            }
+            
+            return newDb;
+            
+        } catch (error) {
+            console.error(`数据库重连第 ${dbConnectionAttempts} 次失败:`, error);
+            
+            if (dbConnectionAttempts >= DB_RETRY_CONFIG.connectionRetries) {
+                console.error('数据库自动重连失败，所有重试都已用尽');
+                showDatabaseErrorDialog(new Error('数据库连接失败，请手动刷新页面'), false);
+                return;
+            }
+            
+            // 继续重试
+            dbConnectionTimer = setTimeout(
+                attemptReconnection, 
+                DB_RETRY_CONFIG.connectionRetryInterval
+            );
+        }
+    };
+    
+    // 开始重连
+    attemptReconnection();
+}
+
 function openDB() {
     return new Promise((resolve, reject) => {
+        console.log('开始尝试打开数据库...');
         const request = indexedDB.open('WhaleLLTDB', 9);
 
         request.onupgradeneeded = event => {
@@ -601,126 +826,182 @@ function openDB() {
             
             console.log(`数据库升级: 从版本 ${oldVersion} 到版本 ${newVersion}`);
             
-            // 音乐播放器相关的ObjectStore
-            if (!db.objectStoreNames.contains('songs')) {
-                db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
-            }
-            // 聊天助手相关的ObjectStore
-            if (!db.objectStoreNames.contains('contacts')) {
-                db.createObjectStore('contacts', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('apiSettings')) {
-                db.createObjectStore('apiSettings', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('emojis')) {
-                db.createObjectStore('emojis', { keyPath: 'id' });
-            }
-            // 版本5新增：表情图片分离存储
-            if (!db.objectStoreNames.contains('emojiImages')) {
-                db.createObjectStore('emojiImages', { keyPath: 'tag' });
-            }
-            if (!db.objectStoreNames.contains('backgrounds')) {
-                db.createObjectStore('backgrounds', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('userProfile')) {
-                db.createObjectStore('userProfile', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('moments')) {
-                db.createObjectStore('moments', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('weiboPosts')) {
-                db.createObjectStore('weiboPosts', { keyPath: 'id', autoIncrement: true });
-            }
-            if (!db.objectStoreNames.contains('hashtagCache')) {
-                db.createObjectStore('hashtagCache', { keyPath: 'id' });
-            }
-            // 角色记忆相关的ObjectStore
-            if (!db.objectStoreNames.contains('characterMemories')) {
-                db.createObjectStore('characterMemories', { keyPath: 'contactId' });
-            }
-            if (!db.objectStoreNames.contains('conversationCounters')) {
-                db.createObjectStore('conversationCounters', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('globalMemory')) {
-                db.createObjectStore('globalMemory', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
-                db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
-            }
-            
-            // 版本8新增：文件存储系统
-            if (!db.objectStoreNames.contains('fileStorage')) {
-                const fileStore = db.createObjectStore('fileStorage', { keyPath: 'fileId' });
-                fileStore.createIndex('type', 'type', { unique: false });
-                fileStore.createIndex('createdAt', 'createdAt', { unique: false });
-                console.log('创建 fileStorage 存储');
-            }
-            
-            if (!db.objectStoreNames.contains('fileReferences')) {
-                const refStore = db.createObjectStore('fileReferences', { keyPath: 'referenceId' });
-                refStore.createIndex('fileId', 'fileId', { unique: false });
-                refStore.createIndex('category', 'category', { unique: false });
-                console.log('创建 fileReferences 存储');
-            }
-            
-            // 标记需要进行数据优化（针对版本4、5用户）
-            if (oldVersion <= 5 && newVersion >= 9) {
-                // 设置标记，在数据库连接成功后触发优化
-                window._needsEmojiOptimization = true;
-                console.log('标记需要进行表情数据优化');
-            }
-            
-            // 标记需要进行文件存储迁移（版本8→9用户）
-            if (oldVersion <= 8 && newVersion >= 9) {
-                window._needsFileStorageMigration = true;
-                console.log('标记需要进行文件存储迁移');
+            try {
+                // 音乐播放器相关的ObjectStore
+                if (!db.objectStoreNames.contains('songs')) {
+                    db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
+                    console.log('创建 songs 存储成功');
+                }
+                // 聊天助手相关的ObjectStore
+                if (!db.objectStoreNames.contains('contacts')) {
+                    db.createObjectStore('contacts', { keyPath: 'id' });
+                    console.log('创建 contacts 存储成功');
+                }
+                if (!db.objectStoreNames.contains('apiSettings')) {
+                    db.createObjectStore('apiSettings', { keyPath: 'id' });
+                    console.log('创建 apiSettings 存储成功');
+                }
+                if (!db.objectStoreNames.contains('emojis')) {
+                    db.createObjectStore('emojis', { keyPath: 'id' });
+                    console.log('创建 emojis 存储成功');
+                }
+                // 版本5新增：表情图片分离存储
+                if (!db.objectStoreNames.contains('emojiImages')) {
+                    db.createObjectStore('emojiImages', { keyPath: 'tag' });
+                    console.log('创建 emojiImages 存储成功');
+                }
+                if (!db.objectStoreNames.contains('backgrounds')) {
+                    db.createObjectStore('backgrounds', { keyPath: 'id' });
+                    console.log('创建 backgrounds 存储成功');
+                }
+                if (!db.objectStoreNames.contains('userProfile')) {
+                    db.createObjectStore('userProfile', { keyPath: 'id' });
+                    console.log('创建 userProfile 存储成功');
+                }
+                if (!db.objectStoreNames.contains('moments')) {
+                    db.createObjectStore('moments', { keyPath: 'id' });
+                    console.log('创建 moments 存储成功');
+                }
+                if (!db.objectStoreNames.contains('weiboPosts')) {
+                    db.createObjectStore('weiboPosts', { keyPath: 'id', autoIncrement: true });
+                    console.log('创建 weiboPosts 存储成功');
+                }
+                if (!db.objectStoreNames.contains('hashtagCache')) {
+                    db.createObjectStore('hashtagCache', { keyPath: 'id' });
+                    console.log('创建 hashtagCache 存储成功');
+                }
+                // 角色记忆相关的ObjectStore
+                if (!db.objectStoreNames.contains('characterMemories')) {
+                    db.createObjectStore('characterMemories', { keyPath: 'contactId' });
+                    console.log('创建 characterMemories 存储成功');
+                }
+                if (!db.objectStoreNames.contains('conversationCounters')) {
+                    db.createObjectStore('conversationCounters', { keyPath: 'id' });
+                    console.log('创建 conversationCounters 存储成功');
+                }
+                if (!db.objectStoreNames.contains('globalMemory')) {
+                    db.createObjectStore('globalMemory', { keyPath: 'id' });
+                    console.log('创建 globalMemory 存储成功');
+                }
+                if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
+                    db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
+                    console.log('创建 memoryProcessedIndex 存储成功');
+                }
+                
+                // 版本8新增：文件存储系统
+                if (!db.objectStoreNames.contains('fileStorage')) {
+                    const fileStore = db.createObjectStore('fileStorage', { keyPath: 'fileId' });
+                    fileStore.createIndex('type', 'type', { unique: false });
+                    fileStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    console.log('创建 fileStorage 存储成功');
+                }
+                
+                if (!db.objectStoreNames.contains('fileReferences')) {
+                    const refStore = db.createObjectStore('fileReferences', { keyPath: 'referenceId' });
+                    refStore.createIndex('fileId', 'fileId', { unique: false });
+                    refStore.createIndex('category', 'category', { unique: false });
+                    console.log('创建 fileReferences 存储成功');
+                }
+                
+                // 标记需要进行数据优化（针对版本4、5用户）
+                if (oldVersion <= 5 && newVersion >= 9) {
+                    window._needsEmojiOptimization = true;
+                    console.log('标记需要进行表情数据优化');
+                }
+                
+                // 标记需要进行文件存储迁移（版本8→9用户）
+                if (oldVersion <= 8 && newVersion >= 9) {
+                    window._needsFileStorageMigration = true;
+                    console.log('标记需要进行文件存储迁移');
+                }
+                
+                console.log('数据库升级操作完成');
+            } catch (upgradeError) {
+                console.error('数据库升级过程中发生错误:', upgradeError);
+                throw upgradeError;
             }
         };
 
         request.onsuccess = event => {
-            db = event.target.result;
-            isIndexedDBReady = true; // 标记IndexedDB已准备就绪
-            
-            // 确保暴露到全局对象
-            window.db = db;
-            window.isIndexedDBReady = isIndexedDBReady;
-            
-            
-            // 检查是否需要进行表情数据优化
-            if (window._needsEmojiOptimization) {
-                console.log('检测到需要进行表情数据优化，准备执行...');
-                setTimeout(() => {
-                    performEmojiOptimization();
-                }, 1000); // 延迟1秒确保所有数据加载完成
-                window._needsEmojiOptimization = false;
+            try {
+                db = event.target.result;
+                isIndexedDBReady = true;
+                
+                // 确保暴露到全局对象
+                window.db = db;
+                window.isIndexedDBReady = isIndexedDBReady;
+                
+                console.log('数据库连接成功，开始后续初始化...');
+                
+                // 设置数据库连接断开监听
+                db.onversionchange = () => {
+                    console.warn('检测到数据库版本变更，关闭当前连接');
+                    db.close();
+                    isIndexedDBReady = false;
+                    handleConnectionLoss();
+                };
+                
+                // 检查是否需要进行表情数据优化
+                if (window._needsEmojiOptimization) {
+                    console.log('检测到需要进行表情数据优化，准备执行...');
+                    setTimeout(() => {
+                        performEmojiOptimization();
+                    }, 1000);
+                    window._needsEmojiOptimization = false;
+                }
+                
+                // 检查是否需要进行文件存储迁移（版本8→9自动升级）
+                if (window._needsFileStorageMigration) {
+                    console.log('检测到需要进行文件存储迁移，准备自动执行...');
+                    setTimeout(() => {
+                        performFileStorageMigration();
+                    }, 2000);
+                    window._needsFileStorageMigration = false;
+                }
+                
+                // 数据库准备好后，初始化记忆管理器数据
+                if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
+                    setTimeout(async () => {
+                        try {
+                            await window.characterMemoryManager.loadConversationCounters();
+                            await window.characterMemoryManager.loadLastProcessedMessageIndex();
+                            await window.characterMemoryManager.getGlobalMemory();
+                            window.characterMemoryManager.isInitialized = true;
+                            console.log('记忆管理器初始化完成');
+                        } catch (memoryError) {
+                            console.error('记忆管理器初始化失败:', memoryError);
+                        }
+                    }, 100);
+                }
+                
+                // 开始连接监控
+                startConnectionMonitoring();
+                
+                console.log('数据库及相关服务初始化完成');
+                resolve(db);
+                
+            } catch (successError) {
+                console.error('数据库成功回调中发生错误:', successError);
+                reject(successError);
             }
-            
-            // 检查是否需要进行文件存储迁移（版本8→9自动升级）
-            if (window._needsFileStorageMigration) {
-                console.log('检测到需要进行文件存储迁移，准备自动执行...');
-                setTimeout(() => {
-                    performFileStorageMigration();
-                }, 2000); // 延迟2秒确保所有模块加载完成
-                window._needsFileStorageMigration = false;
-            }
-            
-            // 数据库准备好后，初始化记忆管理器数据
-            if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
-                setTimeout(async () => {
-                    await window.characterMemoryManager.loadConversationCounters();
-                    await window.characterMemoryManager.loadLastProcessedMessageIndex();
-                    await window.characterMemoryManager.getGlobalMemory();
-                    window.characterMemoryManager.isInitialized = true;
-                }, 100); // 稍微延迟确保所有设置都完成
-            }
-            
-            resolve(db);
         };
 
         request.onerror = event => {
-            console.error('IndexedDB 打开失败:', event.target.errorCode);
-            showToast('数据存储初始化失败');
-            reject('IndexedDB error');
+            const error = event.target.error || new Error(`IndexedDB 打开失败: ${event.target.errorCode}`);
+            console.error('IndexedDB 打开失败详情:', {
+                errorCode: event.target.errorCode,
+                errorName: error.name,
+                errorMessage: error.message,
+                timestamp: new Date().toISOString()
+            });
+            
+            showToast('数据存储初始化失败: ' + error.message, 'error');
+            reject(error);
+        };
+
+        request.onblocked = event => {
+            console.warn('IndexedDB 打开被阻塞，可能有其他标签页正在使用数据库');
+            showToast('数据库被其他页面占用，请关闭其他相关页面', 'warning');
         };
     });
 }
@@ -866,11 +1147,9 @@ async function performEmojiOptimization() {
 }
 
 async function loadDataFromDB() {
-    if (!isIndexedDBReady) {
-        console.warn('IndexedDB 未准备好，无法加载数据。');
-        return;
-    }
-    try {
+    return await ensureDBReady(async () => {
+        console.log('开始从数据库加载数据...');
+        
         const storeNames = [
         'contacts', 
         'apiSettings', 
@@ -899,7 +1178,10 @@ async function loadDataFromDB() {
         const momentsStore = transaction.objectStore('moments');
         const weiboPostsStore = transaction.objectStore('weiboPosts');
         
-        contacts = (await promisifyRequest(contactsStore.getAll())) || [];
+        // 加载联系人数据
+        contacts = (await promisifyRequest(contactsStore.getAll(), '加载联系人数据')) || [];
+        console.log(`加载了 ${contacts.length} 个联系人`);
+        
         // 更新全局引用
         window.contacts = contacts;
         
@@ -917,7 +1199,8 @@ async function loadDataFromDB() {
             }
         });
 
-        const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'))) || {};
+        // 加载API设置
+        const savedApiSettings = (await promisifyRequest(apiSettingsStore.get('settings'), '加载API设置')) || {};
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
         
@@ -932,41 +1215,67 @@ async function loadDataFromDB() {
         if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
         // 更新全局引用
         window.apiSettings = apiSettings;
+        console.log('API设置加载完成');
 
-        emojis = (await promisifyRequest(emojisStore.getAll())) || [];
-        backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'))) || {};
-        const savedUserProfile = (await promisifyRequest(userProfileStore.get('profile'))) || {};
+        // 加载表情数据
+        emojis = (await promisifyRequest(emojisStore.getAll(), '加载表情数据')) || [];
+        console.log(`加载了 ${emojis.length} 个表情`);
+        
+        // 加载背景数据
+        backgrounds = (await promisifyRequest(backgroundsStore.get('backgroundsMap'), '加载背景数据')) || {};
+        console.log(`加载了 ${Object.keys(backgrounds).length} 个背景`);
+        
+        // 加载用户资料
+        const savedUserProfile = (await promisifyRequest(userProfileStore.get('profile'), '加载用户资料')) || {};
         userProfile = { ...userProfile, ...savedUserProfile };
         if (userProfile.personality === undefined) {
             userProfile.personality = '';
         }
-        moments = (await promisifyRequest(momentsStore.getAll())) || [];
-        weiboPosts = (await promisifyRequest(weiboPostsStore.getAll())) || [];
+        console.log('用户资料加载完成');
+        
+        // 加载朋友圈数据
+        moments = (await promisifyRequest(momentsStore.getAll(), '加载朋友圈数据')) || [];
+        console.log(`加载了 ${moments.length} 个朋友圈`);
+        
+        // 加载微博数据
+        weiboPosts = (await promisifyRequest(weiboPostsStore.getAll(), '加载微博数据')) || [];
+        console.log(`加载了 ${weiboPosts.length} 个微博帖子`);
 
         // 加载hashtag缓存
         const hashtagCacheStore = transaction.objectStore('hashtagCache');
-        const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'))) || {};
+        const savedHashtagCache = (await promisifyRequest(hashtagCacheStore.get('cache'), '加载标签缓存')) || {};
         hashtagCache = savedHashtagCache;
+        console.log('标签缓存加载完成');
 
         // 重新初始化角色记忆管理器的数据（现在数据库已准备好）
-        
         if (window.characterMemoryManager) {
-            await window.characterMemoryManager.loadConversationCounters();
-            await window.characterMemoryManager.getGlobalMemory();
+            try {
+                await window.characterMemoryManager.loadConversationCounters();
+                await window.characterMemoryManager.getGlobalMemory();
+                console.log('角色记忆管理器初始化完成');
+            } catch (memoryError) {
+                console.error('角色记忆管理器初始化失败:', memoryError);
+            }
+        }
+        
+        // 初始化完成后进行数据一致性检查
+        if (weiboPosts && weiboPosts.length > 0) {
+            const repaired = await checkAndRepairDataConsistency();
+            if (repaired) {
+                console.log('初始化时修复了数据不一致性');
+            }
         }
 
-    } catch (error) {
-        console.error('从IndexedDB加载数据失败:', error);
-        showToast('加载数据失败');
-    }
+        console.log('所有数据加载完成');
+        showToast('数据加载完成', 'success');
+        
+    }, '数据库加载操作');
 }
 
 async function saveDataToDB() {
-    if (!isIndexedDBReady) {
-        console.warn('IndexedDB 未准备好，无法保存数据。');
-        return;
-    }
-    try {
+    return await ensureDBReady(async () => {
+        console.log('开始保存数据到数据库...');
+        
         // 检查是否存在新的emojiImages存储
         const storeNames = ['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'hashtagCache'];
         if (db.objectStoreNames.contains('emojiImages')) {
@@ -983,51 +1292,130 @@ async function saveDataToDB() {
         const momentsStore = transaction.objectStore('moments');
         
         // 清空contacts，然后重新添加，确保数据最新
-        await promisifyRequest(contactsStore.clear());
+        await promisifyRequest(contactsStore.clear(), '清空联系人数据');
+        console.log(`开始保存 ${contacts.length} 个联系人...`);
         for (const contact of contacts) {
-            await promisifyRequest(contactsStore.put(contact));
+            await promisifyRequest(contactsStore.put(contact), `保存联系人 ${contact.name || contact.id}`);
         }
+        console.log('联系人数据保存完成');
 
-        await promisifyRequest(apiSettingsStore.put({ id: 'settings', ...apiSettings }));
+        // 保存API设置
+        await promisifyRequest(apiSettingsStore.put({ id: 'settings', ...apiSettings }), '保存API设置');
+        console.log('API设置保存完成');
         
-        await promisifyRequest(emojisStore.clear());
+        // 保存表情数据
+        await promisifyRequest(emojisStore.clear(), '清空表情数据');
+        console.log(`开始保存 ${emojis.length} 个表情...`);
         for (const emoji of emojis) {
-            await promisifyRequest(emojisStore.put(emoji));
+            await promisifyRequest(emojisStore.put(emoji), `保存表情 ${emoji.id}`);
         }
+        console.log('表情数据保存完成');
 
-        await promisifyRequest(backgroundsStore.put({ id: 'backgroundsMap', ...backgrounds }));
-        await promisifyRequest(userProfileStore.put({ id: 'profile', ...userProfile }));
+        // 保存背景和用户资料
+        await promisifyRequest(backgroundsStore.put({ id: 'backgroundsMap', ...backgrounds }), '保存背景数据');
+        await promisifyRequest(userProfileStore.put({ id: 'profile', ...userProfile }), '保存用户资料');
+        console.log('背景和用户资料保存完成');
         
-        await promisifyRequest(momentsStore.clear());
+        // 保存朋友圈数据
+        await promisifyRequest(momentsStore.clear(), '清空朋友圈数据');
+        console.log(`开始保存 ${moments.length} 个朋友圈...`);
         for (const moment of moments) {
-            await promisifyRequest(momentsStore.put(moment));
+            await promisifyRequest(momentsStore.put(moment), `保存朋友圈 ${moment.id}`);
         }
+        console.log('朋友圈数据保存完成');
 
         // 保存hashtag缓存
         const hashtagCacheStore = transaction.objectStore('hashtagCache');
-        await promisifyRequest(hashtagCacheStore.put({ id: 'cache', ...hashtagCache }));
+        await promisifyRequest(hashtagCacheStore.put({ id: 'cache', ...hashtagCache }), '保存标签缓存');
+        console.log('标签缓存保存完成');
 
-        await promisifyTransaction(transaction); // 等待所有操作完成
+        // 等待所有操作完成
+        await promisifyTransaction(transaction, '数据保存事务');
+        console.log('所有数据保存完成');
+        showToast('数据保存完成', 'success');
+        
+    }, '数据库保存操作');
+}
+
+// 增强版IndexedDB请求辅助函数 - 带重试机制
+function promisifyRequest(request, context = '数据库操作') {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+            console.log(`${context} - 请求成功`);
+            resolve(request.result);
+        };
+        
+        request.onerror = () => {
+            const error = request.error || new Error(`${context}失败`);
+            console.error(`${context} - 请求失败:`, {
+                errorName: error.name,
+                errorMessage: error.message,
+                errorCode: error.code,
+                timestamp: new Date().toISOString()
+            });
+            reject(error);
+        };
+        
+        request.onblocked = () => {
+            const error = new Error(`${context} - 请求被阻塞，可能有其他标签页正在使用数据库`);
+            console.warn(error.message);
+            reject(error);
+        };
+    });
+}
+
+// 增强版IndexedDB事务辅助函数 - 带重试机制
+function promisifyTransaction(transaction, context = '数据库事务') {
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => {
+            console.log(`${context} - 事务完成`);
+            resolve();
+        };
+        
+        transaction.onerror = () => {
+            const error = transaction.error || new Error(`${context}失败`);
+            console.error(`${context} - 事务失败:`, {
+                errorName: error.name,
+                errorMessage: error.message,
+                errorCode: error.code,
+                timestamp: new Date().toISOString()
+            });
+            reject(error);
+        };
+        
+        transaction.onabort = () => {
+            const error = new Error(`${context} - 事务被中止`);
+            console.error(error.message);
+            reject(error);
+        };
+    });
+}
+
+// 带重试的数据库操作包装器
+async function executeWithRetry(operation, context = '数据库操作') {
+    return await retryWithBackoff(operation, context);
+}
+
+// 增强版数据库就绪检查 - 在执行操作前确保数据库可用
+async function ensureDBReady(operation, context = '数据库操作') {
+    try {
+        // 首先等待数据库就绪
+        await waitForIndexedDBReady();
+        
+        // 然后执行操作，带重试机制
+        return await executeWithRetry(operation, context);
+        
     } catch (error) {
-        console.error('保存数据到IndexedDB失败:', error);
-        showToast('保存数据失败');
+        console.error(`${context} - 确保数据库就绪失败:`, error);
+        
+        // 如果是连接问题，尝试重新连接
+        if (error.message.includes('超时') || error.message.includes('连接')) {
+            console.log(`${context} - 检测到连接问题，触发重连...`);
+            handleConnectionLoss();
+        }
+        
+        throw error;
     }
-}
-
-// 辅助函数：将IndexedDB请求转换为Promise
-function promisifyRequest(request) {
-    return new Promise((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// 辅助函数：将IndexedDB事务转换为Promise
-function promisifyTransaction(transaction) {
-    return new Promise((resolve, reject) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-    });
 }
 
 // --- 论坛功能 ---
@@ -1066,7 +1454,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage'];
 
 function showPage(pageIdToShow) {
     // 异步包装函数，用于处理包含异步操作的页面显示
@@ -1239,11 +1627,8 @@ async function saveWeiboPost(postData) {
 }
 
 async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1) {
-    console.log('=== 开始生成论坛帖子 ===');
-    console.log('输入参数:', { contactId, relations, relationDescription, hashtag, count });
     
     const contact = contacts.find(c => c.id === contactId);
-    console.log('找到的联系人:', contact);
     
     if (!contact) {
         console.error('未找到联系人，contactId:', contactId, '所有联系人:', contacts);
@@ -1276,8 +1661,6 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         contacts,
         emojis
     );
-    console.log('系统提示词长度:', systemPrompt.length, '字符');
-    console.log('系统提示词内容(前500字符):', systemPrompt.substring(0, 500));
 
     try {
         const payload = {
@@ -1288,10 +1671,6 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         };
 
         const apiUrl = `${apiSettings.url}/chat/completions`;
-        console.log('准备发送API请求到:', apiUrl);
-        console.log('请求载荷:', JSON.stringify(payload, null, 2));
-
-        console.log('发送API请求...');
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 
@@ -1318,41 +1697,23 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             throw new Error(`API请求失败: ${response.status} - ${errorText}`);
         }
 
-        console.log('解析API响应JSON...');
         const data = await response.json();
         console.log('API完整返回:', JSON.stringify(data, null, 2));
         
         let jsonText = data.choices[0].message.content;
-        console.log('提取的消息内容:', jsonText);
         
         if (!jsonText) {
             console.error('AI返回的内容为空');
             throw new Error("AI未返回有效内容");
         }
         
-        console.log('原始JSON文本:', jsonText);
         
-        // 自动清理AI可能返回的多余代码块
-        const originalJsonText = jsonText;
-        jsonText = jsonText.trim();
-        if (jsonText.startsWith('```json')) {
-            jsonText = jsonText.substring(7).trim(); // 移除 ```json 和可能的前导空格
-            console.log('移除了```json前缀');
-        }
-        if (jsonText.endsWith('```')) {
-            jsonText = jsonText.slice(0, -3).trim(); // 移除末尾的 ``` 和可能的尾随空格
-            console.log('移除了```后缀');
-        }
-        
-        if (originalJsonText !== jsonText) {
-            console.log('清理后的JSON文本:', jsonText);
-        }
+        // API层已自动清理，直接使用
 
-        console.log('尝试解析JSON...');
+        // 解析JSON
         let weiboData;
         try {
             weiboData = JSON.parse(jsonText);
-            console.log('JSON解析成功，数据结构:', weiboData);
         } catch (parseError) {
             console.error('JSON解析失败:', parseError);
             console.error('尝试解析的文本:', jsonText);
@@ -1360,22 +1721,16 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         }
 
         // --- 时间戳注入 ---
-        console.log('开始注入时间戳...');
+        // 注入时间戳
         const now = Date.now();
         // 主楼时间设为2-5分钟前
         const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
         let lastCommentTime = postCreatedAt.getTime();
         
-        console.log('生成的帖子数量:', weiboData.posts ? weiboData.posts.length : '无posts字段');
 
         if (weiboData.posts && Array.isArray(weiboData.posts)) {
             weiboData.posts.forEach((post, index) => {
                 post.timestamp = postCreatedAt.toISOString(); // 给主楼加时间戳
-                console.log(`帖子${index + 1}:`, { 
-                    content: post.content ? post.content.substring(0, 50) + '...' : '无内容',
-                    timestamp: post.timestamp,
-                    commentsCount: post.comments ? post.comments.length : 0
-                });
                 
                 if (post.comments && Array.isArray(post.comments)) {
                     post.comments.forEach((comment, commentIndex) => {
@@ -1383,11 +1738,6 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
                         const newCommentTimestamp = lastCommentTime + (Math.random() * 2 * 60 * 1000); // 0-2分钟后
                         lastCommentTime = newCommentTimestamp;
                         comment.timestamp = new Date(Math.min(newCommentTimestamp, now)).toISOString(); // 不超过当前时间
-                        console.log(`  评论${commentIndex + 1}:`, {
-                            author: comment.author,
-                            content: comment.content ? comment.content.substring(0, 30) + '...' : '无内容',
-                            timestamp: comment.timestamp
-                        });
                     });
                 }
             });
@@ -1436,9 +1786,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         console.error('完整错误对象:', error);
         showToast('生成论坛失败: ' + error.message);
     } finally {
-        console.log('清理加载指示器...');
         loadingIndicator.remove();
-        console.log('=== generateWeiboPosts 函数执行结束 ===');
     }
 }
 
@@ -1479,6 +1827,42 @@ function calculateRenderRange(scrollTop) {
     const endIndex = Math.min(allPosts.length, visibleEndIndex + 4);
     
     return { startIndex, endIndex };
+}
+
+// 数据一致性检查和修复函数
+async function checkAndRepairDataConsistency() {
+    if (!isIndexedDBReady || !db) {
+        return false;
+    }
+    
+    try {
+        // 从数据库重新加载所有帖子
+        const transaction = db.transaction(['weiboPosts'], 'readonly');
+        const store = transaction.objectStore('weiboPosts');
+        const allDbPosts = await promisifyRequest(store.getAll());
+        
+        // 检查内存中的帖子是否与数据库一致
+        const memoryPostIds = new Set(weiboPosts.map(p => p.id));
+        const dbPostIds = new Set(allDbPosts.map(p => p.id));
+        
+        // 找出不一致的数据
+        const missingInMemory = allDbPosts.filter(p => !memoryPostIds.has(p.id));
+        const extraInMemory = weiboPosts.filter(p => !dbPostIds.has(p.id));
+        
+        if (missingInMemory.length > 0 || extraInMemory.length > 0) {
+            console.warn(`数据不一致: 内存缺少 ${missingInMemory.length} 个帖子，内存多余 ${extraInMemory.length} 个帖子`);
+            
+            // 使用数据库数据作为准确来源
+            weiboPosts = allDbPosts;
+            console.log('已从数据库恢复数据一致性');
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('数据一致性检查失败:', error);
+        return false;
+    }
 }
 
 function renderAllWeiboPosts(isInitialLoad = true) {
@@ -1533,11 +1917,7 @@ function renderVirtualPosts() {
     bottomSpacer.className = 'virtual-spacer-bottom';
     container.appendChild(bottomSpacer);
     
-    console.log(`Virtual render: ${currentEndIndex - currentStartIndex} posts (${currentStartIndex}-${currentEndIndex}/${allPosts.length})`);
-    
-    // 调试容器宽度
     const containerWidth = container.offsetWidth;
-    console.log(`Container width: ${containerWidth}px`);
     
     // 强制重排以修复布局问题
     container.offsetHeight; // 触发重排
@@ -1603,7 +1983,7 @@ function renderSingleVirtualPost(postData, index) {
                 <span class="action-icon">🔄</span>
                 <span>${savedRandomRetweet}</span>
             </a>
-            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}')">
+            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}').catch(console.error)">
                 <span class="action-icon">💬</span>
                 <span>${post.comments ? post.comments.length : 0}</span>
             </a>
@@ -1621,7 +2001,6 @@ function renderSingleVirtualPost(postData, index) {
     setTimeout(() => {
         const postWidth = postElement.offsetWidth;
         if (postWidth < 500) { // 如果宽度异常小
-            console.log(`Post ${index} width issue: ${postWidth}px`);
         }
     }, 10);
     
@@ -1642,7 +2021,7 @@ function renderSingleVirtualPost(postData, index) {
 
             commentDiv.addEventListener('click', (event) => {
                 event.stopPropagation();
-                replyToComment(comment.commenter_name, `virtual-post-${index}`);
+                replyToComment(comment.commenter_name, `virtual-post-${index}`).catch(console.error);
             });
             
             commentsSection.appendChild(commentDiv);
@@ -1677,7 +2056,6 @@ function updatePostHeights(renderedPosts) {
         const newEstimatedHeight = Math.round(totalMeasuredHeight / measuredCount);
         if (Math.abs(newEstimatedHeight - ESTIMATED_POST_HEIGHT) > 50) {
             // 只有当差异较大时才更新全局估算值
-            console.log(`Updated estimated height: ${ESTIMATED_POST_HEIGHT} -> ${newEstimatedHeight}`);
         }
     }
 }
@@ -1727,7 +2105,6 @@ function handleVirtualScroll() {
         currentStartIndex = startIndex;
         currentEndIndex = endIndex;
         
-        console.log(`Virtual scroll: ${currentStartIndex}-${currentEndIndex}, scroll: ${Math.round(scrollTop)}px`);
         
         renderVirtualPosts();
     }
@@ -1741,7 +2118,6 @@ async function loadMorePostData() {
     // 这里可以实现加载更多帖子数据的逻辑
     // 目前只是简单的延时，实际应用中可以调用API获取更多帖子
     setTimeout(() => {
-        console.log('More posts loaded (placeholder)');
         isLoadingMorePosts = false;
     }, 1000);
 }
@@ -1806,7 +2182,7 @@ function renderSingleWeiboPost(storedPost) {
                     <span class="action-icon">🔄</span>
                     <span>${Math.floor(Math.random() * 500)}</span>
                 </a>
-                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}')">
+                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}').catch(console.error)">
                     <span class="action-icon">💬</span>
                     <span>${post.comments ? post.comments.length : 0}</span>
                 </a>
@@ -1821,7 +2197,7 @@ function renderSingleWeiboPost(storedPost) {
         // Programmatically create and append comments
         const commentsSection = postElement.querySelector('.comments-section');
         if (commentsSection) {
-            commentsSection.onclick = () => showReplyBox(postHtmlId);
+            commentsSection.onclick = () => showReplyBox(postHtmlId).catch(console.error);
 
             if (post.comments && Array.isArray(post.comments)) {
                 post.comments.forEach(comment => {
@@ -1838,7 +2214,7 @@ function renderSingleWeiboPost(storedPost) {
 
                     commentDiv.addEventListener('click', (event) => {
                         event.stopPropagation();
-                        replyToComment(comment.commenter_name, postHtmlId);
+                        replyToComment(comment.commenter_name, postHtmlId).catch(console.error);
                     });
 
                     commentsSection.appendChild(commentDiv);
@@ -1850,9 +2226,9 @@ function renderSingleWeiboPost(storedPost) {
     });
 }
 
-function replyToComment(commenterName, postHtmlId) {
+async function replyToComment(commenterName, postHtmlId) {
     // First, ensure the reply box is visible for the post.
-    showReplyBox(postHtmlId);
+    await showReplyBox(postHtmlId);
 
     // Now, find the reply box and its textarea.
     const postElement = document.getElementById(postHtmlId);
@@ -1875,9 +2251,26 @@ function replyToComment(commenterName, postHtmlId) {
     replyInput.setSelectionRange(replyInput.value.length, replyInput.value.length);
 }
 
-function showReplyBox(postHtmlId) {
+async function showReplyBox(postHtmlId) {
     const postElement = document.getElementById(postHtmlId);
-    if (!postElement) return;
+    if (!postElement) {
+        console.warn(`找不到帖子元素: ${postHtmlId}`);
+        return;
+    }
+    
+    // 在显示回复框前检查数据一致性
+    const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
+    const storedPost = weiboPosts.find(p => p.id === storedPostId);
+    if (!storedPost) {
+        console.warn(`数据不一致，帖子ID ${storedPostId} 不存在，尝试修复...`);
+        const repaired = await checkAndRepairDataConsistency();
+        if (repaired) {
+            // 数据修复后重新渲染页面
+            renderAllWeiboPosts();
+            showToast('数据已同步，请重新点击回复');
+            return;
+        }
+    }
 
     let replyBox = postElement.querySelector('.reply-box');
     if (replyBox) {
@@ -1915,11 +2308,47 @@ function showReplyBox(postHtmlId) {
         // --- Find the target post ---
         const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
         const postIndex = parseInt(postHtmlId.split('-')[3], 10);
-        const storedPost = weiboPosts.find(p => p.id === storedPostId);
+        let storedPost = weiboPosts.find(p => p.id === storedPostId);
+        
+        // 容错机制：如果找不到帖子，尝试从数据库重新加载
         if (!storedPost) {
-            showToast('错误：找不到原始帖子');
+            console.warn(`找不到帖子ID ${storedPostId}，尝试从数据库重新加载...`);
+            try {
+                if (isIndexedDBReady && db) {
+                    const transaction = db.transaction(['weiboPosts'], 'readonly');
+                    const store = transaction.objectStore('weiboPosts');
+                    const dbPost = await promisifyRequest(store.get(storedPostId));
+                    
+                    if (dbPost) {
+                        // 将从数据库找到的帖子重新添加到内存数组
+                        weiboPosts.push(dbPost);
+                        storedPost = dbPost;
+                        console.log(`成功从数据库恢复帖子ID ${storedPostId}`);
+                    } else {
+                        // 数据库中也没有，可能帖子已被删除，刷新页面
+                        showToast('帖子可能已被删除，正在刷新页面...');
+                        renderAllWeiboPosts();
+                        return;
+                    }
+                } else {
+                    showToast('数据库未就绪，请刷新页面重试');
+                    return;
+                }
+            } catch (error) {
+                console.error('从数据库恢复帖子失败:', error);
+                showToast('数据加载失败，请刷新页面重试');
+                return;
+            }
+        }
+        
+        // 检查帖子索引是否有效
+        if (!storedPost.data?.posts || !storedPost.data.posts[postIndex]) {
+            console.error(`帖子索引无效: storedPostId=${storedPostId}, postIndex=${postIndex}`);
+            showToast('帖子数据异常，正在刷新页面...');
+            renderAllWeiboPosts();
             return;
         }
+        
         const postData = storedPost.data.posts[postIndex];
 
         // --- Create User Comment ---
@@ -1941,7 +2370,7 @@ function showReplyBox(postHtmlId) {
         }
         postData.comments.push(userComment);
         renderAllWeiboPosts(); // Re-render to show the user's comment
-        showReplyBox(postHtmlId); // Keep the reply box open
+        await showReplyBox(postHtmlId); // Keep the reply box open
 
         // 检查并更新全局记忆（用户回复内容）
         if (window.characterMemoryManager) {
@@ -2032,7 +2461,7 @@ async function getMentionedAIReply(postData, mentioningComment, mentionedContact
         throw new Error('AI未返回有效回复');
     }
     
-    return data.choices[0].message.content.trim();
+    return data.choices[0].message.content;
 }
 
 async function getAIReply(postData, userReply, contactId) {
@@ -2054,7 +2483,7 @@ async function getAIReply(postData, userReply, contactId) {
         throw new Error('AI未返回有效回复');
     }
     
-    return data.choices[0].message.content.trim();
+    return data.choices[0].message.content;
 }
 
 
@@ -2149,14 +2578,521 @@ async function updateWeiboPost(postToUpdate) {
 
 // --- 朋友圈功能 ---
 
+// 存储上传的图片数据
+let momentUploadedImages = [];
+
+// 朋友圈发布方式选择
 function showPublishMomentModal() {
-    document.getElementById('publishMomentModal').style.display = 'block';
-    document.getElementById('momentPreview').style.display = 'none';
-    document.getElementById('publishMomentBtn').disabled = true;
+    // 显示朋友圈发布方式选择模态框
+    showModal('momentChoiceModal');
 }
 
-function closePublishMomentModal() {
-    document.getElementById('publishMomentModal').style.display = 'none';
+function selectMomentType(type) {
+    closeModal('momentChoiceModal');
+    
+    if (type === 'manual') {
+        showManualMomentModal();
+    } else if (type === 'generate') {
+        showGenerateMomentModal();
+    }
+}
+
+async function showManualMomentModal() {
+    showModal('manualMomentModal');
+    
+    // 获取用户信息
+    const userProfile = await getUserProfile();
+    
+    // 设置发布人为当前用户
+    document.getElementById('manualMomentAuthor').value = userProfile.name || '我';
+    
+    // 清空之前的内容和图片
+    document.getElementById('manualMomentContent').value = '';
+    momentUploadedImages = [];
+    document.getElementById('momentImagesPreview').innerHTML = '';
+}
+
+function showGenerateMomentModal() {
+    showModal('generateMomentModal');
+    
+    // 清空表单
+    document.getElementById('momentGenTopic').value = '';
+    document.getElementById('momentUnsplashKey').value = localStorage.getItem('unsplashApiKey') || '';
+    
+    // 加载角色列表
+    loadMomentCharacterOptions();
+}
+
+// 加载角色选项
+async function loadMomentCharacterOptions() {
+    const select = document.getElementById('momentGenCharacterSelect');
+    select.innerHTML = '<option value="">请选择...</option>';
+    
+    // 只添加联系人选项（AI角色），不包括"我"
+    if (window.contacts && window.contacts.length > 0) {
+        window.contacts.forEach(contact => {
+            if (contact.type === 'private') { // 只显示私聊角色
+                const option = document.createElement('option');
+                option.value = contact.id;
+                option.textContent = contact.name;
+                select.appendChild(option);
+            }
+        });
+    }
+}
+
+// 处理生成朋友圈表单提交
+async function handleGenerateMoment(event) {
+    event.preventDefault();
+    
+    const contactId = document.getElementById('momentGenCharacterSelect').value;
+    const topic = document.getElementById('momentGenTopic').value.trim();
+    const unsplashKey = document.getElementById('momentUnsplashKey').value.trim();
+    
+    if (!contactId) {
+        showToast('请选择角色');
+        return;
+    }
+    
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        showToast('请先设置API');
+        return;
+    }
+    
+    // 保存Unsplash API Key
+    if (unsplashKey) {
+        localStorage.setItem('unsplashApiKey', unsplashKey);
+    }
+    
+    try {
+        // 找到角色信息
+        const character = window.contacts?.find(c => c.id === contactId);
+        if (!character) {
+            showToast('未找到选中的角色');
+            return;
+        }
+        
+        showToast('正在生成朋友圈内容和评论...');
+        
+        // 获取用户信息
+        const userProfile = await getUserProfile();
+        
+        // 一次性生成朋友圈内容、图片关键词和评论
+        const momentData = await generateMomentAndComments(character, userProfile, topic);
+        
+        let imageUrl = null;
+        
+        // 如果提供了Unsplash API Key 且 AI返回了关键词，尝试获取配图
+        if (unsplashKey && momentData.imageKeyword) {
+            showToast('正在获取配图...');
+            try {
+                // 使用AI返回的关键词进行搜索
+                imageUrl = await getUnsplashImage(momentData.imageKeyword, unsplashKey);
+            } catch (imageError) {
+                console.warn('获取Unsplash图片失败:', imageError);
+                // 即使图片获取失败也继续发布朋友圈
+            }
+        }
+        
+        // 创建朋友圈对象
+        const moment = {
+            id: Date.now().toString(),
+            authorName: character.name,
+            authorAvatar: character.avatar,
+            content: momentData.content,
+            image: imageUrl, // Unsplash图片URL
+            time: new Date().toISOString(),
+            likes: 0,
+            comments: momentData.comments
+        };
+        
+        // 保存朋友圈
+        moments.unshift(moment);
+        await saveDataToDB();
+        await renderMomentsList();
+        
+        closeModal('generateMomentModal');
+        showToast('朋友圈发布成功！');
+        
+    } catch (error) {
+        console.error('生成朋友圈失败:', error);
+        showToast('生成朋友圈失败: ' + error.message);
+    }
+}
+
+// 获取Unsplash图片
+async function getUnsplashImage(searchQuery, apiKey) {
+    // 现在此函数直接调用新的 fetchMatchingImageForPublish
+    return await fetchMatchingImageForPublish(searchQuery, apiKey);
+}
+
+// 一次性生成朋友圈内容和评论
+async function generateMomentAndComments(character, userProfile, topic = '') {
+    try {
+        
+        // 检查必要的依赖
+        if (!window.promptBuilder) {
+            throw new Error('PromptBuilder未初始化');
+        }
+        
+        if (!window.apiService) {
+            throw new Error('APIService未初始化');
+        }
+        
+        if (!apiSettings || !apiSettings.url || !apiSettings.key || !apiSettings.model) {
+            throw new Error('API设置未完成');
+        }
+        
+        // 使用PromptBuilder构建prompt
+        const systemPrompt = await window.promptBuilder.buildMomentAndCommentsPrompt(
+            character, 
+            userProfile, 
+            apiSettings, 
+            window.contacts, 
+            topic
+        );
+        
+        
+        // 使用云端API服务
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            {
+                temperature: 0.9,
+                max_tokens: 2000,
+                // 强制要求返回JSON格式，以匹配新的提示词结构
+                response_format: { type: "json_object" },
+            },
+            apiSettings.timeout * 1000 || 60000
+        );
+        
+        
+        const rawContent = data.choices[0]?.message?.content;
+        console.log('API返回的原始内容:', rawContent);
+        
+        if (!rawContent) {
+            throw new Error('API返回空内容');
+        }
+        
+        // 解析JSON结果
+        let momentData;
+        try {
+            momentData = JSON.parse(rawContent);
+        } catch (parseError) {
+            console.error('解析JSON失败:', parseError, '原始内容:', rawContent);
+            throw new Error('AI返回的数据格式不正确，无法解析为JSON。');
+        }
+        
+        // 确保返回格式正确
+        if (!momentData.content) {
+            throw new Error('生成的朋友圈内容为空');
+        }
+        
+        if (!Array.isArray(momentData.comments)) {
+            momentData.comments = [];
+        }
+
+        // 获取图片关键词，可能为 null
+        const imageKeyword = momentData.imageKeyword || null;
+        
+        // 转换评论格式以兼容现有系统
+        const formattedComments = momentData.comments.map(comment => ({
+            author: comment.author || '匿名',
+            content: comment.content || '',
+            like: comment.like || false,
+            timestamp: new Date().toISOString()
+        }));
+        
+        const result = {
+            content: momentData.content,
+            imageKeyword: imageKeyword, // 添加新的字段
+            comments: formattedComments
+        };
+        
+        return result;
+        
+    } catch (error) {
+        console.error('生成朋友圈和评论失败:', error);
+        throw error; // 直接抛出错误，不返回默认内容
+    }
+}
+
+// === 图片AI识别相关功能 ===
+
+// 分析上传的图片内容
+async function analyzeImageContent(imageBase64, prompt = '请描述这张图片的内容') {
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        throw new Error('请先设置API');
+    }
+    
+    try {
+        const response = await fetch(`${apiSettings.url}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiSettings.key}`
+            },
+            body: JSON.stringify({
+                model: apiSettings.model,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'text',
+                            text: prompt
+                        },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: imageBase64
+                            }
+                        }
+                    ]
+                }],
+                max_tokens: 300,
+                temperature: 0.7
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`图片分析失败: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.choices[0]?.message?.content || '无法识别图片内容';
+        
+    } catch (error) {
+        console.error('图片分析失败:', error);
+        return '图片分析功能暂时不可用';
+    }
+}
+
+// 根据图片内容生成朋友圈文案
+async function generateMomentTextFromImage(imageBase64, character) {
+    const analysisPrompt = `你是${character.name}，性格特点：${character.personality}。
+请看这张图片，然后以${character.name}的身份发布一条朋友圈动态。
+
+要求：
+1. 基于图片内容来写朋友圈
+2. 符合${character.name}的性格特点和说话风格
+3. 内容要自然真实，就像真的朋友圈一样
+4. 长度控制在30-100字之间
+5. 可以适当使用emoji表情
+6. 不要说"这张图片"之类的话，要像是自己拍的照片一样
+
+直接返回朋友圈内容，不要有其他说明文字。`;
+
+    return await analyzeImageContent(imageBase64, analysisPrompt);
+}
+
+// 检查图片内容是否合适
+async function checkImageContent(imageBase64) {
+    const checkPrompt = `请检查这张图片是否包含以下不当内容：
+1. 暴力血腥内容
+2. 色情内容  
+3. 政治敏感内容
+4. 其他不适合在社交媒体分享的内容
+
+如果图片内容合适，请回复"合适"；如果不合适，请简短说明原因。`;
+
+    const result = await analyzeImageContent(imageBase64, checkPrompt);
+    return {
+        isAppropriate: result.includes('合适'),
+        reason: result.includes('合适') ? '' : result
+    };
+}
+
+// 为特定角色生成朋友圈内容
+async function generateMomentForCharacter(character, topic = '') {
+    const topicPrompt = topic ? `围绕"${topic}"这个主题，` : '';
+    
+    const prompt = `你是${character.name}，性格特点：${character.personality}。
+请${topicPrompt}发布一条符合你性格的朋友圈动态。
+
+要求：
+1. 内容要符合${character.name}的性格特点
+2. 语言风格要自然，就像真的朋友圈一样
+3. 长度控制在50-150字之间
+4. 可以包含生活感悟、日常分享、心情表达等
+5. 不要使用过于正式的语言
+6. 可以适当使用emoji表情
+
+直接返回朋友圈内容，不要有其他说明文字。`;
+
+    const response = await fetch(`${apiSettings.url}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiSettings.key}`
+        },
+        body: JSON.stringify({
+            model: apiSettings.model,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 200,
+            temperature: 0.8
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`生成失败: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0]?.message?.content || '今天心情不错~';
+}
+
+// 处理图片上传
+async function handleMomentImagesUpload(event) {
+    const files = Array.from(event.target.files);
+    if (files.length + momentUploadedImages.length > 9) {
+        showToast('最多只能上传9张图片');
+        return;
+    }
+    
+    for (const file of files) {
+        if (file.type.startsWith('image/')) {
+            try {
+                // 直接存储File对象，用于后续保存到文件系统
+                momentUploadedImages.push({
+                    file: file,
+                    previewUrl: await fileToBase64(file) // 用于预览
+                });
+            } catch (error) {
+                console.error('图片上传失败:', error);
+                showToast('图片上传失败');
+            }
+        }
+    }
+    
+    renderMomentImagesPreview();
+    event.target.value = ''; // 清空input
+}
+
+// 渲染图片预览
+function renderMomentImagesPreview() {
+    const preview = document.getElementById('momentImagesPreview');
+    preview.innerHTML = '';
+    
+    momentUploadedImages.forEach((imageItem, index) => {
+        const item = document.createElement('div');
+        item.className = 'moment-image-item';
+        item.innerHTML = `
+            <img src="${imageItem.previewUrl}" alt="预览图">
+            <div class="moment-image-remove" onclick="removeMomentImage(${index})">×</div>
+        `;
+        preview.appendChild(item);
+    });
+}
+
+// 删除图片
+function removeMomentImage(index) {
+    momentUploadedImages.splice(index, 1);
+    renderMomentImagesPreview();
+}
+
+// 文件转Base64
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// 手动发布朋友圈
+async function handleManualMoment(event) {
+    event.preventDefault();
+    
+    const authorName = document.getElementById('manualMomentAuthor').value;
+    const content = document.getElementById('manualMomentContent').value.trim();
+    
+    if (!content) {
+        showToast('请填写朋友圈内容');
+        return;
+    }
+    
+    closeModal('manualMomentModal');
+    
+    // 发布手动朋友圈
+    await publishManualMoment(authorName, content, momentUploadedImages);
+}
+
+async function publishManualMoment(authorName, content, imageItems) {
+    // 使用当前时间作为发布时间，就像论坛一样
+    const momentCreatedAt = new Date();
+    const momentId = Date.now().toString();
+    
+    try {
+        // 存储图片到文件系统
+        let imageFileIds = [];
+        let imageCount = 0;
+        
+        if (imageItems && imageItems.length > 0) {
+            showToast('正在保存图片...');
+            
+            // 确保ImageStorageAPI已初始化
+            if (window.ImageStorageAPI) {
+                await window.ImageStorageAPI.init();
+                
+                // 提取File对象
+                const imageFiles = imageItems.map(item => item.file);
+                
+                // 存储多张图片
+                imageFileIds = await window.ImageStorageAPI.storeMomentImages(imageFiles, momentId);
+                imageCount = imageFiles.length;
+                
+            } else {
+                console.warn('ImageStorageAPI未初始化，跳过图片存储');
+            }
+        }
+        
+        // 创建朋友圈对象
+        const moment = {
+            id: momentId,
+            authorName: authorName,
+            authorAvatar: userProfile.avatar || '',
+            content: content,
+            imageFileIds: imageFileIds, // 存储fileId数组
+            imageCount: imageCount, // 存储图片数量，用于后续获取
+            time: momentCreatedAt.toISOString(),
+            likes: 0,
+            comments: [] // 先创建空评论
+        };
+
+        // 保存并立即显示朋友圈
+        moments.unshift(moment);
+        await saveDataToDB();
+        await renderMomentsList();
+        showToast('朋友圈发布成功，正在生成评论...');
+
+        // 异步生成评论
+        setTimeout(async () => {
+            try {
+                // 使用当前时间生成评论（就像论坛一样）
+                const commentsWithTime = await generateAICommentsWithCurrentTime(content);
+                // 更新朋友圈的评论
+                const momentIndex = moments.findIndex(m => m.id === moment.id);
+                if (momentIndex !== -1) {
+                    moments[momentIndex].comments = commentsWithTime;
+                    await saveDataToDB();
+                    await renderMomentsList();
+                }
+            } catch (error) {
+                console.error('评论生成失败:', error);
+            }
+        }, 1000);
+        
+        // 清空表单和图片
+        document.getElementById('manualMomentContent').value = '';
+        momentUploadedImages = [];
+        
+    } catch (error) {
+        console.error('发布朋友圈失败:', error);
+        showToast('发布失败: ' + error.message);
+    }
 }
 
 /**
@@ -2189,7 +3125,7 @@ async function generateMomentContent() {
             (apiSettings.timeout || 60) * 1000
         );
 
-        const momentContent = data.choices[0].message.content.trim() || '';
+        const momentContent = data.choices[0].message.content || '';
 
         let imageUrl = null;
         const unsplashKey = document.getElementById('unsplashApiKey').value.trim();
@@ -2197,14 +3133,40 @@ async function generateMomentContent() {
             imageUrl = await fetchMatchingImageForPublish(momentContent, unsplashKey);
         }
 
-        const comments = await generateAIComments(momentContent);
+        // 使用当前时间生成评论（就像论坛一样）
+        const comments = await generateAICommentsWithCurrentTime(momentContent);
+
+        // 生成朋友圈ID
+        const momentId = Date.now().toString();
+        
+        // 如果有图片，存储到文件系统
+        let imageFileIds = [];
+        let imageCount = 0;
+        
+        if (imageUrl && window.ImageStorageAPI) {
+            try {
+                await window.ImageStorageAPI.init();
+                
+                // 从URL下载图片并存储
+                const response = await fetch(imageUrl);
+                const blob = await response.blob();
+                imageFileIds = await window.ImageStorageAPI.storeMomentImages([blob], momentId);
+                imageCount = 1;
+                
+            } catch (error) {
+                console.error('存储AI生成图片失败:', error);
+            }
+        }
 
         const moment = {
-            id: Date.now().toString(),
+            id: momentId,
             authorName: currentContact.name,
             authorAvatar: currentContact.avatar,
             content: momentContent,
-            image: imageUrl,
+            image: imageUrl, // 保持向后兼容
+            images: imageUrl ? [imageUrl] : [], // 兼容旧版本
+            imageFileIds: imageFileIds, // 新的文件系统存储
+            imageCount: imageCount,
             time: new Date().toISOString(),
             likes: 0,
             comments: comments
@@ -2213,7 +3175,7 @@ async function generateMomentContent() {
         moments.unshift(moment);
         await saveDataToDB();
         await renderMomentsList();
-        closePublishMomentModal();
+        closeModal('generateMomentModal');
         showToast('朋友圈发布成功');
 
     } catch (error) {
@@ -2231,10 +3193,8 @@ async function generateMomentContent() {
  */
 async function fetchMatchingImageForPublish(content, apiKey) {
     try {
-        let searchQuery = await generateImageSearchQuery(content);
-        if (!searchQuery) {
-            searchQuery = extractImageKeywords(content);
-        }
+        // 暂时直接使用moment文字内容作为搜索关键词，后续需要修改
+        const searchQuery = content;
         // 这是直接从浏览器向Unsplash API发起的请求
         const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=3&orientation=landscape`, {
             headers: {
@@ -2243,6 +3203,7 @@ async function fetchMatchingImageForPublish(content, apiKey) {
         });
         if (!response.ok) throw new Error('Unsplash API请求失败');
         const data = await response.json();
+        console.log(response);
         return (data.results && data.results.length > 0) ? data.results[0].urls.regular : null;
     } catch (error) {
         console.error('获取配图失败:', error);
@@ -2266,7 +3227,7 @@ async function generateImageSearchQuery(content) {
             { temperature: 0.5 },
             (apiSettings.timeout || 60) * 1000
         );
-        return data.choices[0].message.content.trim() || null;
+        return data.choices[0].message.content || null;
     } catch (error) {
         console.error('AI关键词生成失败:', error);
         return null;
@@ -2293,7 +3254,7 @@ async function generateAIComments(momentContent) {
         return [];
     }
     try {
-        const systemPrompt = await window.promptBuilder.buildCommentsPrompt(momentContent);
+        const systemPrompt = await window.promptBuilder.buildCommentsPrompt(momentContent, contacts);
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
             apiSettings.key,
@@ -2312,10 +3273,97 @@ async function generateAIComments(momentContent) {
         return commentsData.comments.map(comment => ({
             author: comment.author,
             content: comment.content,
-            time: new Date(Date.now() - Math.floor(Math.random() * 600000)).toISOString()
+            like: comment.like !== undefined ? comment.like : false, // 默认为false
+            time: new Date().toISOString() // 使用当前时间，像论坛一样
         }));
     } catch (error) {
         console.error('AI评论生成失败:', error);
+        return [];
+    }
+}
+
+// 生成带当前时间戳的评论（像论坛一样）
+async function generateAICommentsWithCurrentTime(momentContent) {
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        return [];
+    }
+    try {
+        const systemPrompt = await window.promptBuilder.buildCommentsPrompt(momentContent, contacts);
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            { response_format: { type: "json_object" }, temperature: 0.9 },
+            (apiSettings.timeout || 60) * 1000
+        );
+        
+        const jsonText = data.choices[0].message.content;
+        if (!jsonText) {
+            throw new Error("AI未返回有效的JSON格式");
+        }
+
+        const commentsData = JSON.parse(jsonText);
+        const baseComments = commentsData.comments || [];
+        
+        // 所有评论都使用当前时间（就像论坛一样）
+        return baseComments.map((comment) => {
+            return {
+                author: comment.author,
+                content: comment.content,
+                like: comment.like !== undefined ? comment.like : false, // 保留点赞状态
+                time: new Date().toISOString() // 使用当前时间
+            };
+        });
+    } catch (error) {
+        console.error('生成带时间戳评论失败:', error);
+        return [];
+    }
+}
+
+// 生成带时间戳的评论（基于朋友圈发布时间）
+async function generateAICommentsWithTime(momentContent, momentTime) {
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        return [];
+    }
+    try {
+        const systemPrompt = await window.promptBuilder.buildCommentsPrompt(momentContent, contacts);
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: systemPrompt }],
+            { response_format: { type: "json_object" }, temperature: 0.9 },
+            (apiSettings.timeout || 60) * 1000
+        );
+        
+        const jsonText = data.choices[0].message.content;
+        if (!jsonText) {
+            throw new Error("AI未返回有效的JSON格式");
+        }
+
+        const commentsData = JSON.parse(jsonText);
+        const baseComments = commentsData.comments || [];
+        
+        // 为每个评论添加时间戳（在朋友圈发布时间之后）
+        const momentTimeMs = new Date(momentTime).getTime();
+        return baseComments.map((comment, index) => {
+            // 评论时间在朋友圈发布后的几分钟到几小时内
+            const minDelayMs = (index + 1) * 2 * 60 * 1000; // 每个评论间隔至少2分钟
+            const maxDelayMs = (index + 1) * 30 * 60 * 1000; // 最多30分钟后
+            const randomDelay = minDelayMs + Math.random() * (maxDelayMs - minDelayMs);
+            const commentTime = new Date(momentTimeMs + randomDelay);
+            
+            const processedComment = {
+                author: comment.author,
+                content: comment.content,
+                like: comment.like !== undefined ? comment.like : false, // 默认为false
+                time: commentTime.toISOString()
+            };
+            return processedComment;
+        });
+    } catch (error) {
+        console.error('生成带时间戳评论失败:', error);
         return [];
     }
 }
@@ -2333,12 +3381,13 @@ async function publishMoment() {
     publishBtn.disabled = true;
     publishBtn.textContent = '发布中...';
     try {
-        const comments = await generateAIComments(content);
+        // 使用当前时间生成评论（就像论坛一样）
+        const comments = await generateAICommentsWithCurrentTime(content);
         const moment = { id: Date.now().toString(), authorName: currentContact.name, authorAvatar: currentContact.avatar, content, image: imageUrl, time: new Date().toISOString(), likes: 0, comments };
         moments.unshift(moment);
         await saveDataToDB(); // 使用IndexedDB保存
         await renderMomentsList();
-        closePublishMomentModal();
+        closeModal('generateMomentModal');
         showToast('朋友圈发布成功');
     } catch (error) {
         console.error('发布朋友圈失败:', error);
@@ -2359,29 +3408,211 @@ async function renderMomentsList() {
         momentsEmpty.style.display = 'none';
         momentsList.style.display = 'block';
         momentsList.innerHTML = '';
-        for (const moment of moments) {
+        
+        // 按时间排序，从新到旧（最新的在前面）
+        const sortedMoments = [...moments].sort((a, b) => {
+            return new Date(b.time) - new Date(a.time);
+        });
+        
+        for (const moment of sortedMoments) {
             const momentDiv = document.createElement('div');
             momentDiv.className = 'moment-item';
-            // 处理作者头像 - 需要从contacts中找到对应的用户
+            
+            // 处理作者头像 - 使用内联样式避免CSS冲突
             let avatarContent = '';
-            const author = contacts.find(c => c.name === moment.authorName);
-            if (author) {
-                avatarContent = await getAvatarHTML(author, 'contact') || moment.authorName[0];
-            } else if (moment.authorName === userProfile.name) {
+            const author = window.contacts ? window.contacts.find(c => c.name === moment.authorName) : null;
+            if (author && author.avatar) {
+                avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+            } else if (moment.authorName === userProfile.name && userProfile.avatar) {
                 // 如果是当前用户的动态
-                avatarContent = await getAvatarHTML(userProfile, 'user') || moment.authorName[0];
+                avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
             } else {
-                avatarContent = moment.authorName[0];
+                // 使用文字头像
+                avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
             }
-            let imageContent = moment.image ? `<img src="${moment.image}" class="moment-image">` : '';
+            
+            // 处理图片内容 - 支持多图片和文件系统
+            let imageContent = '';
+            
+            // 新的文件系统存储方式
+            if (moment.imageFileIds && moment.imageCount > 0 && window.ImageStorageAPI) {
+                try {
+                    await window.ImageStorageAPI.init();
+                    const imageUrls = await window.ImageStorageAPI.getMomentImagesURLs(moment.id, moment.imageCount);
+                    if (imageUrls.length > 0) {
+                        const gridClass = `grid-${imageUrls.length}`;
+                        imageContent = `<div class="moment-images-grid ${gridClass}">`;
+                        imageUrls.forEach((imageSrc, imageIndex) => {
+                            imageContent += `<div class="moment-image-container">
+                                               <img src="${imageSrc}" class="moment-grid-image" onclick="viewImage('${imageSrc}')" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" alt="图片${imageIndex + 1}">
+                                               <div class="moment-image-error" style="display: none;">
+                                                   <div class="image-error-icon">📷</div>
+                                                   <div class="image-error-text">图片加载失败</div>
+                                               </div>
+                                             </div>`;
+                        });
+                        imageContent += '</div>';
+                    }
+                } catch (error) {
+                    console.error('加载朋友圈图片失败:', error);
+                }
+            }
+            // 兼容旧数据结构
+            else {
+                const images = moment.images || (moment.image ? [moment.image] : []);
+                if (images.length > 0) {
+                    const gridClass = `grid-${images.length}`;
+                    imageContent = `<div class="moment-images-grid ${gridClass}">`;
+                    images.forEach((imageSrc, imageIndex) => {
+                        imageContent += `<div class="moment-image-container">
+                                           <img src="${imageSrc}" class="moment-grid-image" onclick="viewImage('${imageSrc}')" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" alt="图片${imageIndex + 1}">
+                                           <div class="moment-image-error" style="display: none;">
+                                               <div class="image-error-icon">📷</div>
+                                               <div class="image-error-text">图片加载失败</div>
+                                           </div>
+                                         </div>`;
+                    });
+                    imageContent += '</div>';
+                }
+            }
+            
+            // 处理评论内容 - 发现页面保持简洁样式
             let commentsContent = '';
             if (moment.comments && moment.comments.length > 0) {
-                commentsContent = `<div style="margin-top: 10px; padding-top: 10px; border-top: 0.5px solid #eee;">${moment.comments.map(comment => `<div style="font-size: 13px; color: #576b95; margin-bottom: 4px;"><span>${comment.author}: </span><span style="color: #333;">${comment.content}</span></div>`).join('')}</div>`;
+                const commentsList = moment.comments
+                    .filter(comment => comment.content && comment.content.trim())
+                    .map(comment => {
+                        const safeContent = comment.content.replace(/'/g, '&#39;');
+                        return `<div onclick="showMomentReplyToComment('${moment.id}', '${comment.author}')" style="font-size: 13px; color: #576b95; margin-bottom: 4px; cursor: pointer; padding: 4px; border-radius: 4px; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='transparent'">
+                            <span onclick="event.stopPropagation(); handleCommentAuthorClick('${comment.author}')" style="cursor: pointer; color: #576b95; font-weight: bold;">${comment.author}:</span>
+                            <span style="color: #333; margin-left: 4px;">${safeContent}</span>
+                        </div>`;
+                    }).join('');
+                commentsContent = `<div style="margin-top: 10px; padding-top: 10px; border-top: 0.5px solid #eee;">${commentsList}</div>`;
             }
-            momentDiv.innerHTML = `<div class="moment-header"><div class="moment-avatar">${avatarContent}</div><div class="moment-info"><div class="moment-name">${moment.authorName}</div><div class="moment-time">${formatContactListTime(moment.time)}</div></div></div><div class="moment-content">${moment.content}</div>${imageContent}${commentsContent}`;
+            
+            // 处理点赞信息
+            const likes = moment.likes || [];
+            let likedUsers = [];
+            
+            // 获取点赞用户列表（包括独立点赞和评论点赞）
+            if (likes.length > 0) {
+                likedUsers = [...likes];
+            }
+            
+            if (moment.comments && moment.comments.length > 0) {
+                const commentLikedUsers = moment.comments
+                    .filter(comment => comment.like === true)
+                    .map(comment => comment.author)
+                    .filter(author => !likedUsers.includes(author)); // 避免重复
+                
+                likedUsers = [...likedUsers, ...commentLikedUsers];
+            }
+            
+            const likesContent = likedUsers.length > 0 ? 
+                `<div style="font-size: 13px; color: #576b95; margin-bottom: 4px;">❤️ ${likedUsers.join(', ')}</div>` : '';
+            
+            // 显示名称 - 如果是当前用户，使用最新的用户名
+            const isCurrentUser = moment.authorName === userProfile.name;
+            const displayName = isCurrentUser ? userProfile.name : moment.authorName;
+            
+            // 三点菜单按钮
+            const menuButton = `<div class="moment-menu-btn" onclick="event.stopPropagation(); toggleMomentMenu('${moment.id}')" title="更多选项">⋯</div>`;
+            
+            // 菜单内容
+            const menuContent = `
+                <div class="moment-menu" id="momentMenu-${moment.id}" style="display: none;">
+                    <div class="moment-menu-item" onclick="event.stopPropagation(); deleteMoment('${moment.id}')">删除</div>
+                    <div class="moment-menu-item" onclick="event.stopPropagation(); regenerateComments('${moment.id}')">重新生成评论</div>
+                </div>
+            `;
+            
+            // 创建点击头像的事件处理函数
+            const avatarClickHandler = `onclick="handleMomentAvatarClick('${moment.authorName.replace(/'/g, "\\'")}')"`;
+            
+            // 添加折叠菜单
+            const actionsMenu = `
+                <div class="moment-actions-container">
+                    <button class="moment-collapse-btn" onclick="toggleMomentActions('${moment.id}')">❤/💬</button>
+                    <div class="moment-actions-menu" id="momentActions-${moment.id}">
+                        <button class="moment-action-btn" onclick="likeMoment('${moment.id}')" title="点赞">❤</button>
+                        <button class="moment-action-btn" onclick="showMomentComment('${moment.id}')" title="评论">💬</button>
+                    </div>
+                </div>
+            `;
+            
+            momentDiv.innerHTML = `
+                <div class="moment-header" style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                    <div ${avatarClickHandler} style="cursor: pointer; margin-right: 12px; flex-shrink: 0;">${avatarContent}</div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div class="moment-name" style="font-weight: 600; color: #576b95; font-size: 16px; line-height: 1.2; margin: 0;">${displayName}</div>
+                    </div>
+                    <div style="margin-left: auto;">
+                        ${menuButton}
+                        ${menuContent}
+                    </div>
+                </div>
+                <div class="moment-content">${moment.content}</div>
+                ${imageContent}
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0px;">
+                    <div class="moment-time" style="font-size: 12px; color: #999;">${formatContactListTime(moment.time)}</div>
+                    ${actionsMenu}
+                </div>
+                ${likesContent}
+                ${commentsContent}
+                <div class="moment-reply-input-container" id="momentMainReply-${moment.id}">
+                    <textarea class="moment-reply-input" placeholder="写评论..."></textarea>
+                    <div class="moment-reply-actions">
+                        <button class="moment-reply-btn moment-reply-cancel" onclick="hideMomentComment('${moment.id}')">取消</button>
+                        <button class="moment-reply-btn moment-reply-submit" onclick="submitMomentComment('${moment.id}')">发送</button>
+                    </div>
+                </div>
+            `;
             momentsList.appendChild(momentDiv);
         }
     }
+}
+
+// 图片查看功能
+function viewImage(imageSrc) {
+    // 创建全屏图片查看器
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+        background: rgba(0,0,0,0.9); z-index: 10000; 
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+    `;
+    
+    const img = document.createElement('img');
+    img.src = imageSrc;
+    img.style.cssText = 'max-width: 90%; max-height: 90%; object-fit: contain;';
+    
+    overlay.appendChild(img);
+    overlay.onclick = () => document.body.removeChild(overlay);
+    document.body.appendChild(overlay);
+}
+
+
+// 删除朋友圈
+async function deleteMoment(momentId) {
+    showConfirmDialog('删除确认', '确定要删除这条朋友圈吗？', async () => {
+        try {
+            // 从数组中删除
+            const momentIndex = moments.findIndex(m => m.id === momentId);
+            if (momentIndex !== -1) {
+                moments.splice(momentIndex, 1);
+                await saveDataToDB();
+                await renderMomentsList();
+                showToast('朋友圈已删除');
+            } else {
+                showToast('未找到要删除的朋友圈');
+            }
+        } catch (error) {
+            console.error('删除朋友圈失败:', error);
+            showToast('删除失败: ' + error.message);
+        }
+    });
 }
 
 // --- 音乐播放器 (懒加载) ---
@@ -4923,14 +6154,7 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
             throw new Error("AI未返回有效内容");
         }
         
-        // 自动清理AI可能返回的多余代码块
-        jsonText = jsonText.trim();
-        if (jsonText.startsWith('```json')) {
-            jsonText = jsonText.substring(7).trim();
-        }
-        if (jsonText.endsWith('```')) {
-            jsonText = jsonText.slice(0, -3).trim();
-        }
+        // API层已自动清理，直接使用
 
         const commentsData = JSON.parse(jsonText);
         
@@ -5386,12 +6610,10 @@ async function showAddMemoryModal() {
     // 确保contacts数组存在
     if (window.contacts && Array.isArray(window.contacts)) {
         let aiCount = 0;
-        console.log('开始在模态框中加载AI角色，contacts长度:', window.contacts.length);
         
         window.contacts.forEach(contact => {
             console.log(`检查联系人: ${contact.name}, 类型: ${contact.type}`);
             if (contact.type === 'private') {
-                console.log(`添加AI角色: ${contact.name}`);
                 const option = document.createElement('option');
                 option.value = contact.id;
                 option.textContent = contact.name;
@@ -5399,7 +6621,6 @@ async function showAddMemoryModal() {
                 aiCount++;
             }
         });
-        console.log(`模态框中已加载 ${aiCount} 个AI角色`);
         
         if (aiCount === 0) {
             console.warn('没有找到任何AI角色，可能数据有问题');
@@ -5476,7 +6697,6 @@ async function handleAddMemory(event) {
             showToast('选择的角色不存在，请重新选择');
             return;
         }
-        console.log('准备为角色添加记忆:', selectedContact.name);
     }
     
     try {
@@ -5528,7 +6748,6 @@ function switchMemoryTab(type) {
         // 如果角色选择器为空，说明数据可能还没加载完成
         const characterSelector = document.getElementById('characterSelector');
         if (characterSelector && characterSelector.options.length <= 1) {
-            console.log('角色选择器为空，尝试重新等待数据加载...');
             waitForDataReady().then(() => {
                 loadCharacterSelector();
             });
@@ -5552,32 +6771,24 @@ function loadGlobalMemories() {
 // 加载角色选择器
 function loadCharacterSelector() {
     const characterSelector = document.getElementById('characterSelector');
-    console.log('角色选择器元素:', characterSelector);
     if (!characterSelector) {
         console.error('角色选择器元素未找到');
         return;
     }
     
     characterSelector.innerHTML = '<option value="">选择角色...</option>';
-    console.log('已重置角色选择器内容');
     
     // 确保contacts数组存在
     if (!window.contacts || !Array.isArray(window.contacts)) {
         console.warn('contacts数组不可用，无法加载角色');
         return;
     }
-    
-    console.log('开始遍历contacts数组，长度:', window.contacts.length);
-    
+        
     let aiContactCount = 0;
     let totalContactCount = 0;
     window.contacts.forEach(contact => {
         totalContactCount++;
-        console.log(`联系人 ${totalContactCount}: ${contact.name} (类型: ${contact.type})`);
-        console.log(`  - 类型检查: contact.type === 'private' = ${contact.type === 'private'}`);
-        console.log(`  - 类型值调试: '${contact.type}' (长度: ${contact.type?.length})`);
         if (contact.type === 'private') {
-            console.log(`  - 添加联系人 ${contact.name} 到选择器`);
             const option = document.createElement('option');
             option.value = contact.id;
             option.textContent = contact.name;
@@ -5586,11 +6797,9 @@ function loadCharacterSelector() {
         }
     });
     
-    console.log(`已加载 ${aiContactCount} 个AI角色到选择器，总联系人数: ${totalContactCount}`);
     
     // 如果没有加载到任何角色，强制刷新一次
     if (aiContactCount === 0 && totalContactCount > 0) {
-        console.log('没有找到AI角色，可能数据加载有问题，尝试重新检查contacts...');
         setTimeout(() => {
             loadCharacterSelector();
         }, 1000);
@@ -5608,7 +6817,6 @@ function loadCharacterMemories() {
     }
     
     const characterId = characterSelector.value;
-    console.log('选择的角色ID:', characterId);
     
     if (!characterId) {
         memoryList.innerHTML = '<div class="memory-empty">请先选择角色</div>';
@@ -5623,7 +6831,6 @@ function loadCharacterMemories() {
         return;
     }
     
-    console.log('找到角色:', selectedContact.name);
     
     memoryManager.currentCharacter = characterId;
     const memories = memoryManager.getCharacterMemories(characterId);
@@ -5909,7 +7116,6 @@ async function deleteMemory(memoryId, isCharacter, characterId) {
 
 // 初始化记忆管理页面
 async function initMemoryManagementPage() {
-    console.log('初始化记忆管理页面');
     
     // 确保数据已经加载
     if (!window.contacts || !Array.isArray(window.contacts) || window.contacts.length === 0) {
@@ -5932,7 +7138,6 @@ async function initMemoryManagementPage() {
         setTimeout(() => {
             const characterSelector = document.getElementById('characterSelector');
             if (characterSelector && characterSelector.options.length <= 1) {
-                console.log('角色选择器仍为空，尝试重新加载...');
                 loadCharacterSelector();
             }
         }, 500);
@@ -5947,7 +7152,6 @@ async function initMemoryManagementPage() {
 
 // 从现有记忆系统加载数据
 async function loadExistingMemories() {
-    console.log('从现有记忆系统加载数据');
     
     try {
         // 加载全局记忆
@@ -5969,7 +7173,6 @@ async function loadExistingMemories() {
                 // 如果清理后的内容与原内容不同，更新到现有系统
                 if (cleanedGlobalMemory !== existingGlobalMemory) {
                     await saveExistingGlobalMemory(cleanedGlobalMemory);
-                    console.log('全局记忆已清理并更新');
                 }
             }
         }
@@ -5999,7 +7202,6 @@ async function loadExistingMemories() {
                             // 如果清理后的内容与原内容不同，更新到现有系统
                             if (cleanedCharacterMemory !== existingCharacterMemory) {
                                 await saveExistingCharacterMemory(contact.id, cleanedCharacterMemory);
-                                console.log(`角色 ${contact.name} 的记忆已清理并更新`);
                             }
                         }
                     }
@@ -6007,7 +7209,6 @@ async function loadExistingMemories() {
             }
         }
         
-        console.log('现有记忆数据加载完成');
     } catch (error) {
         console.error('加载现有记忆数据失败:', error);
     }
@@ -6039,11 +7240,9 @@ document.addEventListener('DOMContentLoaded', function() {
     window.showPage = function(pageIdToShow) {
         originalShowPage(pageIdToShow);
         if (pageIdToShow === 'memoryManagementPage') {
-            console.log('切换到记忆管理页面，开始初始化...');
             // 等待数据准备完成后再初始化
             waitForDataReady().then((dataReady) => {
                 if (dataReady) {
-                    console.log('数据准备就绪，初始化记忆管理页面');
                 } else {
                     console.warn('数据准备超时，但仍尝试初始化页面');
                 }
@@ -6782,6 +7981,900 @@ async function performFileStorageMigration() {
     }
 }
 
+// --- 个人主页功能 ---
+let currentUserProfileContact = null;
+let userProfilePreviousPage = 'profilePage'; // 记录从哪个页面进入的个人主页
+
+// 显示用户个人主页（自己的主页）
+async function showUserProfile() {
+    currentUserProfileContact = null; // 表示是自己的主页
+    userProfilePreviousPage = 'profilePage'; // 从个人信息页面进入
+    showPage('userProfilePage');
+    
+    // 确保数据已加载
+    await waitForDataReady();
+    await loadUserProfileData();
+}
+
+// 显示其他用户的个人主页
+async function showContactProfile(contact) {
+    currentUserProfileContact = contact;
+    userProfilePreviousPage = 'momentsPage'; // 从朋友圈进入
+    showPage('userProfilePage');
+    
+    // 确保数据已加载
+    await waitForDataReady();
+    await loadUserProfileData();
+}
+
+// 从个人主页返回
+function goBackFromUserProfile() {
+    showPage(userProfilePreviousPage);
+}
+
+// 加载个人主页数据
+async function loadUserProfileData() {
+    try {
+        const userProfileBanner = document.getElementById('userProfileBanner');
+        const userProfileAvatar = document.getElementById('userProfileAvatar');
+        const userProfileName = document.getElementById('userProfileName');
+        const userProfileMomentsList = document.getElementById('userProfileMomentsList');
+        const userProfileMomentsEmpty = document.querySelector('.user-profile-moments-empty');
+        
+        
+        if (currentUserProfileContact) {
+            // 显示联系人的主页
+            const contact = currentUserProfileContact;
+            
+            // 设置头像
+            if (contact.avatar) {
+                userProfileAvatar.style.backgroundImage = `url(${contact.avatar})`;
+                userProfileAvatar.textContent = '';
+            } else {
+                userProfileAvatar.style.backgroundImage = '';
+                userProfileAvatar.textContent = contact.name?.charAt(0) || '?';
+            }
+            
+            // 设置用户名，如果是临时联系人则显示特殊样式
+            userProfileName.textContent = contact.name || '未知用户';
+            if (contact.isTemporary) {
+                userProfileName.style.color = '#ff6b6b';
+                userProfileName.style.fontSize = '18px';
+            } else {
+                userProfileName.style.color = '#fff';
+                userProfileName.style.fontSize = '20px';
+            }
+            
+            // 设置banner背景（临时联系人使用不同颜色）
+            if (contact.isTemporary) {
+                userProfileBanner.style.background = 'linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)';
+            } else {
+                userProfileBanner.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            }
+            
+        } else {
+            // 显示自己的主页
+            console.log('显示自己的主页');
+            const userProfile = await getUserProfile();
+            console.log('获取到的用户配置:', userProfile);
+            
+            // 设置头像
+            if (userProfile.avatar) {
+                userProfileAvatar.style.backgroundImage = `url(${userProfile.avatar})`;
+                userProfileAvatar.textContent = '';
+                console.log('设置头像图片:', userProfile.avatar);
+            } else {
+                userProfileAvatar.style.backgroundImage = '';
+                userProfileAvatar.textContent = userProfile.name?.charAt(0) || '我';
+                console.log('设置头像文字:', userProfile.name?.charAt(0) || '我');
+            }
+            
+            // 设置用户名
+            userProfileName.textContent = userProfile.name || '我的昵称';
+            console.log('设置用户名:', userProfile.name || '我的昵称');
+            
+            // 设置banner背景
+            userProfileBanner.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }
+        
+        // 加载朋友圈动态
+        await loadUserProfileMoments();
+        
+    } catch (error) {
+        console.error('加载个人主页数据失败:', error);
+    }
+}
+
+// 获取所有朋友圈动态
+async function getAllMoments() {
+    
+    // 确保数据已加载
+    if (!window.moments && (!moments || moments.length === 0)) {
+        await waitForDataReady();
+    }
+    
+    return window.moments || moments || [];
+}
+
+// 加载用户的朋友圈动态
+async function loadUserProfileMoments() {
+    try {
+        const userProfileMomentsList = document.getElementById('userProfileMomentsList');
+        const userProfileMomentsEmpty = document.querySelector('.user-profile-moments-empty');
+        
+        // 获取朋友圈数据
+        const moments = await getAllMoments();
+        
+        // 过滤出当前用户的动态
+        let userMoments = [];
+        
+        if (currentUserProfileContact) {
+            // 显示联系人的动态
+            console.log('筛选联系人动态，联系人姓名:', currentUserProfileContact.name);
+            userMoments = moments.filter(moment => 
+                moment.authorName === currentUserProfileContact.name
+            );
+        } else {
+            // 显示自己的动态（作者是"我"或用户设置的昵称）
+            const userProfile = await getUserProfile();
+            const userName = userProfile.name || '我的昵称';
+            userMoments = moments.filter(moment => 
+                moment.authorName === '我' || moment.authorName === userName
+            );
+            
+            // 如果没有找到，也尝试匹配所有动态的作者名
+            if (userMoments.length === 0) {
+                moments.forEach((moment, index) => {
+                });
+            }
+        }
+        
+        if (userMoments.length === 0) {
+            userProfileMomentsEmpty.style.display = 'block';
+            userProfileMomentsList.style.display = 'none';
+        } else {
+            userProfileMomentsEmpty.style.display = 'none';
+            userProfileMomentsList.style.display = 'block';
+            
+            // 清空现有内容
+            userProfileMomentsList.innerHTML = '';
+            
+            // 渲染朋友圈动态
+            for (const moment of userMoments) {
+                const momentElement = await createUserProfileMomentElement(moment);
+                userProfileMomentsList.appendChild(momentElement);
+            }
+        }
+        
+    } catch (error) {
+        console.error('加载用户朋友圈动态失败:', error);
+    }
+}
+
+// 切换朋友圈菜单显示/隐藏
+function toggleMomentMenu(momentId) {
+    const menu = document.getElementById(`momentMenu-${momentId}`);
+    const allMenus = document.querySelectorAll('.moment-menu');
+    
+    // 关闭所有其他菜单
+    allMenus.forEach(m => {
+        if (m !== menu) {
+            m.style.display = 'none';
+        }
+    });
+    
+    // 切换当前菜单
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+// 重新生成评论
+async function regenerateComments(momentId) {
+    try {
+        // 关闭菜单
+        const menu = document.getElementById(`momentMenu-${momentId}`);
+        if (menu) menu.style.display = 'none';
+        
+        // 找到对应的朋友圈
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) {
+            showToast('未找到要重新生成评论的朋友圈');
+            return;
+        }
+        
+        const moment = moments[momentIndex];
+        showToast('正在重新生成评论...');
+        
+        // 清空现有评论和点赞
+        moment.comments = [];
+        moment.likes = 0;
+        
+        // 重新生成评论
+        const newComments = await generateAICommentsWithCurrentTime(moment.content);
+        moment.comments = newComments;
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        await renderMomentsList();
+        
+        showToast('评论重新生成完成！');
+        
+    } catch (error) {
+        console.error('重新生成评论失败:', error);
+        showToast('重新生成评论失败: ' + error.message);
+    }
+}
+
+// 点击页面其他地方关闭所有菜单
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.moment-menu-btn') && !event.target.closest('.moment-menu')) {
+        const allMenus = document.querySelectorAll('.moment-menu');
+        allMenus.forEach(menu => {
+            menu.style.display = 'none';
+        });
+    }
+});
+
+// 处理朋友圈头像点击事件
+
+function toggleMomentActions(momentId) {
+    const menu = document.getElementById(`momentActions-${momentId}`);
+    if (!menu) {
+        console.error('Menu not found for moment:', momentId);
+        return;
+    }
+
+    const allMenus = document.querySelectorAll('.moment-actions-menu');
+    const isActive = menu.classList.contains('active');
+
+    // 统一先关闭所有菜单
+    allMenus.forEach(m => {
+        m.classList.remove('active');
+    });
+
+    if (!isActive) {
+        menu.classList.add('active');
+    }
+
+    // 点击外部关闭菜单的逻辑（保留，但可以简化）
+    if (!isActive) {
+        setTimeout(() => {
+            const closeHandler = (e) => {
+                if (!e.target.closest('.moment-collapse-btn')) {
+                     menu.classList.remove('active');
+                     document.removeEventListener('click', closeHandler, true);
+                }
+            };
+            document.addEventListener('click', closeHandler, true);
+        }, 0);
+    }
+}
+
+// 点赞朋友圈
+async function likeMoment(momentId) {
+    try {
+        const userProfile = await getUserProfile();
+        const userName = userProfile.name || '我';
+        
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) return;
+        
+        const moment = moments[momentIndex];
+        
+        // 初始化点赞列表
+        if (!moment.likes) {
+            moment.likes = [];
+        }
+        
+        // 检查是否已点赞
+        const hasLiked = moment.likes.includes(userName);
+        
+        if (hasLiked) {
+            // 取消点赞
+            moment.likes = moment.likes.filter(name => name !== userName);
+            showToast('已取消点赞');
+        } else {
+            // 添加点赞
+            moment.likes.push(userName);
+            showToast('点赞成功');
+        }
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        
+        // 检测当前在哪个页面
+        const userProfilePage = document.getElementById('userProfilePage');
+        const isInUserProfile = userProfilePage && userProfilePage.classList.contains('active');
+        
+        if (isInUserProfile) {
+            // 如果在个人主页，重新加载个人主页的朋友圈
+            await loadUserProfileMoments();
+        } else {
+            // 如果在发现页面，重新渲染发现页面
+            await renderMomentsList();
+        }
+        
+        // 关闭菜单
+        const menu = document.getElementById(`momentActions-${momentId}`);
+        if (menu) menu.classList.remove('active');
+        
+    } catch (error) {
+        console.error('点赞失败:', error);
+        showToast('点赞失败');
+    }
+}
+
+// 显示朋友圈评论框
+function showMomentComment(momentId) {
+    // 检测当前在哪个页面
+    const userProfilePage = document.getElementById('userProfilePage');
+    const isInUserProfile = userProfilePage && userProfilePage.classList.contains('active');
+    
+    let replyContainer;
+    if (isInUserProfile) {
+        // 在个人主页，查找个人主页的回复容器
+        replyContainer = userProfilePage.querySelector(`#momentMainReply-${momentId}`);
+    } else {
+        // 在发现页面，查找发现页面的回复容器
+        replyContainer = document.getElementById(`momentMainReply-${momentId}`);
+    }
+    
+    if (!replyContainer) {
+        console.error('Reply container not found for moment:', momentId);
+        return;
+    }
+    
+    const textarea = replyContainer.querySelector('.moment-reply-input');
+    
+    replyContainer.classList.add('active');
+    replyContainer.style.display = 'block'; // 确保显示
+    textarea.focus();
+    
+    // 关闭菜单（发现页面才有菜单）
+    if (!isInUserProfile) {
+        const menu = document.getElementById(`momentActions-${momentId}`);
+        if (menu) menu.classList.remove('active');
+    }
+}
+
+// 隐藏朋友圈评论框
+function hideMomentComment(momentId) {
+    // 检测当前在哪个页面
+    const userProfilePage = document.getElementById('userProfilePage');
+    const isInUserProfile = userProfilePage && userProfilePage.classList.contains('active');
+    
+    let replyContainer;
+    if (isInUserProfile) {
+        // 在个人主页，查找个人主页的回复容器
+        replyContainer = userProfilePage.querySelector(`#momentMainReply-${momentId}`);
+    } else {
+        // 在发现页面，查找发现页面的回复容器
+        replyContainer = document.getElementById(`momentMainReply-${momentId}`);
+    }
+    
+    if (!replyContainer) {
+        console.error('Reply container not found for moment:', momentId);
+        return;
+    }
+    
+    const textarea = replyContainer.querySelector('.moment-reply-input');
+    
+    replyContainer.classList.remove('active');
+    replyContainer.style.display = 'none'; // 确保隐藏
+    textarea.value = '';
+}
+
+// 提交朋友圈评论
+async function submitMomentComment(momentId) {
+    try {
+        const userProfile = await getUserProfile();
+        const userName = userProfile.name || '我';
+        
+        // 检测当前在哪个页面
+        const userProfilePage = document.getElementById('userProfilePage');
+        const isInUserProfile = userProfilePage && userProfilePage.classList.contains('active');
+        
+        let replyContainer;
+        if (isInUserProfile) {
+            // 在个人主页，查找个人主页的回复容器
+            replyContainer = userProfilePage.querySelector(`#momentMainReply-${momentId}`);
+        } else {
+            // 在发现页面，查找发现页面的回复容器
+            replyContainer = document.getElementById(`momentMainReply-${momentId}`);
+        }
+        
+        if (!replyContainer) {
+            console.error('Reply container not found for moment:', momentId);
+            return;
+        }
+        
+        const textarea = replyContainer.querySelector('.moment-reply-input');
+        const content = textarea.value.trim();
+        
+        if (!content) {
+            showToast('请输入评论内容');
+            return;
+        }
+        
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) return;
+        
+        const moment = moments[momentIndex];
+        
+        // 添加用户评论
+        const newComment = {
+            author: userName,
+            content: content,
+            like: false,
+            timestamp: new Date().toISOString()
+        };
+        
+        if (!moment.comments) {
+            moment.comments = [];
+        }
+        
+        moment.comments.push(newComment);
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        
+        if (isInUserProfile) {
+            // 如果在个人主页，重新加载个人主页的朋友圈
+            await loadUserProfileMoments();
+        } else {
+            // 如果在发现页面，重新渲染发现页面
+            await renderMomentsList();
+        }
+        
+        showToast('评论成功');
+        
+        // 触发楼主回复
+        setTimeout(() => {
+            generateMomentAuthorReply(momentId, userName, content);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('评论失败:', error);
+        showToast('评论失败');
+    }
+}
+
+// 显示评论回复框
+function showCommentReply(commentId, authorName, momentId) {
+    const replyContainer = document.getElementById(`${commentId}-reply`);
+    const textarea = replyContainer.querySelector('.moment-reply-input');
+    
+    replyContainer.classList.add('active');
+    textarea.focus();
+    textarea.setAttribute('placeholder', `回复${authorName}...`);
+}
+
+// 隐藏评论回复框
+function hideCommentReply(commentId) {
+    const replyContainer = document.getElementById(`${commentId}-reply`);
+    const textarea = replyContainer.querySelector('.moment-reply-input');
+    
+    replyContainer.classList.remove('active');
+    textarea.value = '';
+}
+
+// 提交评论回复
+async function submitCommentReply(commentId, replyToAuthor, momentId) {
+    try {
+        const userProfile = await getUserProfile();
+        const userName = userProfile.name || '我';
+        
+        const replyContainer = document.getElementById(`${commentId}-reply`);
+        const textarea = replyContainer.querySelector('.moment-reply-input');
+        const content = textarea.value.trim();
+        
+        if (!content) {
+            showToast('请输入回复内容');
+            return;
+        }
+        
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) return;
+        
+        const moment = moments[momentIndex];
+        
+        // 添加用户回复
+        const newComment = {
+            author: userName,
+            content: `回复${replyToAuthor}: ${content}`,
+            like: false,
+            timestamp: new Date().toISOString()
+        };
+        
+        if (!moment.comments) {
+            moment.comments = [];
+        }
+        
+        moment.comments.push(newComment);
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        await renderMomentsList();
+        
+        showToast('回复成功');
+        
+        // 触发被回复人的回复
+        setTimeout(() => {
+            generateCommentReply(momentId, replyToAuthor, userName, content);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('回复失败:', error);
+        showToast('回复失败');
+    }
+}
+
+// 点击评论作者头像
+function handleCommentAuthorClick(authorName) {
+    // 复用朋友圈头像点击逻辑
+    handleMomentAvatarClick(authorName);
+}
+
+// 显示朋友圈评论回复框（发现页面点击评论行）
+function showMomentReplyToComment(momentId, commentAuthor) {
+    // 显示回复框
+    showMomentComment(momentId);
+    
+    // 预填充@用户名
+    const replyInput = document.querySelector(`#momentMainReply-${momentId} .moment-reply-input`);
+    if (replyInput) {
+        const mention = `@${commentAuthor} `;
+        const currentText = replyInput.value;
+        
+        // 避免重复添加@提及
+        if (!currentText.includes(mention)) {
+            replyInput.value = mention + currentText;
+        }
+        
+        // 聚焦输入框并设置光标位置
+        replyInput.focus();
+        replyInput.setSelectionRange(replyInput.value.length, replyInput.value.length);
+        
+        // 确保回复框滚动到可见位置
+        setTimeout(() => {
+            replyInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+    }
+}
+
+// 生成楼主回复用户评论
+async function generateMomentAuthorReply(momentId, commenterName, commentContent) {
+    try {
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) return;
+        
+        const moment = moments[momentIndex];
+        const authorName = moment.authorName;
+        
+        // 如果楼主就是用户，不生成回复
+        const userProfile = await getUserProfile();
+        if (authorName === userProfile.name) return;
+        
+        // 查找角色
+        const character = window.contacts?.find(c => c.name === authorName);
+        if (!character) return;
+        
+        // 生成回复内容
+        const replyContent = await generateCharacterReply(character, commenterName, commentContent, moment.content);
+        
+        // 添加角色回复
+        const authorReply = {
+            author: authorName,
+            content: `回复${commenterName}: ${replyContent}`,
+            like: false,
+            timestamp: new Date().toISOString()
+        };
+        
+        moments[momentIndex].comments.push(authorReply);
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        await renderMomentsList();
+        
+    } catch (error) {
+        console.error('生成楼主回复失败:', error);
+    }
+}
+
+// 生成被回复人的回复
+async function generateCommentReply(momentId, repliedAuthor, replierName, replyContent) {
+    try {
+        const momentIndex = moments.findIndex(m => m.id === momentId);
+        if (momentIndex === -1) return;
+        
+        const moment = moments[momentIndex];
+        
+        // 如果被回复的是用户，不生成回复
+        const userProfile = await getUserProfile();
+        if (repliedAuthor === userProfile.name) return;
+        
+        // 查找被回复的角色
+        const character = window.contacts?.find(c => c.name === repliedAuthor);
+        if (!character) return;
+        
+        // 生成回复内容
+        const responseContent = await generateCharacterReply(character, replierName, replyContent, moment.content);
+        
+        // 添加角色回复
+        const characterReply = {
+            author: repliedAuthor,
+            content: responseContent,
+            like: false,
+            timestamp: new Date().toISOString()
+        };
+        
+        moments[momentIndex].comments.push(characterReply);
+        
+        // 保存并重新渲染
+        await saveDataToDB();
+        await renderMomentsList();
+        
+    } catch (error) {
+        console.error('生成角色回复失败:', error);
+    }
+}
+
+// 生成角色回复内容
+async function generateCharacterReply(character, replierName, replyContent, momentContent) {
+    try {
+        const userProfile = await getUserProfile();
+        
+        const prompt = `你是${character.name}，人设：${character.personality}
+
+${replierName}在你的朋友圈"${momentContent}"下评论或回复了："${replyContent}"
+
+请以${character.name}的身份简短回复，要求：
+1. 符合你的人设
+2. 针对${replierName}的评论进行回应
+3. 10-30字之间
+4. 自然、口语化
+5. 只输出回复内容，不要其他解释`;
+
+        const response = await fetch(apiSettings.url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiSettings.key}`
+            },
+            body: JSON.stringify({
+                model: apiSettings.model,
+                messages: [
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.8,
+                max_tokens: 100
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`API请求失败: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.choices[0]?.message?.content?.trim() || '哈哈哈';
+        
+    } catch (error) {
+        console.error('生成角色回复失败:', error);
+        return '😄';
+    }
+}
+
+async function handleMomentAvatarClick(authorName) {
+    try {
+        // 获取用户配置
+        const userProfile = await getUserProfile();
+        
+        // 如果是自己，显示自己的主页
+        if (authorName === '我' || authorName === userProfile.name) {
+            await showUserProfile();
+            return;
+        }
+        
+        // 查找对应的联系人
+        const contact = window.contacts?.find(c => c.name === authorName);
+        if (contact) {
+            await showContactProfile(contact);
+        } else {
+            console.error('联系人不存在 - 详细信息:');
+            console.error('- 查找的联系人姓名:', authorName);
+            console.error('- 当前联系人列表:', window.contacts);
+            console.error('- 联系人列表长度:', window.contacts ? window.contacts.length : '联系人列表为空');
+            if (window.contacts && window.contacts.length > 0) {
+                console.error('- 现有联系人姓名列表:', window.contacts.map(c => c.name));
+            }
+            
+            // 显示错误提示
+            showToast(`联系人不存在: ${authorName}`);
+            
+            // 仍然创建临时联系人对象用于显示，但标记为不存在
+            const tempContact = {
+                name: `${authorName} (联系人不存在)`,
+                avatar: null,
+                isTemporary: true
+            };
+            await showContactProfile(tempContact);
+        }
+    } catch (error) {
+        console.error('处理头像点击事件失败:', error);
+    }
+}
+
+// 创建个人主页朋友圈动态元素
+async function createUserProfileMomentElement(moment) {
+    const momentDiv = document.createElement('div');
+    momentDiv.className = 'user-profile-moment-item';
+    
+    // 获取当前用户资料用于头像显示
+    const userProfile = await getUserProfile();
+    
+    let imagesHtml = '';
+    
+    // 处理图片 - 支持新的文件系统和旧的base64格式
+    if (moment.imageFileIds && moment.imageCount > 0 && window.ImageStorageAPI) {
+        // 新的文件系统存储方式
+        const imageUrls = [];
+        for (let i = 0; i < moment.imageCount; i++) {
+            imageUrls.push(`data:image/jpeg;base64,loading...`); // 占位符，后续异步加载
+        }
+        imagesHtml = `
+            <div class="user-profile-moment-images">
+                ${imageUrls.map((image, index) => `
+                    <img src="${image}" alt="朋友圈图片" class="user-profile-moment-image" data-moment-id="${moment.id}" data-image-index="${index}">
+                `).join('')}
+            </div>
+        `;
+    } else if (moment.image) {
+        // 旧的单图片格式
+        imagesHtml = `
+            <div class="user-profile-moment-images">
+                <img src="${moment.image}" alt="朋友圈图片" class="user-profile-moment-image" onclick="showImagePreview('${moment.image}')">
+            </div>
+        `;
+    } else if (moment.images && moment.images.length > 0) {
+        // 多图片格式
+        imagesHtml = `
+            <div class="user-profile-moment-images">
+                ${moment.images.map(image => `
+                    <img src="${image}" alt="朋友圈图片" class="user-profile-moment-image" onclick="showImagePreview('${image}')">
+                `).join('')}
+            </div>
+        `;
+    }
+    
+    // 使用正确的时间字段
+    const timeStr = moment.time || moment.timestamp || new Date().toISOString();
+    
+    // 处理点赞信息
+    const likes = moment.likes || [];
+    let likedUsers = [];
+    
+    // 获取点赞用户列表（包括独立点赞和评论点赞）
+    if (likes.length > 0) {
+        likedUsers = [...likes];
+    }
+    
+    if (moment.comments && moment.comments.length > 0) {
+        const commentLikedUsers = moment.comments
+            .filter(comment => comment.like === true)
+            .map(comment => comment.author)
+            .filter(author => !likedUsers.includes(author)); // 避免重复
+        
+        likedUsers = [...likedUsers, ...commentLikedUsers];
+    }
+    
+    const likesContent = likedUsers.length > 0 ? 
+        `<div class="moment-likes">❤️ ${likedUsers.join(', ')}</div>` : '';
+    
+    // 处理评论内容 - 个人主页使用完整交互样式
+    let commentsContent = '';
+    if (moment.comments && moment.comments.length > 0) {
+        const commentsList = moment.comments
+            .filter(comment => comment.content && comment.content.trim())
+            .map((comment, index) => {
+                const safeContent = comment.content.replace(/'/g, '&#39;');
+                const commentTimeStr = comment.time || new Date().toISOString();
+                const isLiked = comment.like === true ? 'liked' : '';
+                
+                const commentAuthorContact = contacts.find(c => c.name === comment.author);
+                const commentAvatarContent = commentAuthorContact && commentAuthorContact.avatar ? 
+                    `<img src="${commentAuthorContact.avatar}" alt="头像" style="width: 32px; height: 32px; border-radius: 4px; object-fit: cover;">` : 
+                    `<div style="width: 32px; height: 32px; border-radius: 4px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 14px;">${comment.author.charAt(0)}</div>`;
+                
+                return `
+                    <div class="moment-comment-item" data-comment-index="${index}" style="display: flex; margin-bottom: 12px;">
+                        <div style="margin-right: 10px;">${commentAvatarContent}</div>
+                        <div style="flex: 1;">
+                            <div class="moment-comment-content">
+                                <span class="moment-comment-author" onclick="handleCommentAuthorClick('${comment.author}')" style="font-weight: 600; color: #576b95; cursor: pointer;">${comment.author}:</span>
+                                <span class="moment-comment-text" style="color: #333; margin-left: 4px;">${safeContent}</span>
+                            </div>
+                            <div class="moment-comment-actions" style="margin-top: 4px; font-size: 12px; color: #999;">
+                                <span class="moment-comment-time">${formatContactListTime(commentTimeStr)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        commentsContent = `<div class="moment-comments">${commentsList}</div>`;
+    }
+    
+    // 个人主页使用独立按钮
+    const actionsMenu = `
+        <div style="display: flex; gap: 8px;">
+            <button onclick="likeMoment('${moment.id}')" style="padding: 4px 8px; background: #f0f0f0; border: none; border-radius: 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="点赞">
+                ❤ 点赞
+            </button>
+            <button onclick="showMomentComment('${moment.id}')" style="padding: 4px 8px; background: #f0f0f0; border: none; border-radius: 12px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;" title="评论">
+                💬 评论
+            </button>
+        </div>
+    `;
+    
+    // 处理作者头像 - 和发现页面逻辑一致
+    let avatarContent = '';
+    const author = window.contacts ? window.contacts.find(c => c.name === moment.authorName) : null;
+    if (author && author.avatar) {
+        avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+    } else if (moment.authorName === userProfile.name && userProfile.avatar) {
+        // 如果是当前用户的动态
+        avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+    } else {
+        // 使用文字头像
+        avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+    }
+    
+    momentDiv.innerHTML = `
+        <div class="moment-header" style="display: flex; margin-bottom: 8px; align-items: flex-start;">
+            <div class="moment-avatar" style="margin-right: 12px; flex-shrink: 0;">${avatarContent}</div>
+            <div class="moment-info" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 40px;">
+                <div class="moment-name" style="font-weight: 600; color: #576b95; font-size: 15px; line-height: 1.2; margin: 0;">${moment.authorName}</div>
+                <div class="user-profile-moment-content" style="font-size: 16px; line-height: 1.4; color: #333; margin: 0; flex-grow: 1; display: flex; align-items: flex-end;">${moment.content}</div>
+            </div>
+        </div>
+        ${imagesHtml}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <div class="user-profile-moment-time" style="font-size: 12px; color: #999;">${formatContactListTime(timeStr)}</div>
+            ${actionsMenu}
+        </div>
+        ${likesContent}
+        ${commentsContent}
+        <div class="moment-reply-input-container" id="momentMainReply-${moment.id}" style="display: none;">
+            <textarea class="moment-reply-input" placeholder="写评论..."></textarea>
+            <div class="moment-reply-actions">
+                <button class="moment-reply-btn moment-reply-cancel" onclick="hideMomentComment('${moment.id}')">取消</button>
+                <button class="moment-reply-btn moment-reply-submit" onclick="submitMomentComment('${moment.id}')">发送</button>
+            </div>
+        </div>
+    `;
+    
+    // 异步加载文件系统中的图片
+    if (moment.imageFileIds && moment.imageCount > 0 && window.ImageStorageAPI) {
+        setTimeout(async () => {
+            try {
+                await window.ImageStorageAPI.init();
+                const imageUrls = await window.ImageStorageAPI.getMomentImagesURLs(moment.id, moment.imageCount);
+                const imgElements = momentDiv.querySelectorAll('[data-moment-id="' + moment.id + '"]');
+                imgElements.forEach((img, index) => {
+                    if (imageUrls[index]) {
+                        img.src = imageUrls[index];
+                        img.onclick = () => showImagePreview(imageUrls[index]);
+                    }
+                });
+            } catch (error) {
+                console.error('加载个人主页朋友圈图片失败:', error);
+            }
+        }, 100);
+    }
+    
+    return momentDiv;
+}
+
 // 页面加载后自动检查迁移状态
 document.addEventListener('DOMContentLoaded', () => {
     // 等待所有脚本加载完成后再检查
@@ -6796,3 +8889,281 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 2000);
 });
+
+// === Banner上传功能 ===
+
+// 全局变量用于存储当前选择的图片
+let currentBannerImage = null;
+let currentBannerCanvas = null;
+
+// 打开banner上传模态框
+function openBannerUploadModal() {
+    
+    // 检查模态框元素是否存在
+    const modal = document.getElementById('bannerUploadModal');
+    if (!modal) {
+        console.error('Banner上传模态框元素不存在');
+        showToast('无法打开上传界面，请刷新页面重试');
+        return;
+    }
+    
+    console.log('找到模态框元素，准备显示');
+    showModal('bannerUploadModal');
+    resetBannerUpload();
+}
+
+// 触发文件选择
+function triggerBannerFileInput() {
+    document.getElementById('bannerFileInput').click();
+}
+
+// 处理文件选择
+async function handleBannerFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // 验证文件类型
+    if (!file.type.match(/^image\/(jpeg|jpg|png)$/)) {
+        showToast('请选择 JPG 或 PNG 格式的图片');
+        return;
+    }
+    
+    // 验证文件大小（限制为 10MB）
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('图片文件不能超过 10MB');
+        return;
+    }
+    
+    try {
+        // 读取图片
+        const imageUrl = await readFileAsDataURL(file);
+        const img = new Image();
+        
+        img.onload = () => {
+            currentBannerImage = img;
+            setupBannerPreview();
+        };
+        
+        img.onerror = () => {
+            showToast('图片加载失败，请选择其他图片');
+        };
+        
+        img.src = imageUrl;
+        
+    } catch (error) {
+        console.error('图片处理失败:', error);
+        showToast('图片处理失败: ' + error.message);
+    }
+}
+
+// 设置banner预览
+function setupBannerPreview() {
+    if (!currentBannerImage) return;
+    
+    // 显示预览容器
+    const uploadArea = document.getElementById('bannerUploadArea');
+    const previewContainer = document.getElementById('bannerPreviewContainer');
+    
+    uploadArea.style.display = 'none';
+    previewContainer.style.display = 'block';
+    
+    // 设置canvas和slider
+    currentBannerCanvas = document.getElementById('bannerPreviewCanvas');
+    const slider = document.getElementById('bannerCropSlider');
+    
+    // 重置slider
+    slider.value = 50;
+    
+    // 初始渲染
+    updateBannerPreview();
+}
+
+// 更新banner预览
+function updateBannerPreview() {
+    if (!currentBannerImage || !currentBannerCanvas) return;
+    
+    const canvas = currentBannerCanvas;
+    const ctx = canvas.getContext('2d');
+    const slider = document.getElementById('bannerCropSlider');
+    
+    // Canvas尺寸 (保持2.5:1的banner比例)
+    const canvasWidth = 400;
+    const canvasHeight = 160;
+    
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    // 计算图片尺寸和位置
+    const imgWidth = currentBannerImage.width;
+    const imgHeight = currentBannerImage.height;
+    
+    // 计算缩放比例，确保图片宽度完全覆盖canvas
+    const scaleX = canvasWidth / imgWidth;
+    const scaleY = canvasHeight / imgHeight;
+    const scale = Math.max(scaleX, scaleY);
+    
+    const scaledWidth = imgWidth * scale;
+    const scaledHeight = imgHeight * scale;
+    
+    // 根据slider值计算垂直位置
+    const cropOffset = (slider.value / 100) * (scaledHeight - canvasHeight);
+    
+    // 清空canvas并绘制图片
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.drawImage(
+        currentBannerImage,
+        (canvasWidth - scaledWidth) / 2, // 水平居中
+        -cropOffset, // 根据slider调整垂直位置
+        scaledWidth,
+        scaledHeight
+    );
+}
+
+// 重置banner上传
+function resetBannerUpload() {
+    currentBannerImage = null;
+    currentBannerCanvas = null;
+    
+    const uploadArea = document.getElementById('bannerUploadArea');
+    const previewContainer = document.getElementById('bannerPreviewContainer');
+    const fileInput = document.getElementById('bannerFileInput');
+    
+    if (uploadArea) {
+        uploadArea.style.display = 'block';
+    } else {
+        console.error('上传区域元素不存在');
+    }
+    
+    if (previewContainer) {
+        previewContainer.style.display = 'none';
+    } else {
+        console.error('预览容器元素不存在');
+    }
+    
+    if (fileInput) {
+        fileInput.value = '';
+    } else {
+        console.error('文件输入元素不存在');
+    }
+}
+
+// 保存banner图片
+async function saveBannerImage() {
+    if (!currentBannerCanvas || !window.ImageStorageAPI) {
+        showToast('无法保存图片，请重试');
+        return;
+    }
+    
+    try {
+        // 将canvas转换为blob
+        const blob = await canvasToBlob(currentBannerCanvas);
+        
+        // 确保 ImageStorageAPI 已初始化
+        await window.ImageStorageAPI.init();
+        
+        // 存储banner图片
+        const fileId = await window.ImageStorageAPI.storeBanner(blob, 'user_profile');
+        console.log('Banner图片已保存，文件ID:', fileId);
+        
+        // 更新用户资料中的banner字段
+        const profile = await getUserProfile();
+        profile.bannerFileId = fileId; // 这里fileId现在应该是字符串了
+        await saveDataToDB(); // 保存到IndexedDB
+        
+        // 应用新的banner背景
+        await applyBannerBackground(fileId);
+        
+        // 关闭模态框
+        closeModal('bannerUploadModal');
+        showToast('背景图片已更新');
+        
+        // 尝试重新加载banner
+        setTimeout(() => {
+            loadUserBanner();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('保存banner失败:', error);
+        showToast('保存失败: ' + error.message);
+    }
+}
+
+// 应用banner背景
+async function applyBannerBackground(fileId) {
+    try {
+        
+        if (!window.ImageStorageAPI) {
+            console.error('ImageStorageAPI 未加载');
+            return;
+        }
+        
+        await window.ImageStorageAPI.init();
+        const bannerUrl = await window.ImageStorageAPI.getBannerURL('user_profile');
+        
+        const bannerElement = document.getElementById('userProfileBanner');
+        
+        // 尝试其他方式查找元素
+        const allBanners = document.querySelectorAll('.user-profile-banner');
+        
+        if (bannerUrl && bannerElement) {
+            // 清除原有的渐变背景
+            bannerElement.style.background = 'none';
+            bannerElement.style.backgroundImage = `url(${bannerUrl})`;
+            bannerElement.style.backgroundSize = 'cover';
+            bannerElement.style.backgroundPosition = 'center';
+            bannerElement.style.backgroundRepeat = 'no-repeat';
+        } else {
+            console.error('Banner URL或元素为空:', { bannerUrl, bannerElement });
+        }
+    } catch (error) {
+        console.error('应用banner背景失败:', error);
+    }
+}
+
+// 加载用户banner背景
+async function loadUserBanner() {
+    try {
+        const userProfile = await getUserProfile();
+        console.log('用户资料:', userProfile);
+        
+        if (userProfile.bannerFileId && window.ImageStorageAPI) {
+            await applyBannerBackground(userProfile.bannerFileId);
+        } else {
+        }
+    } catch (error) {
+        console.error('加载用户banner失败:', error);
+    }
+}
+
+// 工具函数：读取文件为DataURL
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+// 工具函数：Canvas转Blob
+function canvasToBlob(canvas) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+            if (blob) {
+                resolve(blob);
+            } else {
+                reject(new Error('Canvas转换失败'));
+            }
+        }, 'image/jpeg', 0.9);
+    });
+}
+
+// 在显示个人主页时加载banner
+const originalShowUserProfile = showUserProfile;
+showUserProfile = async function() {
+    if (originalShowUserProfile) {
+        await originalShowUserProfile();
+    }
+    // 加载banner背景
+    setTimeout(loadUserBanner, 100);
+};
