@@ -1257,6 +1257,14 @@ async function loadDataFromDB() {
                 console.error('角色记忆管理器初始化失败:', memoryError);
             }
         }
+        
+        // 初始化完成后进行数据一致性检查
+        if (weiboPosts && weiboPosts.length > 0) {
+            const repaired = await checkAndRepairDataConsistency();
+            if (repaired) {
+                console.log('初始化时修复了数据不一致性');
+            }
+        }
 
         console.log('所有数据加载完成');
         showToast('数据加载完成', 'success');
@@ -1821,6 +1829,42 @@ function calculateRenderRange(scrollTop) {
     return { startIndex, endIndex };
 }
 
+// 数据一致性检查和修复函数
+async function checkAndRepairDataConsistency() {
+    if (!isIndexedDBReady || !db) {
+        return false;
+    }
+    
+    try {
+        // 从数据库重新加载所有帖子
+        const transaction = db.transaction(['weiboPosts'], 'readonly');
+        const store = transaction.objectStore('weiboPosts');
+        const allDbPosts = await promisifyRequest(store.getAll());
+        
+        // 检查内存中的帖子是否与数据库一致
+        const memoryPostIds = new Set(weiboPosts.map(p => p.id));
+        const dbPostIds = new Set(allDbPosts.map(p => p.id));
+        
+        // 找出不一致的数据
+        const missingInMemory = allDbPosts.filter(p => !memoryPostIds.has(p.id));
+        const extraInMemory = weiboPosts.filter(p => !dbPostIds.has(p.id));
+        
+        if (missingInMemory.length > 0 || extraInMemory.length > 0) {
+            console.warn(`数据不一致: 内存缺少 ${missingInMemory.length} 个帖子，内存多余 ${extraInMemory.length} 个帖子`);
+            
+            // 使用数据库数据作为准确来源
+            weiboPosts = allDbPosts;
+            console.log('已从数据库恢复数据一致性');
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('数据一致性检查失败:', error);
+        return false;
+    }
+}
+
 function renderAllWeiboPosts(isInitialLoad = true) {
     const container = document.getElementById('weiboContainer');
     
@@ -1939,7 +1983,7 @@ function renderSingleVirtualPost(postData, index) {
                 <span class="action-icon">🔄</span>
                 <span>${savedRandomRetweet}</span>
             </a>
-            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}')">
+            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}').catch(console.error)">
                 <span class="action-icon">💬</span>
                 <span>${post.comments ? post.comments.length : 0}</span>
             </a>
@@ -1977,7 +2021,7 @@ function renderSingleVirtualPost(postData, index) {
 
             commentDiv.addEventListener('click', (event) => {
                 event.stopPropagation();
-                replyToComment(comment.commenter_name, `virtual-post-${index}`);
+                replyToComment(comment.commenter_name, `virtual-post-${index}`).catch(console.error);
             });
             
             commentsSection.appendChild(commentDiv);
@@ -2138,7 +2182,7 @@ function renderSingleWeiboPost(storedPost) {
                     <span class="action-icon">🔄</span>
                     <span>${Math.floor(Math.random() * 500)}</span>
                 </a>
-                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}')">
+                <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}').catch(console.error)">
                     <span class="action-icon">💬</span>
                     <span>${post.comments ? post.comments.length : 0}</span>
                 </a>
@@ -2153,7 +2197,7 @@ function renderSingleWeiboPost(storedPost) {
         // Programmatically create and append comments
         const commentsSection = postElement.querySelector('.comments-section');
         if (commentsSection) {
-            commentsSection.onclick = () => showReplyBox(postHtmlId);
+            commentsSection.onclick = () => showReplyBox(postHtmlId).catch(console.error);
 
             if (post.comments && Array.isArray(post.comments)) {
                 post.comments.forEach(comment => {
@@ -2170,7 +2214,7 @@ function renderSingleWeiboPost(storedPost) {
 
                     commentDiv.addEventListener('click', (event) => {
                         event.stopPropagation();
-                        replyToComment(comment.commenter_name, postHtmlId);
+                        replyToComment(comment.commenter_name, postHtmlId).catch(console.error);
                     });
 
                     commentsSection.appendChild(commentDiv);
@@ -2182,9 +2226,9 @@ function renderSingleWeiboPost(storedPost) {
     });
 }
 
-function replyToComment(commenterName, postHtmlId) {
+async function replyToComment(commenterName, postHtmlId) {
     // First, ensure the reply box is visible for the post.
-    showReplyBox(postHtmlId);
+    await showReplyBox(postHtmlId);
 
     // Now, find the reply box and its textarea.
     const postElement = document.getElementById(postHtmlId);
@@ -2207,9 +2251,26 @@ function replyToComment(commenterName, postHtmlId) {
     replyInput.setSelectionRange(replyInput.value.length, replyInput.value.length);
 }
 
-function showReplyBox(postHtmlId) {
+async function showReplyBox(postHtmlId) {
     const postElement = document.getElementById(postHtmlId);
-    if (!postElement) return;
+    if (!postElement) {
+        console.warn(`找不到帖子元素: ${postHtmlId}`);
+        return;
+    }
+    
+    // 在显示回复框前检查数据一致性
+    const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
+    const storedPost = weiboPosts.find(p => p.id === storedPostId);
+    if (!storedPost) {
+        console.warn(`数据不一致，帖子ID ${storedPostId} 不存在，尝试修复...`);
+        const repaired = await checkAndRepairDataConsistency();
+        if (repaired) {
+            // 数据修复后重新渲染页面
+            renderAllWeiboPosts();
+            showToast('数据已同步，请重新点击回复');
+            return;
+        }
+    }
 
     let replyBox = postElement.querySelector('.reply-box');
     if (replyBox) {
@@ -2247,11 +2308,47 @@ function showReplyBox(postHtmlId) {
         // --- Find the target post ---
         const storedPostId = parseInt(postHtmlId.split('-')[2], 10);
         const postIndex = parseInt(postHtmlId.split('-')[3], 10);
-        const storedPost = weiboPosts.find(p => p.id === storedPostId);
+        let storedPost = weiboPosts.find(p => p.id === storedPostId);
+        
+        // 容错机制：如果找不到帖子，尝试从数据库重新加载
         if (!storedPost) {
-            showToast('错误：找不到原始帖子');
+            console.warn(`找不到帖子ID ${storedPostId}，尝试从数据库重新加载...`);
+            try {
+                if (isIndexedDBReady && db) {
+                    const transaction = db.transaction(['weiboPosts'], 'readonly');
+                    const store = transaction.objectStore('weiboPosts');
+                    const dbPost = await promisifyRequest(store.get(storedPostId));
+                    
+                    if (dbPost) {
+                        // 将从数据库找到的帖子重新添加到内存数组
+                        weiboPosts.push(dbPost);
+                        storedPost = dbPost;
+                        console.log(`成功从数据库恢复帖子ID ${storedPostId}`);
+                    } else {
+                        // 数据库中也没有，可能帖子已被删除，刷新页面
+                        showToast('帖子可能已被删除，正在刷新页面...');
+                        renderAllWeiboPosts();
+                        return;
+                    }
+                } else {
+                    showToast('数据库未就绪，请刷新页面重试');
+                    return;
+                }
+            } catch (error) {
+                console.error('从数据库恢复帖子失败:', error);
+                showToast('数据加载失败，请刷新页面重试');
+                return;
+            }
+        }
+        
+        // 检查帖子索引是否有效
+        if (!storedPost.data?.posts || !storedPost.data.posts[postIndex]) {
+            console.error(`帖子索引无效: storedPostId=${storedPostId}, postIndex=${postIndex}`);
+            showToast('帖子数据异常，正在刷新页面...');
+            renderAllWeiboPosts();
             return;
         }
+        
         const postData = storedPost.data.posts[postIndex];
 
         // --- Create User Comment ---
@@ -2273,7 +2370,7 @@ function showReplyBox(postHtmlId) {
         }
         postData.comments.push(userComment);
         renderAllWeiboPosts(); // Re-render to show the user's comment
-        showReplyBox(postHtmlId); // Keep the reply box open
+        await showReplyBox(postHtmlId); // Keep the reply box open
 
         // 检查并更新全局记忆（用户回复内容）
         if (window.characterMemoryManager) {
