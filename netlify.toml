@@ -5,19 +5,7 @@
   publish = "."
   functions = "netlify/functions"
 
-# 规则一：将所有聊天相关的请求转发到 proxy-api 函数
-# 例如: /api/proxy/chat/completions
-[[redirects]]
-  from = "/api/proxy/*"
-  to = "/.netlify/functions/proxy-api/:splat"
-  status = 200
-
-# 规则二：将测试连接的请求转发到 test-connection 函数
-# 请求路径: /api/test-connection
-[[redirects]]
-  from = "/api/test-connection"
-  to = "/.netlify/functions/test-connection"
-  status = 200
+# 注意：proxy-api 和 test-connection 功能已改为前端直接调用，不再需要重定向规则
 
 # 规则三：将数据传输请求转发到 transfer-data 函数
 # 请求路径: /api/transfer-data
