@@ -1789,20 +1789,6 @@ body:has(.chat-page.active) .bottom-nav {
     line-height: 1.4;
 }
 
-.context-indicator {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgba(7, 193, 96, 0.1);
-    color: #07c160;
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
 .music-modal {
     display: none;
     position: fixed;
