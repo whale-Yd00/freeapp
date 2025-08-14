@@ -7054,13 +7054,22 @@ function createMemoryItem(memory, isCharacter, characterId = null) {
 }
 
 // 编辑单个记忆项
-function editSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
+async function editSingleMemoryItem(memoryId, itemIndex, isCharacter, characterId) {
     let memory;
     if (isCharacter && characterId) {
-        const memories = memoryManager.getCharacterMemories(characterId);
+        const memories = await memoryManager.getCharacterMemories(characterId);
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
         memory = memories.find(m => m.id === memoryId);
     } else {
-        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+        const memories = await memoryManager.getGlobalMemories();
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
+        memory = memories.find(m => m.id === memoryId);
     }
     
     if (!memory) {
@@ -7100,10 +7109,19 @@ async function deleteSingleMemoryItem(memoryId, itemIndex, isCharacter, characte
     
     let memory;
     if (isCharacter && characterId) {
-        const memories = memoryManager.getCharacterMemories(characterId);
+        const memories = await memoryManager.getCharacterMemories(characterId);
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
         memory = memories.find(m => m.id === memoryId);
     } else {
-        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+        const memories = await memoryManager.getGlobalMemories();
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
+        memory = memories.find(m => m.id === memoryId);
     }
     
     if (!memory) {
@@ -7161,15 +7179,24 @@ async function updateSingleMemory(memoryId, content, isCharacter, characterId) {
 }
 
 // 编辑记忆
-function editMemory(memoryId, isCharacter, characterId) {
+async function editMemory(memoryId, isCharacter, characterId) {
     memoryManager.selectedMemoryId = memoryId;
     
     let memory;
     if (isCharacter && characterId) {
-        const memories = memoryManager.getCharacterMemories(characterId);
+        const memories = await memoryManager.getCharacterMemories(characterId);
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
         memory = memories.find(m => m.id === memoryId);
     } else {
-        memory = memoryManager.getGlobalMemories().find(m => m.id === memoryId);
+        const memories = await memoryManager.getGlobalMemories();
+        if (!Array.isArray(memories)) {
+            showToast('获取记忆数据失败');
+            return;
+        }
+        memory = memories.find(m => m.id === memoryId);
     }
     
     if (!memory) {
