@@ -2047,7 +2047,9 @@ function renderSingleVirtualPost(postData, index) {
 
     const postElement = document.createElement('div');
     postElement.className = 'post';
-    postElement.id = `virtual-post-${index}`;
+    // 使用与常规渲染一致的ID格式：weibo-post-{storedPostId}-{postIndex}
+    const postHtmlId = `weibo-post-${storedPost.id}-${postIndex}`;
+    postElement.id = postHtmlId;
     postElement.setAttribute('data-index', index);
 
     // 使用固定的随机数，避免每次渲染都重新生成
@@ -2087,7 +2089,7 @@ function renderSingleVirtualPost(postData, index) {
                 <span class="action-icon">🔄</span>
                 <span>${savedRandomRetweet}</span>
             </a>
-            <a href="#" class="action-btn-weibo" onclick="showReplyBox('virtual-post-${index}').catch(console.error)">
+            <a href="#" class="action-btn-weibo" onclick="showReplyBox('${postHtmlId}').catch(console.error)">
                 <span class="action-icon">💬</span>
                 <span>${post.comments ? post.comments.length : 0}</span>
             </a>
@@ -2109,8 +2111,12 @@ function renderSingleVirtualPost(postData, index) {
     }, 10);
     
     // 渲染评论
+    const commentsSection = postElement.querySelector('.comments-section');
+    
+    // 添加评论区点击事件（与常规渲染保持一致）
+    commentsSection.onclick = () => showReplyBox(postHtmlId).catch(console.error);
+    
     if (post.comments && post.comments.length > 0) {
-        const commentsSection = postElement.querySelector('.comments-section');
         post.comments.forEach(comment => {
             const commenterType = comment.commenter_type ? ` (${comment.commenter_type})` : '';
             
@@ -2125,7 +2131,7 @@ function renderSingleVirtualPost(postData, index) {
 
             commentDiv.addEventListener('click', (event) => {
                 event.stopPropagation();
-                replyToComment(comment.commenter_name, `virtual-post-${index}`).catch(console.error);
+                replyToComment(comment.commenter_name, postHtmlId).catch(console.error);
             });
             
             commentsSection.appendChild(commentDiv);
@@ -2419,31 +2425,54 @@ async function showReplyBox(postHtmlId) {
         // 容错机制：如果找不到帖子，尝试从数据库重新加载
         if (!storedPost) {
             console.warn(`找不到帖子ID ${storedPostId}，尝试从数据库重新加载...`);
-            try {
-                if (isIndexedDBReady && db) {
-                    const transaction = db.transaction(['weiboPosts'], 'readonly');
-                    const store = transaction.objectStore('weiboPosts');
-                    const dbPost = await promisifyRequest(store.get(storedPostId));
-                    
-                    if (dbPost) {
-                        // 将从数据库找到的帖子重新添加到内存数组
-                        weiboPosts.push(dbPost);
-                        storedPost = dbPost;
-                        console.log(`成功从数据库恢复帖子ID ${storedPostId}`);
+            
+            // 首先尝试按不同类型查找
+            let foundByString = weiboPosts.find(p => p.id.toString() === storedPostId.toString());
+            if (foundByString) {
+                storedPost = foundByString;
+            } else {
+                // 尝试从数据库重新加载
+                try {
+                    if (isIndexedDBReady && db) {
+                        const transaction = db.transaction(['weiboPosts'], 'readonly');
+                        const store = transaction.objectStore('weiboPosts');
+                        
+                        // 尝试数字ID和字符串ID
+                        let dbPost = await promisifyRequest(store.get(storedPostId));
+                        if (!dbPost) {
+                            dbPost = await promisifyRequest(store.get(storedPostId.toString()));
+                        }
+                        
+                        if (dbPost) {
+                            // 将从数据库找到的帖子重新添加到内存数组
+                            weiboPosts.push(dbPost);
+                            storedPost = dbPost;
+                            console.log(`成功从数据库恢复帖子ID ${storedPostId}`);
+                        } else {
+                            // 数据库中也没有，检查是否是异常ID（如0、1等）
+                            if (storedPostId < 1000000000000) {
+                                showToast('检测到数据异常，正在重新同步...');
+                                const repaired = await checkAndRepairDataConsistency();
+                                if (repaired) {
+                                    renderAllWeiboPosts();
+                                    return;
+                                }
+                            }
+                            
+                            // 数据库中也没有，可能帖子已被删除，刷新页面
+                            showToast('帖子可能已被删除，正在刷新页面...');
+                            renderAllWeiboPosts();
+                            return;
+                        }
                     } else {
-                        // 数据库中也没有，可能帖子已被删除，刷新页面
-                        showToast('帖子可能已被删除，正在刷新页面...');
-                        renderAllWeiboPosts();
+                        showToast('数据库未就绪，请刷新页面重试');
                         return;
                     }
-                } else {
-                    showToast('数据库未就绪，请刷新页面重试');
+                } catch (error) {
+                    console.error('从数据库恢复帖子失败:', error);
+                    showToast('数据加载失败，请刷新页面重试');
                     return;
                 }
-            } catch (error) {
-                console.error('从数据库恢复帖子失败:', error);
-                showToast('数据加载失败，请刷新页面重试');
-                return;
             }
         }
         
