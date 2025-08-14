@@ -39,9 +39,9 @@
                 <div class="header-title">Whale-LLT</div>
                 <div class="header-actions">
                     <span class="header-icon" onclick="showApiSettingsModal()">⚙️</span>
-                    <span class="header-icon" id="musicIcon" onclick="showMusicModal()">🎵</span>
-                    <span class="header-icon" onclick="showAddContactModal()">➕</span>
-                    <span class="header-icon" onclick="showCreateGroupModal()">👥</span>
+                    <span class="header-icon" id="musicIcon" onclick="showMusicModal()" data-umami-event="Music Open">🎵</span>
+                    <span class="header-icon" onclick="showAddContactModal()" data-umami-event="Add Contact Open">➕</span>
+                    <span class="header-icon" onclick="showCreateGroupModal()" data-umami-event="Create Group Open">👥</span>
                 </div>
             </div>
             
@@ -72,11 +72,11 @@
             <div class="chat-input-area">
                 <div class="feature-hint" id="featureHint">按Enter发送消息，点"发送"按钮获取AI回复</div>
                 <div class="input-actions">
-                    <div class="action-btn" onclick="toggleEmojiPanel()">😊</div>
-                    <div class="action-btn" onclick="showRedPacketModal()">🧧</div>
+                    <div class="action-btn" onclick="toggleEmojiPanel()" data-umami-event="Emoji Panel Toggle">😊</div>
+                    <div class="action-btn" onclick="showRedPacketModal()" data-umami-event="Red Packet Open">🧧</div>
                 </div>
                 <textarea class="chat-input" id="chatInput" placeholder="输入消息" rows="1"></textarea>
-                <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()" data-umami-event="Message Send">发送</button>
                 
                 <div class="emoji-panel" id="emojiPanel">
                     <div class="emoji-grid" id="emojiGrid">
@@ -89,7 +89,7 @@
                 <div class="memory-panel-header">
                     <div class="memory-panel-title">记忆表格</div>
                     <div class="memory-panel-actions">
-                         <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()">编辑</button>
+                         <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()" data-umami-event="Memory Table Edit Toggle">编辑</button>
                          <button class="memory-panel-btn" onclick="toggleMemoryPanel()">关闭</button>
                     </div>
                 </div>
@@ -138,7 +138,7 @@
             </div>
             
             <div class="profile-section">
-                <div class="profile-item" onclick="showEditProfileModal()">
+                <div class="profile-item" onclick="showEditProfileModal()" data-umami-event="Edit Profile Open">
                     <div class="profile-item-label">编辑个人信息</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
@@ -146,15 +146,16 @@
                     <div class="profile-item-label">我的个人主页</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
-                <div class="profile-item" onclick="showPage('dataManagementPage')">
+                <div class="profile-item" onclick="showPage('dataManagementPage')" data-umami-event="Data Management Open">
                     <div class="profile-item-label">数据管理</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
-                <div class="profile-item" onclick="showPage('memoryManagementPage')">
+                <div class="profile-item" onclick="showPage('memoryManagementPage')" data-umami-event="Memory Management Open">
                     <div class="profile-item-label">记忆管理</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
-                <div class="profile-item" onclick="showDebugLogPage()">
+                <div class="profile-item" onclick="showDebugLogPage()"
+                data-umami-event="Debug Log Open">
                     <div class="profile-item-label">查看调试日志</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
@@ -210,11 +211,11 @@
                             💾 数据库完整备份
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            <button type="button" class="form-submit" onclick="exportDatabase()" 
+                            <button type="button" class="form-submit" onclick="exportDatabase()" data-umami-event="Export Database"
                                     style="flex: 1; background-color: #28a745;">
                                 📤 导出数据库
                             </button>
-                            <button type="button" class="form-submit" onclick="triggerFileSelect()" 
+                            <button type="button" class="form-submit" onclick="triggerFileSelect()" data-umami-event="Import Database"
                                     style="flex: 1; background-color: #dc3545;">
                                 📥 导入数据库
                             </button>
@@ -227,11 +228,11 @@
                             🖼️ 文件存储迁移（图片、表情包、背景）
                         </div>
                         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <button type="button" class="form-submit" onclick="exportFileStorage()" 
+                            <button type="button" class="form-submit" onclick="exportFileStorage()" data-umami-event="Export Media Files"
                                     style="flex: 1; background-color: #ff9800;">
                                 📤 导出文件
                             </button>
-                            <button type="button" class="form-submit" onclick="triggerFileStorageImport()" 
+                            <button type="button" class="form-submit" onclick="triggerFileStorageImport()" data-umami-event="Import Media Files"
                                     style="flex: 1; background-color: #f57c00;">
                                 📥 导入文件
                             </button>
@@ -260,11 +261,11 @@
                                 朋友圈图片
                             </label>
                             <div style="display: flex; gap: 10px;">
-                                <button type="button" class="form-submit" onclick="confirmFileExport()" 
+                                <button type="button" class="form-submit" onclick="confirmFileExport()" data-umami-event="Confirm File Export"
                                         style="flex: 1; background-color: #4caf50; font-size: 12px; padding: 6px;">
                                     ✅ 确认导出
                                 </button>
-                                <button type="button" class="form-submit" onclick="cancelFileExport()" 
+                                <button type="button" class="form-submit" onclick="cancelFileExport()" data-umami-event="Cancel File Export"
                                         style="flex: 1; background-color: #f44336; font-size: 12px; padding: 6px;">
                                     ❌ 取消
                                 </button>
@@ -274,7 +275,7 @@
 
                     <!-- 其他功能 -->
                     <div style="margin-bottom: 15px;">
-                        <button type="button" class="form-submit" id="shareDataBtn" onclick="handleShareData()" 
+                        <button type="button" class="form-submit" id="shareDataBtn" onclick="handleShareData()" data-umami-event="Transfer Data" 
                                 style="width: 100%; background-color: #007bff;">
                             🔗 数据传输
                         </button>
@@ -283,41 +284,6 @@
                     
                     <input type="file" id="importFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
                     <input type="file" id="fileStorageImportInput" accept=".zip,.json" style="display: none;" onchange="handleFileStorageImport(event)">
-                    
-                    <!-- 手动复制区域 -->
-                    <div id="manualCopyArea" style="display: none; margin-top: 15px; padding: 15px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px;">
-                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #495057;">
-                            数据导出内容：
-                        </div>
-                        <textarea id="manualCopyTextArea" readonly style="width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; background: white;"></textarea>
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            <button type="button" class="form-submit" onclick="selectAllManualCopyText()" style="flex: 1; background-color: #6c757d; font-size: 12px; padding: 8px;">
-                                📋 全选文本
-                            </button>
-                            <button type="button" class="form-submit" onclick="hideManualCopyArea()" style="flex: 1; background-color: #dc3545; font-size: 12px; padding: 8px;">
-                                ❌ 关闭
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- 手动导入区域 -->
-                    <div id="manualImportArea" style="display: none; margin-top: 15px; padding: 15px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
-                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #856404;">
-                            请粘贴要导入的数据：
-                        </div>
-                        <textarea id="manualImportTextArea" placeholder="请在此处粘贴JSON格式的数据库备份数据..." style="width: 100%; height: 200px; font-family: monospace; font-size: 12px; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; background: white;"></textarea>
-                        <div style="margin-top: 10px; display: flex; gap: 10px;">
-                            <button type="button" class="form-submit" onclick="processManualImport()" style="flex: 1; background-color: #fd7e14; font-size: 12px; padding: 8px;">
-                                ✅ 确认导入
-                            </button>
-                            <button type="button" class="form-submit" onclick="clearManualImportText()" style="flex: 1; background-color: #6c757d; font-size: 12px; padding: 8px;">
-                                🗑️ 清空内容
-                            </button>
-                            <button type="button" class="form-submit" onclick="hideManualImportArea()" style="flex: 1; background-color: #dc3545; font-size: 12px; padding: 8px;">
-                                ❌ 关闭
-                            </button>
-                        </div>
-                    </div>
                     
                     <!-- 导入说明 -->
                     <div class="import-warning" style="margin-top: 10px; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
@@ -415,14 +381,11 @@
             </div>
             
             <div class="user-profile-content">
-                <!-- Banner区域，占屏幕2/5高度 -->
-                <div class="user-profile-banner" id="userProfileBanner" onclick="openBannerUploadModal()" style="cursor: pointer;">
+                <div class="user-profile-banner" id="userProfileBanner" onclick="openBannerUploadModal()" style="cursor: pointer;" data-umami-event="Banner Click">
                     <div class="banner-upload-hint" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.7); font-size: 14px; pointer-events: none; opacity: 0; transition: opacity 0.3s;">
                         点击更换背景图片
                     </div>
-                    <!-- Avatar在banner右下角 -->
                     <div class="user-profile-avatar-container" onclick="event.stopPropagation()">
-                        <!-- 用户名在avatar上三等分线左侧，右对齐 -->
                         <div class="user-profile-name" id="userProfileName">我的昵称</div>
                         <div class="user-profile-avatar" id="userProfileAvatar">我</div>
                     </div>
@@ -451,21 +414,21 @@
     </div>
 
     <div class="bottom-nav">
-        <div class="nav-item active" onclick="showPage('contactListPage')">
+        <div class="nav-item active" onclick="showPage('contactListPage')" data-umami-event="Nav Chat">
             <div class="nav-icon">💬</div>
             <div class="nav-text">聊天</div>
         </div>
-        <div class="nav-item" onclick="showPage('weiboPage')">
+        <div class="nav-item" onclick="showPage('weiboPage')" data-umami-event="Nav Forum">
             <div class="nav-icon">
                 <svg t="1721063385731" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="10099" width="24" height="24"><path d="M822.4 438.4c-3.2-16-16-28.8-32-32-12.8-3.2-25.6-3.2-38.4-3.2-108.8 0-204.8 48-275.2 128-22.4 25.6-41.6 51.2-57.6 80-96-44.8-192-115.2-265.6-204.8-19.2-25.6-48-35.2-76.8-22.4-28.8 12.8-44.8 44.8-35.2 73.6 3.2 9.6 9.6 19.2 16 28.8 48 64 108.8 118.4 179.2 163.2-83.2 16-156.8 64-211.2 131.2-19.2 25.6-16 64 9.6 83.2 25.6 19.2 64 16 83.2-9.6 44.8-54.4 105.6-92.8 172.8-112-6.4 35.2-9.6 70.4-9.6 105.6 0 163.2 102.4 304 249.6 358.4 19.2 6.4 38.4 0 51.2-16 12.8-16 12.8-38.4 0-54.4-115.2-124.8-115.2-300.8 0-425.6 64-70.4 144-112 233.6-121.6 16 0 32-3.2 44.8-9.6 16-9.6 22.4-25.6 19.2-41.6z" fill="#999999" p-id="10100"></path></svg>
             </div>
             <div class="nav-text">论坛</div>
         </div>
-        <div class="nav-item" onclick="showPage('momentsPage')">
+        <div class="nav-item" onclick="showPage('momentsPage')" data-umami-event="Nav Discover">
             <div class="nav-icon">🔍</div>
             <div class="nav-text">发现</div>
         </div>
-        <div class="nav-item" onclick="showPage('profilePage')">
+        <div class="nav-item" onclick="showPage('profilePage')" data-umami-event="Nav Profile">
             <div class="nav-icon">👤</div>
             <div class="nav-text">我</div>
         </div>
@@ -508,7 +471,7 @@
                         <label class="form-label">生成数量</label>
                         <input type="number" class="form-input" id="postGenCount" value="1" min="1" max="5" required>
                     </div>
-                    <button type="submit" class="form-submit">开始生成</button>
+                    <button type="submit" class="form-submit" data-umami-event="Generate Forum Post">开始生成</button>
                 </form>
             </div>
         </div>
@@ -560,7 +523,7 @@
                         <input type="file" id="momentImagesInput" accept="image/*" multiple style="margin-bottom: 10px;" onchange="handleMomentImagesUpload(event)">
                         <div class="moment-images-preview" id="momentImagesPreview"></div>
                     </div>
-                    <button type="submit" class="form-submit">发布并生成评论</button>
+                    <button type="submit" class="form-submit" data-umami-event="Manual Moment Submit">发布并生成评论</button>
                 </form>
             </div>
         </div>
@@ -590,7 +553,7 @@
                         <input type="text" class="form-input" id="momentUnsplashKey" placeholder="填写后可自动配图，留空则无图片">
                         <div class="form-hint">在 <a href="https://unsplash.com/developers" target="_blank">Unsplash Developers</a> 获取API Key</div>
                     </div>
-                    <button type="submit" class="form-submit">生成朋友圈</button>
+                    <button type="submit" class="form-submit" data-umami-event="Generate Moment Submit">生成朋友圈</button>
                 </form>
             </div>
         </div>
@@ -599,13 +562,13 @@
     <div class="modal" id="addContactModal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title" id="contactModalTitle">添加AI助手</div>
+                <div class="modal-title" id="contactModalTitle">添加角色</div>
                 <div class="modal-close" onclick="closeModal('addContactModal')">取消</div>
             </div>
             <div class="modal-body">
                 <form onsubmit="saveContact(event)">
                     <div class="form-group">
-                        <label class="form-label">助手名称</label>
+                        <label class="form-label">角色名称</label>
                         <input type="text" class="form-input" id="contactName" required>
                     </div>
                     <div class="form-group">
@@ -727,7 +690,6 @@
                         </div>
                     </div>
                     
-                    <!-- 【修改点 1】: 替换 ElevenLabs 设置为 Minimax 设置 -->
                     <div class="form-group">
                         <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
                         <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
@@ -759,7 +721,7 @@
                         </div>
                     </div>
                     
-                    <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;">测试连接</button>
+                    <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
                     <div class="form-group">
                         <label class="form-label">主要模型</label>
                         <select class="form-input" id="primaryModelSelect">
@@ -867,7 +829,7 @@
                             <span id="bgUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
-                    <button type="submit" class="form-submit">确定</button>
+                    <button type="submit" class="form-submit" data-umami-event="Contact Background Save">确定</button>
                 </form>
             </div>
         </div>
@@ -893,7 +855,7 @@
                         <label class="form-label">表情含义（用于AI理解和调用）</label>
                         <input type="text" class="form-input" id="emojiMeaning" required placeholder="例如：开心、大笑、哭泣等">
                     </div>
-                    <button type="submit" class="form-submit">添加</button>
+                    <button type="submit" class="form-submit" data-umami-event="Sticker Save">添加</button>
                 </form>
             </div>
         </div>
@@ -915,7 +877,7 @@
                         <label class="form-label">留言（可选）</label>
                         <input type="text" class="form-input" id="redPacketMessage" placeholder="恭喜发财，大吉大利！">
                     </div>
-                    <button type="submit" class="form-submit">塞钱进红包</button>
+                    <button type="submit" class="form-submit" data-umami-event="Redpacket Send">塞钱进红包</button>
                 </form>
             </div>
         </div>
@@ -1049,7 +1011,7 @@
                         <label class="form-label">图片描述</label>
                         <textarea class="form-input" id="manualPostImageDesc" placeholder="描述配图内容（可选）..." rows="2"></textarea>
                     </div>
-                    <button type="submit" class="form-submit">发布并生成评论</button>
+                    <button type="submit" class="form-submit" data-umami-event="Manual Forum Post Submit">发布并生成评论</button>
                 </form>
             </div>
         </div>
@@ -1082,7 +1044,7 @@
                         <textarea class="form-input" id="memoryContent" placeholder="填写你想让AI记住的内容，一行为一条新记忆" rows="6" required></textarea>
                         <div class="form-hint">每行为一条记忆，系统会自动格式化。</div>
                     </div>
-                    <button type="submit" class="form-submit">添加记忆</button>
+                    <button type="submit" class="form-submit" data-umami-event="Memory Add Confirm">添加记忆</button>
                 </form>
             </div>
         </div>
@@ -1122,7 +1084,7 @@
                         <textarea class="form-input" id="editSingleMemoryContent" placeholder="填写你想让AI记住的内容" rows="4" required></textarea>
                         <div class="form-hint">编辑单条记忆的内容。</div>
                     </div>
-                    <button type="submit" class="form-submit">保存修改</button>
+                    <button type="submit" class="form-submit" data-umami-event="Memory Edit Save">保存修改</button>
                 </form>
             </div>
         </div>
@@ -1157,7 +1119,7 @@
                     </div>
                     <div class="banner-upload-buttons">
                         <button class="btn-secondary" onclick="resetBannerUpload()">重新选择</button>
-                        <button class="btn-primary" onclick="saveBannerImage()">应用背景</button>
+                        <button class="btn-primary" onclick="saveBannerImage()" data-umami-event="Banner Upload Save">应用背景</button>
                     </div>
                 </div>
             </div>
