@@ -8803,16 +8803,7 @@ async function generateCharacterReply(character, replierName, replyContent, mome
     try {
         const userProfile = await getUserProfile();
         
-        const prompt = `你是${character.name}，人设：${character.personality}
-
-${replierName}在你的朋友圈"${momentContent}"下评论或回复了："${replyContent}"
-
-请以${character.name}的身份简短回复，要求：
-1. 符合你的人设
-2. 针对${replierName}的评论进行回应
-3. 10-30字之间
-4. 自然、口语化
-5. 只输出回复内容，不要其他解释`;
+        const prompt = window.promptBuilder.buildMomentReplyPrompt(character, replierName, replyContent, momentContent);
 
         const response = await fetch(apiSettings.url, {
             method: 'POST',

@@ -756,6 +756,22 @@ ${chatContext || '暂无聊天记录'}
         return systemPrompt;
     }
 
+    /**
+     * 构建朋友圈回复提示词
+     */
+    buildMomentReplyPrompt(character, replierName, replyContent, momentContent) {
+        return `你是${character.name}，人设：${character.personality}
+
+${replierName}在你的朋友圈"${momentContent}"下评论或回复了："${replyContent}"
+
+请以${character.name}的身份简短回复，要求：
+1. 符合你的人设
+2. 针对${replierName}的评论进行回应
+3. 10-30字之间
+4. 自然、口语化
+5. 只输出回复内容，不要其他解释`;
+    }
+
     // 私有方法：构建红包指令
     _buildRedPacketInstructions() {
         return `\n\n**能力一：发送红包**\n`
