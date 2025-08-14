@@ -444,7 +444,7 @@ let currentlyDisplayedPostCount = 0;
 let isLoadingMorePosts = false;
 
 // 虚拟滚动相关变量
-const VIRTUAL_WINDOW_SIZE = 8; // 保持渲染的帖子数量（上下各4条，总共8条）
+const VIRTUAL_WINDOW_SIZE = 8; // 虚拟滚动窗口大小
 const ESTIMATED_POST_HEIGHT = 300; // 估算的帖子高度（像素）
 let allPosts = []; // 扁平化的所有帖子列表
 let virtualScrollTop = 0;
@@ -1818,13 +1818,47 @@ function flattenPosts() {
 
 // 计算虚拟滚动的渲染范围
 function calculateRenderRange(scrollTop) {
-    const containerHeight = document.getElementById('weiboPage').clientHeight;
-    const visibleStartIndex = Math.floor(scrollTop / ESTIMATED_POST_HEIGHT);
-    const visibleEndIndex = Math.ceil((scrollTop + containerHeight) / ESTIMATED_POST_HEIGHT);
+    const containerHeight = document.getElementById('weiboContainer').clientHeight;
     
-    // 上下各预留4条帖子，总共8条
+    // 使用实际高度计算可见区域
+    let currentHeight = 0;
+    let visibleStartIndex = 0;
+    let visibleEndIndex = allPosts.length;
+    
+    // 找到可见区域开始的索引
+    for (let i = 0; i < allPosts.length; i++) {
+        const postHeight = allPosts[i].height || ESTIMATED_POST_HEIGHT;
+        if (currentHeight + postHeight > scrollTop) {
+            visibleStartIndex = i;
+            break;
+        }
+        currentHeight += postHeight;
+    }
+    
+    // 找到可见区域结束的索引
+    const viewportBottom = scrollTop + containerHeight;
+    let heightFromStart = currentHeight; // 从可见开始位置的累积高度
+    
+    for (let i = visibleStartIndex; i < allPosts.length; i++) {
+        const postHeight = allPosts[i].height || ESTIMATED_POST_HEIGHT;
+        heightFromStart += postHeight;
+        if (heightFromStart > viewportBottom) {
+            visibleEndIndex = i + 1; // 包含当前项目
+            break;
+        }
+    }
+    
+    // 上下各预留4条帖子，提供适中的缓冲区
     const startIndex = Math.max(0, visibleStartIndex - 4);
     const endIndex = Math.min(allPosts.length, visibleEndIndex + 4);
+    
+    // 确保至少渲染一些帖子
+    if (endIndex <= startIndex) {
+        return { 
+            startIndex: Math.max(0, Math.min(visibleStartIndex, allPosts.length - VIRTUAL_WINDOW_SIZE)), 
+            endIndex: Math.min(allPosts.length, Math.max(visibleStartIndex + VIRTUAL_WINDOW_SIZE, VIRTUAL_WINDOW_SIZE))
+        };
+    }
     
     return { startIndex, endIndex };
 }
@@ -1877,14 +1911,42 @@ function renderAllWeiboPosts(isInitialLoad = true) {
     // 扁平化帖子数据
     flattenPosts();
     
+    // 如果帖子数量较少，直接渲染全部而不使用虚拟滚动
+    if (allPosts.length <= 15) {
+        renderAllPostsDirectly();
+        return;
+    }
+    
     if (isInitialLoad) {
         currentStartIndex = 0;
-        currentEndIndex = Math.min(allPosts.length, VIRTUAL_WINDOW_SIZE);
+        // 初始时渲染稍多一些内容，避免空白但不会太多
+        const initialRenderCount = Math.min(allPosts.length, Math.max(VIRTUAL_WINDOW_SIZE, 12));
+        currentEndIndex = initialRenderCount;
         renderVirtualPosts();
     }
 
     // 设置虚拟滚动监听器
     setupVirtualScrollListener();
+}
+
+// 直接渲染所有帖子（用于帖子数量较少的情况）
+function renderAllPostsDirectly() {
+    const container = document.getElementById('weiboContainer');
+    container.innerHTML = '';
+    
+    // 清理虚拟滚动监听器
+    const scrollContainer = document.getElementById('weiboContainer');
+    if (scrollContainer) {
+        scrollContainer.onscroll = null;
+    }
+    
+    // 渲染所有帖子
+    allPosts.forEach((postData, index) => {
+        const postElement = renderSingleVirtualPost(postData, index);
+        if (postElement) {
+            container.appendChild(postElement);
+        }
+    });
 }
 
 // 虚拟滚动渲染函数
@@ -1894,9 +1956,15 @@ function renderVirtualPosts() {
     // 创建虚拟容器，用于保持总高度
     container.innerHTML = '';
     
+    // 计算顶部占位符高度（使用实际高度）
+    let topSpacerHeight = 0;
+    for (let i = 0; i < currentStartIndex; i++) {
+        topSpacerHeight += allPosts[i] ? (allPosts[i].height || ESTIMATED_POST_HEIGHT) : ESTIMATED_POST_HEIGHT;
+    }
+    
     // 添加顶部占位符
     const topSpacer = document.createElement('div');
-    topSpacer.style.height = `${currentStartIndex * ESTIMATED_POST_HEIGHT}px`;
+    topSpacer.style.height = `${topSpacerHeight}px`;
     topSpacer.className = 'virtual-spacer-top';
     container.appendChild(topSpacer);
     
@@ -1907,13 +1975,20 @@ function renderVirtualPosts() {
         const postElement = renderSingleVirtualPost(allPosts[i], i);
         if (postElement) {
             renderedPosts.push(postElement);
+            // 关键修复：将帖子元素添加到容器中！
+            container.appendChild(postElement);
         }
+    }
+    
+    // 计算底部占位符高度（使用实际高度）
+    let bottomSpacerHeight = 0;
+    for (let i = currentEndIndex; i < allPosts.length; i++) {
+        bottomSpacerHeight += allPosts[i] ? (allPosts[i].height || ESTIMATED_POST_HEIGHT) : ESTIMATED_POST_HEIGHT;
     }
     
     // 添加底部占位符
     const bottomSpacer = document.createElement('div');
-    const remainingHeight = Math.max(0, (allPosts.length - currentEndIndex) * ESTIMATED_POST_HEIGHT);
-    bottomSpacer.style.height = `${remainingHeight}px`;
+    bottomSpacer.style.height = `${Math.max(0, bottomSpacerHeight)}px`;
     bottomSpacer.className = 'virtual-spacer-bottom';
     container.appendChild(bottomSpacer);
     
@@ -2062,11 +2137,16 @@ function updatePostHeights(renderedPosts) {
 
 // 虚拟滚动监听器
 function setupVirtualScrollListener() {
-    const scrollContainer = document.getElementById('weiboPage');
-    if (!scrollContainer) return;
+    // 修复：使用实际的滚动容器 weiboContainer 而不是 weiboPage
+    const scrollContainer = document.getElementById('weiboContainer');
+    if (!scrollContainer) {
+        console.error('找不到滚动容器 weiboContainer');
+        return;
+    }
 
     // 移除旧的监听器
     scrollContainer.onscroll = null;
+    
     
     let ticking = false;
     let lastScrollTime = 0;
@@ -2087,24 +2167,21 @@ function setupVirtualScrollListener() {
 }
 
 function handleVirtualScroll() {
-    const scrollContainer = document.getElementById('weiboPage');
+    const scrollContainer = document.getElementById('weiboContainer');
     const scrollTop = scrollContainer.scrollTop;
+    
     
     // 计算新的渲染范围
     const { startIndex, endIndex } = calculateRenderRange(scrollTop);
     
-    // 检查是否需要更新渲染范围（增加阈值避免频繁更新）
+    // 检查是否需要更新渲染范围（减少阈值以提供更好的响应）
     const threshold = 1; // 索引变化阈值
     const startIndexChanged = Math.abs(startIndex - currentStartIndex) >= threshold;
     const endIndexChanged = Math.abs(endIndex - currentEndIndex) >= threshold;
     
     if (startIndexChanged || endIndexChanged) {
-        const oldStart = currentStartIndex;
-        const oldEnd = currentEndIndex;
-        
         currentStartIndex = startIndex;
         currentEndIndex = endIndex;
-        
         
         renderVirtualPosts();
     }
