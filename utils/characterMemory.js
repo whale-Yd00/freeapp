@@ -266,7 +266,7 @@ class CharacterMemoryManager {
     }
 
     /**
-     * 保存角色记忆
+     * 保存角色记忆（覆盖式）
      */
     async saveCharacterMemory(contactId, memory) {
         if (!window.isIndexedDBReady || !window.db) {
@@ -293,6 +293,41 @@ class CharacterMemoryManager {
             return true;
         } catch (error) {
             console.error('保存角色记忆失败:', error);
+            return false;
+        }
+    }
+
+    /**
+     * 追加角色记忆（累积式，用于自动记忆系统）
+     */
+    async appendCharacterMemory(contactId, newMemory) {
+        if (!window.isIndexedDBReady || !window.db) {
+            console.warn('IndexedDB未准备好，无法追加角色记忆');
+            return false;
+        }
+
+        try {
+            // 获取现有记忆
+            const existingMemory = await this.getCharacterMemory(contactId);
+            
+            // 合并记忆
+            let combinedMemory;
+            if (existingMemory && existingMemory.trim()) {
+                // 如果新记忆包含现有记忆的内容，直接使用新记忆（AI已经整合过了）
+                if (newMemory.includes(existingMemory.substring(0, Math.min(100, existingMemory.length)))) {
+                    combinedMemory = newMemory;
+                } else {
+                    // 否则追加新记忆
+                    combinedMemory = existingMemory + '\n\n' + newMemory;
+                }
+            } else {
+                combinedMemory = newMemory;
+            }
+
+            // 保存合并后的记忆
+            return await this.saveCharacterMemory(contactId, combinedMemory);
+        } catch (error) {
+            console.error('追加角色记忆失败:', error);
             return false;
         }
     }
@@ -852,8 +887,8 @@ class CharacterMemoryManager {
             const newMemory = content.trim();
             console.log('生成的新记忆:', newMemory);
             
-            // 保存新记忆
-            await this.saveCharacterMemory(contact.id, newMemory);
+            // 追加新记忆（累积式保存）
+            await this.appendCharacterMemory(contact.id, newMemory);
             
         } catch (error) {
             console.error('生成记忆失败:', error);
@@ -1258,6 +1293,167 @@ ${forumContent}
         // 如果没有配置次要模型，使用主要模型
         return window.apiSettings?.model || 'gpt-3.5-turbo';
     }
+
+    /**
+     * 从localStorage迁移记忆数据到indexedDB
+     */
+    async migrateLocalStorageMemories() {
+        try {
+            console.log('开始检查localStorage记忆数据迁移...');
+            
+            // 检查localStorage中是否有characterMemories数据
+            const localStorageData = localStorage.getItem('characterMemories');
+            if (!localStorageData) {
+                console.log('localStorage中没有角色记忆数据，跳过迁移');
+                return { migrated: false, reason: 'no_data' };
+            }
+
+            const characterMemories = JSON.parse(localStorageData);
+            if (!characterMemories || typeof characterMemories !== 'object' || Object.keys(characterMemories).length === 0) {
+                console.log('localStorage中的角色记忆数据为空，清理localStorage');
+                localStorage.removeItem('characterMemories');
+                return { migrated: false, reason: 'empty_data' };
+            }
+
+            console.log(`发现localStorage中有${Object.keys(characterMemories).length}个角色的记忆数据，开始详细迁移...`);
+
+            // 确保IndexedDB已准备好
+            if (!window.isIndexedDBReady || !window.db) {
+                console.log('IndexedDB未准备好，暂时跳过迁移');
+                return { migrated: false, reason: 'db_not_ready' };
+            }
+
+            let migratedCount = 0;
+            let errors = [];
+
+            // 遍历每个角色的记忆
+            for (const [contactId, memories] of Object.entries(characterMemories)) {
+                try {
+                    if (!Array.isArray(memories) || memories.length === 0) {
+                        console.log(`角色${contactId}的记忆数据为空，跳过`);
+                        continue;
+                    }
+
+                    console.log(`处理角色${contactId}，发现${memories.length}条记忆`);
+
+                    // 检查indexedDB中是否已有该角色的记忆
+                    const existingMemory = await this.getCharacterMemory(contactId);
+                    if (existingMemory && existingMemory.trim()) {
+                        console.log(`角色${contactId}在indexedDB中已有记忆，跳过迁移`);
+                        continue;
+                    }
+
+                    // 过滤和合并所有记忆内容
+                    const validMemories = memories.filter(memory => memory.content && memory.content.trim());
+                    console.log(`角色${contactId}有${validMemories.length}条有效记忆`);
+                    
+                    if (validMemories.length === 0) {
+                        console.log(`角色${contactId}没有有效记忆内容，跳过`);
+                        continue;
+                    }
+
+                    // 详细记录每条记忆的内容（用于调试）
+                    validMemories.forEach((memory, index) => {
+                        console.log(`  记忆${index + 1}(ID:${memory.id}): ${memory.content.substring(0, 50)}${memory.content.length > 50 ? '...' : ''}`);
+                    });
+
+                    // 合并所有记忆内容，用双换行分隔以保持记忆独立性
+                    const combinedMemory = validMemories
+                        .map(memory => memory.content.trim())
+                        .join('\n\n');
+
+                    // 保存到indexedDB
+                    const success = await this.saveCharacterMemory(contactId, combinedMemory);
+                    if (success) {
+                        migratedCount++;
+                        console.log(`✓ 角色${contactId}的${validMemories.length}条记忆迁移成功`);
+                        console.log(`  合并后内容长度: ${combinedMemory.length}字符`);
+                    } else {
+                        errors.push(`角色${contactId}记忆保存失败`);
+                        console.error(`✗ 角色${contactId}记忆保存失败`);
+                    }
+                } catch (error) {
+                    console.error(`迁移角色${contactId}的记忆时出错:`, error);
+                    errors.push(`角色${contactId}: ${error.message}`);
+                }
+            }
+
+            // 处理全局记忆迁移
+            let globalMigrated = false;
+            const globalMemoriesData = localStorage.getItem('globalMemories');
+            if (globalMemoriesData) {
+                try {
+                    const globalMemories = JSON.parse(globalMemoriesData);
+                    if (Array.isArray(globalMemories) && globalMemories.length > 0) {
+                        console.log(`发现${globalMemories.length}条全局记忆，开始迁移...`);
+                        
+                        // 检查是否已有全局记忆
+                        const existingGlobalMemory = await this.getGlobalMemory();
+                        if (!existingGlobalMemory || !existingGlobalMemory.trim()) {
+                            // 过滤和合并全局记忆
+                            const validGlobalMemories = globalMemories.filter(memory => memory.content && memory.content.trim());
+                            console.log(`有${validGlobalMemories.length}条有效全局记忆`);
+                            
+                            // 详细记录每条全局记忆（用于调试）
+                            validGlobalMemories.forEach((memory, index) => {
+                                console.log(`  全局记忆${index + 1}(ID:${memory.id}): ${memory.content.substring(0, 50)}${memory.content.length > 50 ? '...' : ''}`);
+                            });
+                            
+                            if (validGlobalMemories.length > 0) {
+                                // 用双换行分隔以保持记忆独立性
+                                const combinedGlobalMemory = validGlobalMemories
+                                    .map(memory => memory.content.trim())
+                                    .join('\n\n');
+                                
+                                const success = await this.saveGlobalMemory(combinedGlobalMemory);
+                                if (success) {
+                                    globalMigrated = true;
+                                    console.log(`✓ ${validGlobalMemories.length}条全局记忆迁移成功`);
+                                    console.log(`  合并后内容长度: ${combinedGlobalMemory.length}字符`);
+                                } else {
+                                    console.error('✗ 全局记忆保存失败');
+                                    errors.push('全局记忆保存失败');
+                                }
+                            }
+                        } else {
+                            console.log('indexedDB中已有全局记忆，跳过迁移');
+                        }
+                    }
+                } catch (error) {
+                    console.error('迁移全局记忆时出错:', error);
+                    errors.push(`全局记忆: ${error.message}`);
+                }
+            }
+            
+            // 迁移完成后清空localStorage
+            if (migratedCount > 0 || globalMigrated) {
+                if (migratedCount > 0) {
+                    localStorage.removeItem('characterMemories');
+                    console.log(`角色记忆迁移完成：成功迁移${migratedCount}个角色的记忆`);
+                }
+                if (globalMigrated) {
+                    localStorage.removeItem('globalMemories');
+                }
+                
+                return { 
+                    migrated: true, 
+                    migratedCount, 
+                    globalMigrated,
+                    errors: errors.length > 0 ? errors : null 
+                };
+            } else {
+                return { 
+                    migrated: false, 
+                    reason: 'no_valid_data',
+                    errors: errors.length > 0 ? errors : null 
+                };
+            }
+
+        } catch (error) {
+            console.error('localStorage记忆迁移失败:', error);
+            return { migrated: false, reason: 'migration_error', error: error.message };
+        }
+    }
 }
 
 // 创建全局实例
@@ -1286,6 +1482,11 @@ window.clearCharacterMemory = function(contactId) {
 
 window.clearAllCharacterMemories = function() {
     return window.characterMemoryManager.clearAllCharacterMemories();
+};
+
+// 暴露迁移函数用于手动测试
+window.testMigrateLocalStorageMemories = function() {
+    return window.characterMemoryManager.migrateLocalStorageMemories();
 };
 
 // 自动初始化 - 仅绑定事件，数据加载在数据库准备好后自动执行
