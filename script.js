@@ -5068,94 +5068,123 @@ async function sendMessage() {
 
 async function sendGroupMessage() {
     if (!currentContact || currentContact.type !== 'group') return;
-    let turnContext = []; 
-    for (const memberId of currentContact.members) {
-        const member = contacts.find(c => c.id === memberId);
-        if (!member || member.type === 'group') continue;
-        showTypingIndicator(member);
+    
+    showTypingIndicator();
+    try {
+        // 一次性调用API获取所有群成员的回复
+        const { replies } = await callAPI(currentContact);
+        hideTypingIndicator();
+        
+        if (!replies || replies.length === 0) {
+            showTopNotification('群聊AI没有返回有效回复');
+            return;
+        }
+        
+        // 解析JSON格式的群聊回复
+        let groupMessages = [];
         try {
-            const { replies } = await callAPI(member, turnContext);
-            hideTypingIndicator();
+            // 假设第一个reply包含所有群成员的回复
+            const firstReply = replies[0];
+            let responseText = removeThinkingChain(firstReply.content);
             
-            // 异步更新记忆表格（不阻塞后续流程）
-            setTimeout(async () => {
-                try {
-                    await window.memoryTableManager.updateMemoryTableWithSecondaryModel(member);
-                } catch (error) {
-                    console.warn('记忆表格更新失败:', error);
-                }
-            }, 1000);
-            if (!replies || replies.length === 0) continue;
-            
-            // 批量处理群成员AI回复，避免每条消息都重新渲染
-            for (let j = 0; j < replies.length; j++) {
-                const response = replies[j];
-                const isLastMemberReply = j === replies.length - 1;
+            // 尝试解析JSON格式的回复
+            if (responseText.includes('{') && responseText.includes('}')) {
+                // 提取JSON部分
+                const jsonStart = responseText.indexOf('{');
+                const jsonEnd = responseText.lastIndexOf('}') + 1;
+                const jsonText = responseText.substring(jsonStart, jsonEnd);
                 
-                await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
-
-                let messageContent = removeThinkingChain(response.content);
-                let forceVoice = false;
-
-                if (messageContent.startsWith('[语音]:')) {
-                    forceVoice = true;
-                    messageContent = messageContent.substring(4).trim();
-                }
-
-                const aiMessage = { 
-                    role: 'assistant', 
-                    content: messageContent,
-                    type: response.type, 
-                    time: new Date().toISOString(), 
-                    senderId: member.id,
-                    forceVoice: forceVoice 
-                };
-
-                currentContact.messages.push(aiMessage);
-                if (currentContact.messages.length > currentlyDisplayedMessageCount) {
-                    currentlyDisplayedMessageCount++;
-                }
-                turnContext.push(aiMessage);
-                
-                // 单独添加群成员消息，不重新渲染整个界面
-                await addSingleMessage(aiMessage, true); // true表示新消息
-                
-                // 只在该成员最后一条回复时更新UI和数据库
-                if (isLastMemberReply) {
-                    currentContact.lastMessage = `${member.name}: ${response.type === 'text' ? response.content.substring(0, 15) + '...' : '[表情]'}`;
-                    currentContact.lastTime = formatContactListTime(new Date().toISOString());
-                    await renderContactList();
-                    await saveDataToDB();
-                }
-            }
-            // 为群聊中的每个成员检查记忆更新
-            if (window.characterMemoryManager && window.contacts && Array.isArray(window.contacts)) {
-                try {
-                    await window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
-                } catch (error) {
-                    console.error('群聊成员记忆更新失败:', error);
+                const parsedResponse = JSON.parse(jsonText);
+                if (parsedResponse.messages && Array.isArray(parsedResponse.messages)) {
+                    groupMessages = parsedResponse.messages;
                 }
             }
         } catch (error) {
-            console.error(`群聊消息发送错误 - ${member.name}:`, error);
-            console.error('群聊错误详情:', {
-                memberInfo: {
-                    id: member.id,
-                    name: member.name,
-                    type: member.type
-                },
-                groupInfo: {
-                    id: currentContact.id,
-                    name: currentContact.name,
-                    membersCount: currentContact.members ? currentContact.members.length : 0
-                },
-                turnContextLength: turnContext.length,
-                errorName: error.name,
-                errorMessage: error.message,
-                timestamp: new Date().toISOString()
-            });
-            hideTypingIndicator();
+            console.error('解析群聊JSON回复失败:', error);
+            // 如果JSON解析失败，回退到原有逻辑的简化版本
+            showTopNotification('群聊回复格式解析失败');
+            return;
         }
+        
+        if (groupMessages.length === 0) {
+            showTopNotification('未能解析出有效的群聊回复');
+            return;
+        }
+        
+        // 逐个显示群成员的发言
+        for (let i = 0; i < groupMessages.length; i++) {
+            const message = groupMessages[i];
+            
+            // 查找对应的群成员
+            const member = contacts.find(c => c.name === message.speaker && currentContact.members.includes(c.id));
+            if (!member) {
+                console.warn(`未找到群成员: ${message.speaker}`);
+                continue;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
+            
+            let messageContent = message.content;
+            let forceVoice = false;
+            
+            // 检查语音指令
+            if (messageContent.startsWith('[语音]:')) {
+                forceVoice = true;
+                messageContent = messageContent.substring(4).trim();
+            }
+            
+            const aiMessage = {
+                role: 'assistant',
+                content: messageContent,
+                type: 'text',
+                time: new Date().toISOString(),
+                senderId: member.id,
+                forceVoice: forceVoice
+            };
+            
+            currentContact.messages.push(aiMessage);
+            if (currentContact.messages.length > currentlyDisplayedMessageCount) {
+                currentlyDisplayedMessageCount++;
+            }
+            
+            // 单独添加群成员消息
+            await addSingleMessage(aiMessage, true);
+            
+            // 异步更新该成员的记忆
+            if (window.characterMemoryManager) {
+                setTimeout(async () => {
+                    try {
+                        await window.characterMemoryManager.checkAndUpdateMemory(member.id, currentContact);
+                    } catch (error) {
+                        console.error(`群聊成员记忆更新失败 - ${member.name}:`, error);
+                    }
+                }, 1000);
+            }
+        }
+        
+        // 更新群聊最后消息和时间
+        if (groupMessages.length > 0) {
+            const lastMessage = groupMessages[groupMessages.length - 1];
+            currentContact.lastMessage = `${lastMessage.speaker}: ${lastMessage.content.substring(0, 15)}...`;
+            currentContact.lastTime = formatContactListTime(new Date().toISOString());
+            await renderContactList();
+            await saveDataToDB();
+        }
+        
+    } catch (error) {
+        console.error('群聊消息发送错误:', error);
+        console.error('群聊错误详情:', {
+            groupInfo: {
+                id: currentContact.id,
+                name: currentContact.name,
+                membersCount: currentContact.members ? currentContact.members.length : 0
+            },
+            errorName: error.name,
+            errorMessage: error.message,
+            timestamp: new Date().toISOString()
+        });
+        hideTypingIndicator();
+        showTopNotification(`群聊回复失败: ${error.message}`);
     }
 }
 
