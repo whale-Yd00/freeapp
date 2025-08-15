@@ -11,6 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "pg": "^8.11.0",
     "node-fetch": "^2.6.7"
   },
   "devDependencies": {

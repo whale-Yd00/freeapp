@@ -40,21 +40,57 @@ class PromptBuilder {
             systemPrompt += `--- 记忆表格 ---\n${memoryInfo}\n--- 结束 ---\n\n`;
         }
 
-        // 核心身份与记忆
-        systemPrompt += `--- [核心身份与记忆] ---\n`;
-        systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n`;
-        const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
-        systemPrompt += `用户的名字是${userProfile.name}。${userPersona}\n`;
-        systemPrompt += `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。\n`;
-        systemPrompt += `记忆表格如下：\n${memoryInfo}\n\n`;
+        // 核心身份（群聊和私聊分别处理）
+        if (currentContact.type === 'group') {
+            systemPrompt += `--- [基本信息] ---\n`;
+            const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
+            systemPrompt += `用户的名字是${userProfile.name}。${userPersona}\n`;
+        } else {
+            systemPrompt += `--- [核心身份] ---\n`;
+            systemPrompt += `你是${contact.name}，你的人设是：${contact.personality}。\n`;
+            const userPersona = userProfile.personality ? `用户的人设是：${userProfile.personality}。` : '';
+            systemPrompt += `用户的名字是${userProfile.name}。${userPersona}\n`;
+            systemPrompt += `你必须根据你的人设、记忆表格、用户的人设和当前对话内容来回复。\n`;
+        }
 
         // 群聊特定指令
         if (currentContact.type === 'group') {
-            const memberNames = currentContact.members.map(id => contacts.find(c => c.id === id)?.name || '未知成员');
             systemPrompt += `--- [群聊场景指令] ---\n`;
-            systemPrompt += `你现在在一个名为"${currentContact.name}"的群聊中。群成员有：${userProfile.name} (用户), ${memberNames.join(', ')}。\n`;
-            systemPrompt += `你的任务是根据自己的人设、记忆表格和用户人设，对**本回合**中在你之前其他人的**完整发言**进行回应，然后发表你自己的**完整观点**，以推动群聊进行。可以赞同、反驳、开玩笑、或者提出新的话题。\n`;
-            systemPrompt += `你的发言需要自然地融入对话，就像一个真正在参与群聊的人。\n\n`;
+            systemPrompt += `你现在在一个名为"${currentContact.name}"的群聊中。\n\n`;
+            
+            // 添加所有群成员的详细信息
+            systemPrompt += `--- [群聊成员信息] ---\n`;
+            systemPrompt += `用户：${userProfile.name}${userProfile.personality ? `，人设：${userProfile.personality}` : ''}\n`;
+            
+            currentContact.members.forEach(memberId => {
+                const member = contacts.find(c => c.id === memberId);
+                if (member) {
+                    systemPrompt += `${member.name}：人设：${member.personality}\n`;
+                }
+            });
+            systemPrompt += `\n`;
+            
+            // 新的群聊任务指令
+            systemPrompt += `--- [群聊任务] ---\n`;
+            systemPrompt += `你需要扮演群聊中的AI角色（除了用户${userProfile.name}），根据刚才的对话内容，以任意合理的顺序让这些角色发言。\n`;
+            systemPrompt += `【要求】\n`;
+            systemPrompt += `1. 每个角色的发言都要符合当前时间、其人设和记忆，例如高冷的人不会在群里说太多\n`;
+            systemPrompt += `2. 角色之间可以互动、回应、讨论\n`;
+            systemPrompt += `3. 发言顺序要自然合理，不需要固定顺序，可以用 @ 提及其他群友。\n`;
+            systemPrompt += `4. 出于人设、记忆等考虑，部分角色可以不发言，但只少要有一个角色发言\n`;
+            systemPrompt += `5. 总发言数控制在2-7条之间\n`;
+            systemPrompt += `6. 每条发言要自然、口语化，符合群聊氛围\n\n`;
+            systemPrompt += `7. 不要使用(括号)、*Italic* 或其他任何形式描述角色的动作、表情或内心活动。`;
+            
+            // 输出格式要求
+            systemPrompt += `--- [输出格式] ---\n`;
+            systemPrompt += `请严格按照以下JSON格式输出，不要包含任何其他文字：\n`;
+            systemPrompt += `{\n`;
+            systemPrompt += `  "messages": [\n`;
+            systemPrompt += `    {"speaker": "角色名", "content": "发言内容"},\n`;
+            systemPrompt += `    {"speaker": "角色名", "content": "发言内容"}\n`;
+            systemPrompt += `  ]\n`;
+            systemPrompt += `}\n\n`;
         }
 
         // 添加自定义提示词
@@ -185,10 +221,13 @@ class PromptBuilder {
                     }
                 }
                 
-                if (content && content.trim()) {
+                // 构建turnContext消息内容，根据群聊状态决定是否添加发送者名字
+                const finalTurnContent = currentContact.type === 'group' ? `${senderName}: ${content}` : content;
+                
+                if (finalTurnContent && finalTurnContent.trim()) {
                     messages.push({ 
                         role: msg.role, 
-                        content: `${senderName}: ${content}` 
+                        content: finalTurnContent 
                     });
                 }
             });
@@ -754,6 +793,22 @@ ${chatContext || '暂无聊天记录'}
         }
 
         return systemPrompt;
+    }
+
+    /**
+     * 构建朋友圈回复提示词
+     */
+    buildMomentReplyPrompt(character, replierName, replyContent, momentContent) {
+        return `你是${character.name}，人设：${character.personality}
+
+${replierName}在你的朋友圈"${momentContent}"下评论或回复了："${replyContent}"
+
+请以${character.name}的身份简短回复，要求：
+1. 符合你的人设
+2. 针对${replierName}的评论进行回应
+3. 10-30字之间
+4. 自然、口语化
+5. 只输出回复内容，不要其他解释`;
     }
 
     // 私有方法：构建红包指令

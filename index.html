@@ -26,6 +26,7 @@
     <link rel="manifest" href="manifest.json">
     
     <link rel="stylesheet" href="style.css">
+    <script src="config/sync-config.js"></script>
 
     <!-- Analytics -->
     <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>
@@ -283,6 +284,31 @@
                                 style="width: 100%; background-color: #007bff;">
                             🔗 数据传输
                         </button>
+                    </div>
+
+                    <!-- 云同步功能 -->
+                    <div style="margin-bottom: 15px; padding: 15px; background: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px;">
+                        <div style="margin-bottom: 10px; font-size: 14px; font-weight: bold; color: #1565c0;">
+                            🌐 云端数据同步
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button type="button" class="form-submit" onclick="uploadDataToCloud()" 
+                                    style="flex: 1; background-color: #4caf50;">
+                                ☁️ 上传到云端
+                            </button>
+                            <button type="button" class="form-submit" onclick="downloadDataFromCloud()" 
+                                    style="flex: 1; background-color: #2196f3;">
+                                ⬇️ 从云端下载
+                            </button>
+                        </div>
+                        
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" id="syncKeyInput" placeholder="输入同步标识符" 
+                                   style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        </div>
+                        
+                        <div id="syncStatus" style="font-size: 12px; color: #666; text-align: center;"></div>
                     </div>
                     
                     
