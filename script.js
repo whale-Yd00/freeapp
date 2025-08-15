@@ -1729,15 +1729,21 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         const data = await response.json();
         console.log('API完整返回:', JSON.stringify(data, null, 2));
         
-        let jsonText = data.choices[0].message.content;
+        let rawText = data.choices[0].message.content;
         
-        if (!jsonText) {
+        if (!rawText) {
             console.error('AI返回的内容为空');
             throw new Error("AI未返回有效内容");
         }
         
-        
-        // API层已自动清理，直接使用
+        // 使用统一的JSON提取函数清理markdown语法
+        let jsonText;
+        try {
+            jsonText = window.apiService.extractJSON(rawText);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
 
         // 解析JSON
         let weiboData;
@@ -2911,10 +2917,19 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
             throw new Error('API返回空内容');
         }
         
+        // 使用统一的JSON提取函数清理markdown语法
+        let cleanedJson;
+        try {
+            cleanedJson = window.apiService.extractJSON(rawContent);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
+        
         // 解析JSON结果
         let momentData;
         try {
-            momentData = JSON.parse(rawContent);
+            momentData = JSON.parse(cleanedJson);
         } catch (parseError) {
             console.error('解析JSON失败:', parseError, '原始内容:', rawContent);
             throw new Error('AI返回的数据格式不正确，无法解析为JSON。');
@@ -3399,12 +3414,21 @@ async function generateAIComments(momentContent) {
             (apiSettings.timeout || 60) * 1000
         );
         
-        const jsonText = data.choices[0].message.content;
-        if (!jsonText) {
+        const rawText = data.choices[0].message.content;
+        if (!rawText) {
             throw new Error("AI未返回有效的JSON格式");
         }
 
-        const commentsData = JSON.parse(jsonText);
+        // 使用统一的JSON提取函数清理markdown语法
+        let cleanedJson;
+        try {
+            cleanedJson = window.apiService.extractJSON(rawText);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
+
+        const commentsData = JSON.parse(cleanedJson);
         return commentsData.comments.map(comment => ({
             author: comment.author,
             content: comment.content,
@@ -3433,12 +3457,21 @@ async function generateAICommentsWithCurrentTime(momentContent) {
             (apiSettings.timeout || 60) * 1000
         );
         
-        const jsonText = data.choices[0].message.content;
-        if (!jsonText) {
+        const rawText = data.choices[0].message.content;
+        if (!rawText) {
             throw new Error("AI未返回有效的JSON格式");
         }
 
-        const commentsData = JSON.parse(jsonText);
+        // 使用统一的JSON提取函数清理markdown语法
+        let cleanedJson;
+        try {
+            cleanedJson = window.apiService.extractJSON(rawText);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
+
+        const commentsData = JSON.parse(cleanedJson);
         const baseComments = commentsData.comments || [];
         
         // 所有评论都使用当前时间（就像论坛一样）
@@ -3472,12 +3505,21 @@ async function generateAICommentsWithTime(momentContent, momentTime) {
             (apiSettings.timeout || 60) * 1000
         );
         
-        const jsonText = data.choices[0].message.content;
-        if (!jsonText) {
+        const rawText = data.choices[0].message.content;
+        if (!rawText) {
             throw new Error("AI未返回有效的JSON格式");
         }
 
-        const commentsData = JSON.parse(jsonText);
+        // 使用统一的JSON提取函数清理markdown语法
+        let cleanedJson;
+        try {
+            cleanedJson = window.apiService.extractJSON(rawText);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
+
+        const commentsData = JSON.parse(cleanedJson);
         const baseComments = commentsData.comments || [];
         
         // 为每个评论添加时间戳（在朋友圈发布时间之后）
@@ -5089,14 +5131,24 @@ async function sendGroupMessage() {
             
             // 尝试解析JSON格式的回复
             if (responseText.includes('{') && responseText.includes('}')) {
-                // 提取JSON部分
-                const jsonStart = responseText.indexOf('{');
-                const jsonEnd = responseText.lastIndexOf('}') + 1;
-                const jsonText = responseText.substring(jsonStart, jsonEnd);
-                
-                const parsedResponse = JSON.parse(jsonText);
-                if (parsedResponse.messages && Array.isArray(parsedResponse.messages)) {
-                    groupMessages = parsedResponse.messages;
+                try {
+                    // 使用统一的JSON提取函数清理markdown语法
+                    const cleanedJson = window.apiService.extractJSON(responseText);
+                    const parsedResponse = JSON.parse(cleanedJson);
+                    if (parsedResponse.messages && Array.isArray(parsedResponse.messages)) {
+                        groupMessages = parsedResponse.messages;
+                    }
+                } catch (jsonError) {
+                    console.error('群聊JSON提取失败:', jsonError);
+                    // 继续使用原有逻辑作为备用
+                    const jsonStart = responseText.indexOf('{');
+                    const jsonEnd = responseText.lastIndexOf('}') + 1;
+                    const jsonText = responseText.substring(jsonStart, jsonEnd);
+                    
+                    const parsedResponse = JSON.parse(jsonText);
+                    if (parsedResponse.messages && Array.isArray(parsedResponse.messages)) {
+                        groupMessages = parsedResponse.messages;
+                    }
                 }
             }
         } catch (error) {
@@ -6295,15 +6347,22 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
         }
 
         const data = await response.json();
-        let jsonText = data.choices[0].message.content;
+        let rawText = data.choices[0].message.content;
         
-        if (!jsonText) {
+        if (!rawText) {
             throw new Error("AI未返回有效内容");
         }
         
-        // API层已自动清理，直接使用
+        // 使用统一的JSON提取函数清理markdown语法
+        let cleanedJson;
+        try {
+            cleanedJson = window.apiService.extractJSON(rawText);
+        } catch (extractError) {
+            console.error('JSON提取失败:', extractError);
+            throw new Error(`JSON提取失败: ${extractError.message}`);
+        }
 
-        const commentsData = JSON.parse(jsonText);
+        const commentsData = JSON.parse(cleanedJson);
         
         let lastCommentTime = postCreatedAt.getTime();
         
