@@ -24,6 +24,9 @@ class MemoryTableManager {
     constructor() {
         this.isInitialized = false;
         this.currentContact = null;
+        this.lastToggleTime = 0;
+        this.isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        this.debounceDelay = this.isIOSDevice ? 300 : 100; // iOS设备使用更长的防抖延迟
     }
 
     setCurrentContact(contact) {
@@ -108,9 +111,27 @@ class MemoryTableManager {
             return; 
         }
         
+        // 防抖机制：防止短时间内重复触发（特别是iOS设备）
+        const currentTime = Date.now();
+        if (currentTime - this.lastToggleTime < this.debounceDelay) {
+            return;
+        }
+        this.lastToggleTime = currentTime;
+        
         if (isActive) {
             panel.classList.remove('active');
         } else {
+            // iOS设备额外检查：确保不是在键盘变化期间
+            if (this.isIOSDevice) {
+                const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                const fullHeight = window.screen.height;
+                const keyboardVisible = viewportHeight < fullHeight * 0.75; // 如果视口高度小于屏幕高度的75%，认为键盘可能正在显示
+                
+                if (keyboardVisible) {
+                    return;
+                }
+            }
+            
             const currentContact = this.getCurrentContact();
             
             if (currentContact) {
