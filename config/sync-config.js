@@ -15,12 +15,10 @@ class SyncConfig {
                 return ''; // 相对路径，使用当前域名的API
             }
             
-            // Netlify部署检测
+            // Netlify部署检测 - 改为直接调用Vercel API
             if (hostname.includes('.netlify.app') || hostname.includes('netlify')) {
-                // 使用Netlify Functions代理（无需配置环境变量）
-                return '/.netlify/functions';
-                // 生产环境Vercel域名：
-                // return 'https://chat.whale-llt.top';
+                // 直接使用生产环境Vercel域名，不再通过Netlify Functions代理
+                return 'https://chat.whale-llt.top';
             }
             
             // 本地开发环境
@@ -30,7 +28,7 @@ class SyncConfig {
                     return ''; // 使用本地Vercel API
                 }
                 // 如果是其他本地环境，调用已部署的Vercel API
-                return 'https://your-vercel-app.vercel.app';
+                return 'https://chat.whale-llt.top';
             }
             
             // 自定义域名 - 默认使用相对路径
@@ -47,12 +45,7 @@ class SyncConfig {
     static getApiUrl(endpoint) {
         const baseUrl = this.getApiBaseUrl();
         
-        // 如果是Netlify函数代理
-        if (baseUrl === '/.netlify/functions') {
-            return `${baseUrl}/sync-proxy?endpoint=${endpoint}`;
-        }
-        
-        // 其他情况使用标准API路径
+        // 所有情况都使用标准API路径，不再使用Netlify函数代理
         return `${baseUrl}/api/sync/${endpoint}`;
     }
     
