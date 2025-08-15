@@ -61,7 +61,7 @@
                 </div>
                 <div class="chat-title" id="chatTitle">聊天</div>
                 <div class="chat-header-actions">
-                    <div class="memory-btn" onclick="toggleMemoryPanel()">
+                    <div class="memory-btn" onclick="event.stopPropagation(); toggleMemoryPanel()">
                         <svg t="1689237694389" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4338" width="24" height="24"><path d="M896 96H128C110.4 96 96 110.4 96 128v768c0 17.6 14.4 32 32 32h768c17.6 0 32-14.4 32-32V128c0-17.6-14.4-32-32-32zM384 832H192v-64h192v64z m0-192H192v-64h192v64z m0-192H192v-64h192v64z m448 384H448v-64h384v64z m0-192H448v-64h384v64z m0-192H448v-64h384v64z" p-id="4339" fill="#515151"></path></svg>
                     </div>
                     <div class="chat-more" onclick="toggleSettingsMenu()">⋯</div>
@@ -93,7 +93,7 @@
                     <div class="memory-panel-title">记忆表格</div>
                     <div class="memory-panel-actions">
                          <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()" data-umami-event="Memory Table Edit Toggle">编辑</button>
-                         <button class="memory-panel-btn" onclick="toggleMemoryPanel()">关闭</button>
+                         <button class="memory-panel-btn" onclick="event.stopPropagation(); toggleMemoryPanel()">关闭</button>
                     </div>
                 </div>
                 <div class="memory-panel-content">

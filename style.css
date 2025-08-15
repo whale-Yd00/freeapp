@@ -539,13 +539,20 @@ body {
     background-color: #f7f7f7;
     z-index: 4;
     transform: translateY(100%);
-    transition: transform 0.3s ease-in-out;
+    transition: transform 0.3s ease-in-out, visibility 0s linear 0.3s, opacity 0.3s ease-in-out;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .memory-panel.active {
     transform: translateY(0);
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition: transform 0.3s ease-in-out, visibility 0s linear 0s, opacity 0.3s ease-in-out;
 }
 
 .memory-panel-header {
