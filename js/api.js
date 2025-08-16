@@ -5,6 +5,43 @@ class APIService {
     }
 
     /**
+     * 从AI返回的文本中提取完整的JSON对象
+     * 自动清理markdown代码块标记和其他干扰文本
+     * @param {string} text - AI返回的原始文本
+     * @returns {string} 提取出的纯JSON字符串
+     */
+    extractJSON(text) {
+        if (!text || typeof text !== 'string') {
+            throw new Error('无效的文本内容');
+        }
+
+        // 1. 首先尝试查找被markdown代码块包围的JSON
+        const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+        if (codeBlockMatch) {
+            return codeBlockMatch[1].trim();
+        }
+
+        // 2. 查找完整的JSON对象（从第一个{到最后一个}）
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            const possibleJson = text.substring(firstBrace, lastBrace + 1);
+            
+            // 验证这是否是有效的JSON
+            try {
+                JSON.parse(possibleJson);
+                return possibleJson;
+            } catch (e) {
+                // 如果解析失败，继续尝试其他方法
+            }
+        }
+
+        // 3. 如果以上都失败，返回原始文本让调用者处理
+        return text.trim();
+    }
+
+    /**
      * 通用的OpenAI兼容API调用函数
      * @param {string} apiUrl - API地址
      * @param {string} apiKey - API密钥

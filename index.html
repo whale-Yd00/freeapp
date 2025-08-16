@@ -149,6 +149,10 @@
                     <div class="profile-item-label">我的个人主页</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
+                <div class="profile-item" onclick="showPage('appearanceManagementPage')" data-umami-event="Appearance Management Open">
+                    <div class="profile-item-label">外观管理</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
                 <div class="profile-item" onclick="showPage('dataManagementPage')" data-umami-event="Data Management Open">
                     <div class="profile-item-label">数据管理</div>
                     <div class="profile-item-arrow">›</div>
@@ -354,6 +358,166 @@
                 <div class="debug-log-content" id="debugLogContent">
                     <div class="debug-log-empty">
                         暂无日志记录
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 外观管理页面 -->
+        <div class="appearance-management-page" id="appearanceManagementPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                </div>
+                <div class="chat-title">外观管理</div>
+            </div>
+            
+            <div class="appearance-content">
+                <!-- 主题色选择 -->
+                <div class="appearance-section">
+                    <h3 class="appearance-section-title">主题色彩</h3>
+                    <p class="appearance-section-desc">选择你喜欢的主题色，个性化你的应用界面</p>
+                    
+                    <div class="theme-color-grid">
+                        <!-- 默认绿色 -->
+                        <div class="theme-color-option active" data-color="#07c160" data-name="鲜绿">
+                            <div class="theme-color-preview" style="background-color: #07c160;"></div>
+                            <div class="theme-color-name">鲜绿</div>
+                        </div>
+                        <!-- 蓝色 -->
+                        <div class="theme-color-option" data-color="#1890ff" data-name="天空蓝">
+                            <div class="theme-color-preview" style="background-color: #1890ff;"></div>
+                            <div class="theme-color-name">天空蓝</div>
+                        </div>
+                        <!-- 紫色 -->
+                        <div class="theme-color-option" data-color="#722ed1" data-name="深紫">
+                            <div class="theme-color-preview" style="background-color: #722ed1;"></div>
+                            <div class="theme-color-name">深紫</div>
+                        </div>
+                        <!-- 红色 -->
+                        <div class="theme-color-option" data-color="#f5222d" data-name="火红">
+                            <div class="theme-color-preview" style="background-color: #f5222d;"></div>
+                            <div class="theme-color-name">火红</div>
+                        </div>
+                        <!-- 橙色 -->
+                        <div class="theme-color-option" data-color="#fa8c16" data-name="橙">
+                            <div class="theme-color-preview" style="background-color: #fa8c16;"></div>
+                            <div class="theme-color-name">橙</div>
+                        </div>
+                        <!-- 青色 -->
+                        <div class="theme-color-option" data-color="#13c2c2" data-name="清新青">
+                            <div class="theme-color-preview" style="background-color: #13c2c2;"></div>
+                            <div class="theme-color-name">清新青</div>
+                        </div>
+                        <!-- 粉色 -->
+                        <div class="theme-color-option" data-color="#eb2f96" data-name="亮粉">
+                            <div class="theme-color-preview" style="background-color: #eb2f96;"></div>
+                            <div class="theme-color-name">亮粉</div>
+                        </div>
+                        <!-- 深蓝 -->
+                        <div class="theme-color-option" data-color="#2f54eb" data-name="海蓝">
+                            <div class="theme-color-preview" style="background-color: #2f54eb;"></div>
+                            <div class="theme-color-name">海蓝</div>
+                        </div>
+                    </div>
+                    
+                    <!-- 自定义颜色选择器 -->
+                    <div class="custom-color-section">
+                        <label for="customColorPicker" class="custom-color-label">自定义颜色</label>
+                        <p class="custom-color-desc">点击颜色圆圈选择，或直接输入十六进制颜色代码</p>
+                        
+                        <div class="custom-color-preview-row">
+                            <div class="custom-color-preview-container">
+                                <div class="custom-color-preview-circle" id="customColorPreview" style="background-color: #07c160;">
+                                    <input type="color" id="customColorPicker" class="custom-color-picker-hidden" value="#07c160">
+                                </div>
+                                <span class="custom-color-preview-label">预览</span>
+                            </div>
+                            
+                            <div class="custom-color-input-container">
+                                <input type="text" id="customColorText" class="custom-color-text" placeholder="#07c160" maxlength="7">
+                                <button type="button" class="apply-custom-color-btn" onclick="applyCustomColor()">应用</button>
+                            </div>
+                        </div>
+                        
+                        <div class="color-input-tips">
+                            <small>💡 提示：支持格式如 #FF0000、#ff0000 等六位十六进制颜色代码</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 渐变主题设置 -->
+                <div class="appearance-section">
+                    <h3 class="appearance-section-title">渐变主题</h3>
+                    <p class="appearance-section-desc">开启渐变效果，让界面更具视觉层次感</p>
+                    
+                    <div class="gradient-toggle-container">
+                        <label class="gradient-toggle-label">
+                            <input type="checkbox" id="gradientToggle" class="gradient-toggle-input">
+                            <span class="gradient-toggle-slider"></span>
+                            启用渐变主题
+                        </label>
+                    </div>
+                    
+                    <div class="gradient-settings" id="gradientSettings" style="display: none;">
+                        <div class="gradient-color-row">
+                            <div class="gradient-color-group">
+                                <label class="gradient-color-label">主色</label>
+                                <div class="gradient-color-picker-container">
+                                    <div class="gradient-color-preview" id="gradientPrimaryPreview" style="background-color: #07c160;">
+                                        <input type="color" id="gradientPrimaryPicker" class="gradient-color-picker-hidden" value="#07c160">
+                                    </div>
+                                    <input type="text" id="gradientPrimaryText" class="gradient-color-text" placeholder="#07c160" maxlength="7" value="#07c160">
+                                </div>
+                            </div>
+                            
+                            <div class="gradient-color-group">
+                                <label class="gradient-color-label">副色</label>
+                                <div class="gradient-color-picker-container">
+                                    <div class="gradient-color-preview" id="gradientSecondaryPreview" style="background-color: #1890ff;">
+                                        <input type="color" id="gradientSecondaryPicker" class="gradient-color-picker-hidden" value="#1890ff">
+                                    </div>
+                                    <input type="text" id="gradientSecondaryText" class="gradient-color-text" placeholder="#1890ff" maxlength="7" value="#1890ff">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="gradient-preview-container">
+                            <label class="gradient-preview-label">效果预览</label>
+                            <div class="gradient-preview-demo" id="gradientPreviewDemo">
+                                <div class="gradient-preview-text">渐变效果预览</div>
+                            </div>
+                        </div>
+                        
+                        <div class="gradient-direction-container">
+                            <label class="gradient-direction-label">渐变方向</label>
+                            <div class="gradient-direction-options">
+                                <label class="gradient-direction-option">
+                                    <input type="radio" name="gradientDirection" value="to right" checked>
+                                    <span class="gradient-direction-text">→ 水平</span>
+                                </label>
+                                <label class="gradient-direction-option">
+                                    <input type="radio" name="gradientDirection" value="to bottom">
+                                    <span class="gradient-direction-text">↓ 垂直</span>
+                                </label>
+                                <label class="gradient-direction-option">
+                                    <input type="radio" name="gradientDirection" value="135deg">
+                                    <span class="gradient-direction-text">↘ 对角</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="apply-gradient-btn" onclick="applyGradientThemeFromUI()">应用渐变主题</button>
+                    </div>
+                </div>
+                
+                <!-- 预留更多外观设置 -->
+                <div class="appearance-section">
+                    <h3 class="appearance-section-title">更多设置</h3>
+                    <p class="appearance-section-desc">敬请期待更多个性化选项</p>
+                    <div class="coming-soon">
+                        <div class="coming-soon-icon">🎨</div>
+                        <div class="coming-soon-text">更多外观选项即将推出</div>
                     </div>
                 </div>
             </div>

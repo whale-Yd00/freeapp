@@ -15,7 +15,7 @@ class ViewportManager {
         // 监听视口变化
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', () => {
-                this.updateViewportProperties();
+                this.handleKeyboardToggle();
             });
         }
 
@@ -34,7 +34,8 @@ class ViewportManager {
         const root = document.documentElement;
         
         // 获取真实的视口尺寸
-        const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        // 键盘弹出时不调整viewport height，避免出现白色区域
+        const viewportHeight = window.innerHeight; // 使用固定的window.innerHeight
         const viewportWidth = window.visualViewport ? window.visualViewport.width : window.innerWidth;
         
         // 计算safe area
@@ -68,6 +69,52 @@ class ViewportManager {
         // 聊天页面特殊处理（无导航栏）
         const chatContentHeight = viewportHeight - totalHeaderHeight;
         root.style.setProperty('--chat-content-height', `${chatContentHeight}px`);
+    }
+
+    /**
+     * 处理键盘弹出/收起时的布局调整
+     * 使用transform和scroll来适应键盘，而不是改变容器高度
+     */
+    handleKeyboardToggle() {
+        if (!window.visualViewport) return;
+        
+        const visualHeight = window.visualViewport.height;
+        const windowHeight = window.innerHeight;
+        const heightDiff = windowHeight - visualHeight;
+        
+        // 键盘高度阈值，超过100px认为是键盘弹出
+        const keyboardThreshold = 100;
+        const isKeyboardVisible = heightDiff > keyboardThreshold;
+        
+        const root = document.documentElement;
+        
+        if (isKeyboardVisible) {
+            // 键盘弹出时，设置一个CSS变量来标识状态
+            root.style.setProperty('--keyboard-height', `${heightDiff}px`);
+            root.setAttribute('data-keyboard-visible', 'true');
+            
+            // 确保当前聚焦的输入框可见
+            this.scrollToActiveInput();
+        } else {
+            // 键盘收起时，清除状态
+            root.style.removeProperty('--keyboard-height');
+            root.removeAttribute('data-keyboard-visible');
+        }
+    }
+
+    /**
+     * 将当前聚焦的输入框滚动到可见区域
+     */
+    scrollToActiveInput() {
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+            setTimeout(() => {
+                activeElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }, 300); // 等待键盘动画完成
+        }
     }
 
     getSafeAreaTop() {
