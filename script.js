@@ -9433,14 +9433,14 @@ showUserProfile = async function() {
 
 // 默认主题色配置
 const defaultThemeColors = [
-    { color: '#07c160', name: '微信绿' },
+    { color: '#07c160', name: '鲜绿' },
     { color: '#1890ff', name: '天空蓝' },
-    { color: '#722ed1', name: '优雅紫' },
-    { color: '#f5222d', name: '活力红' },
-    { color: '#fa8c16', name: '温暖橙' },
+    { color: '#722ed1', name: '深紫' },
+    { color: '#f5222d', name: '火红' },
+    { color: '#fa8c16', name: '橙' },
     { color: '#13c2c2', name: '清新青' },
-    { color: '#eb2f96', name: '少女粉' },
-    { color: '#2f54eb', name: '深海蓝' }
+    { color: '#eb2f96', name: '亮粉' },
+    { color: '#2f54eb', name: '海蓝' }
 ];
 
 // 默认渐变配置
@@ -9587,7 +9587,7 @@ class ThemeConfigManager {
             
             // 如果没有主题配置，创建默认配置
             if (!configs.theme) {
-                await this.saveThemeConfig('theme', { color: '#07c160', name: '微信绿' });
+                await this.saveThemeConfig('theme', { color: '#07c160', name: '鲜绿' });
                 console.log('已创建默认主题配置');
                 hasChanges = true;
             }
@@ -9629,7 +9629,7 @@ class ThemeConfigManager {
                 return null;
             }
             
-            let themeData = { color: '#07c160', name: '微信绿' };
+            let themeData = { color: '#07c160', name: '鲜绿' };
             let gradientData = defaultGradientConfig;
             
             if (savedTheme) {
@@ -9669,7 +9669,7 @@ async function loadThemeConfig() {
         // 从IndexedDB加载配置
         const configs = await themeConfigManager.getAllThemeConfigs();
         
-        let themeData = configs.theme || { color: '#07c160', name: '微信绿' };
+        let themeData = configs.theme || { color: '#07c160', name: '鲜绿' };
         let gradientData = configs.gradient || defaultGradientConfig;
         
         // 应用主题配置
@@ -9683,7 +9683,7 @@ async function loadThemeConfig() {
     } catch (error) {
         console.error('加载主题配置失败:', error);
         // 使用默认配置
-        const themeData = { color: '#07c160', name: '微信绿' };
+        const themeData = { color: '#07c160', name: '鲜绿' };
         const gradientData = defaultGradientConfig;
         applyThemeColor(themeData.color);
         return { theme: themeData, gradient: gradientData };
