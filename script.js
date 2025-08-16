@@ -1366,9 +1366,7 @@ async function saveDataToDB() {
 
         // 等待所有操作完成
         await promisifyTransaction(transaction, '数据保存事务');
-        console.log('所有数据保存完成');
-        showToast('数据保存完成', 'success');
-        
+        console.log('所有数据保存完成');        
     }, '数据库保存操作');
 }
 
