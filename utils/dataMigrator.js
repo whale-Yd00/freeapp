@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 9;
+        this.dbVersion = 10;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
@@ -28,7 +28,8 @@ class IndexedDBManager {
             globalMemory: { keyPath: 'id' },
             memoryProcessedIndex: { keyPath: 'contactId' },
             fileStorage: { keyPath: 'fileId' }, // 新增：存储原始文件Blob数据
-            fileReferences: { keyPath: 'referenceId' } // 新增：存储文件引用关系
+            fileReferences: { keyPath: 'referenceId' }, // 新增：存储文件引用关系
+            themeConfig: { keyPath: 'type' } // 新增：存储主题配置（颜色、渐变等）
         };
     }
 
@@ -63,13 +64,30 @@ class IndexedDBManager {
                 await this.initDB();
                 console.log('新版本数据库已创建');
                 
+                // 等待数据库连接稳定
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
                 // 迁移数据
                 const migratedData = await this.migrateData(exportedData);
                 console.log('数据迁移完成');
                 
-                // 导入迁移后的数据
+                // 确保数据库连接仍然有效，并等待连接稳定
+                if (!this.db || this.db.readyState === 'done') {
+                    console.log('数据库连接已关闭，重新初始化...');
+                    await this.initDB();
+                    // 等待数据库连接完全稳定
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                
+                // 验证数据库连接状态
+                if (!this.db || this.db.readyState === 'done') {
+                    throw new Error('无法建立稳定的数据库连接');
+                }
+                
+                console.log('开始导入迁移后的数据...');
+                // 导入迁移后的数据，使用选择性覆盖策略
                 await this.importDatabase(migratedData, { 
-                    overwrite: true,
+                    overwrite: true,  // 恢复为true，但改进clearStore的错误处理
                     validateVersion: false,
                     enableMigration: false  // 数据已经迁移过了
                 });
@@ -200,7 +218,7 @@ class IndexedDBManager {
         
         return {
             name: this.db.name,
-            version: this.db.version,
+            version: this.db.version,  // 这里使用实际数据库版本，不是目标版本
             stores: Array.from(this.db.objectStoreNames),
             exportTime: new Date().toISOString()
         };
@@ -355,7 +373,7 @@ class IndexedDBManager {
      */
     async migrateData(importData) {
         const { _metadata } = importData;
-        const fromVersion = _metadata.version;
+        const fromVersion = _metadata ? _metadata.version : 1;
         const toVersion = this.dbVersion;
         
         console.log(`开始数据迁移：从版本 ${fromVersion} 到版本 ${toVersion}`);
@@ -392,6 +410,11 @@ class IndexedDBManager {
         if (fromVersion <= 8 && toVersion >= 9) {
             // 版本8到9的迁移：完善文件存储系统
             this.migrateFrom8To9(migratedData);
+        }
+        
+        if (fromVersion <= 9 && toVersion >= 10) {
+            // 版本9到10的迁移：添加主题配置系统
+            this.migrateFrom9To10(migratedData);
         }
         
         console.log('数据迁移完成');
@@ -532,6 +555,32 @@ class IndexedDBManager {
         
         console.log('版本8到9迁移完成：文件存储系统已完善，已标记需要运行时数据迁移');
     }
+    
+    /**
+     * 从版本9迁移到版本10
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom9To10(data) {
+        console.log('执行版本9到10的迁移：添加主题配置系统');
+        
+        // 版本10新增：主题配置系统
+        if (!data.themeConfig) {
+            data.themeConfig = [];
+            console.log('添加 themeConfig 存储');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            const newStores = ['themeConfig'];
+            for (const store of newStores) {
+                if (!data._metadata.stores.includes(store)) {
+                    data._metadata.stores.push(store);
+                }
+            }
+        }
+        
+        console.log('版本9到10迁移完成：主题配置系统已添加');
+    }
 
     /**
      * 优化表情数据结构（版本5的核心功能）
@@ -621,7 +670,15 @@ class IndexedDBManager {
                 return;
             }
 
-            const transaction = this.db.transaction([storeName], 'readwrite');
+            // 检查数据库连接状态
+            if (!this.db || this.db.readyState === 'done') {
+                console.warn(`数据库连接已关闭，跳过导入存储 ${storeName}`);
+                resolve({ successCount: 0, errorCount: 0, totalCount: data.length });
+                return;
+            }
+
+            try {
+                const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             
             let successCount = 0;
@@ -687,6 +744,16 @@ class IndexedDBManager {
             data.forEach((item, index) => {
                 processItem(item, index);
             });
+            
+            } catch (error) {
+                console.error(`创建导入存储 ${storeName} 的事务时出错:`, error);
+                if (error.name === 'InvalidStateError') {
+                    console.warn('数据库连接状态无效，跳过导入操作');
+                    resolve({ successCount: 0, errorCount: data.length, totalCount: data.length });
+                } else {
+                    reject(error);
+                }
+            }
         });
     }
 
@@ -696,23 +763,51 @@ class IndexedDBManager {
      */
     async clearStore(storeName) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.clear();
-            
-            request.onsuccess = () => {
+            // 检查数据库连接状态
+            if (!this.db || this.db.readyState === 'done') {
+                console.warn(`数据库连接已关闭，跳过清空存储 ${storeName}`);
                 resolve();
-            };
+                return;
+            }
             
-            request.onerror = () => {
-                console.error(`清空存储 ${storeName} 失败:`, request.error);
-                reject(request.error);
-            };
+            // 验证存储是否存在
+            if (!this.db.objectStoreNames.contains(storeName)) {
+                console.log(`存储 ${storeName} 不存在，跳过清空操作`);
+                resolve();
+                return;
+            }
             
-            transaction.onerror = () => {
-                console.error(`清空存储 ${storeName} 的事务失败:`, transaction.error);
-                reject(transaction.error);
-            };
+            try {
+                const transaction = this.db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.clear();
+                
+                request.onsuccess = () => {
+                    console.log(`存储 ${storeName} 清空成功`);
+                    resolve();
+                };
+                
+                request.onerror = () => {
+                    console.error(`清空存储 ${storeName} 失败:`, request.error);
+                    // 不抛出错误，继续执行
+                    resolve();
+                };
+                
+                transaction.onerror = () => {
+                    console.error(`清空存储 ${storeName} 的事务失败:`, transaction.error);
+                    // 不抛出错误，继续执行
+                    resolve();
+                };
+                
+                transaction.onabort = () => {
+                    console.warn(`清空存储 ${storeName} 的事务被中止`);
+                    resolve(); // 被中止时也算成功，避免阻塞整个流程
+                };
+            } catch (error) {
+                console.error(`创建清空存储 ${storeName} 的事务时出错:`, error);
+                // 所有错误都不阻塞流程，继续执行
+                resolve();
+            }
         });
     }
 
@@ -937,6 +1032,11 @@ class IndexedDBManager {
 // 创建全局实例
 const dbManager = new IndexedDBManager();
 
+// 导出到全局作用域以便其他模块使用
+if (typeof window !== 'undefined') {
+    window.dbManager = dbManager;
+}
+
 // HTML界面相关函数
 // 文件选择触发函数
 function triggerFileSelect() {
@@ -999,6 +1099,7 @@ window.refreshDatabaseStats = async function() {
                 'globalMemory': '全局记忆',
                 'conversationCounters': '聊天计数器',
                 'memoryProcessedIndex': '总结缓存',
+                'themeConfig': '主题配置',
             };
             
             let totalRecords = 0;

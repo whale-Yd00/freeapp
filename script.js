@@ -817,7 +817,7 @@ async function handleConnectionLoss() {
 function openDB() {
     return new Promise((resolve, reject) => {
         console.log('开始尝试打开数据库...');
-        const request = indexedDB.open('WhaleLLTDB', 9);
+        const request = indexedDB.open('WhaleLLTDB', 10);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -901,6 +901,12 @@ function openDB() {
                     refStore.createIndex('fileId', 'fileId', { unique: false });
                     refStore.createIndex('category', 'category', { unique: false });
                     console.log('创建 fileReferences 存储成功');
+                }
+                
+                // 版本10新增：主题配置系统
+                if (!db.objectStoreNames.contains('themeConfig')) {
+                    db.createObjectStore('themeConfig', { keyPath: 'type' });
+                    console.log('创建 themeConfig 存储成功');
                 }
                 
                 // 标记需要进行数据优化（针对版本4、5用户）
@@ -1483,7 +1489,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage'];
 
 function showPage(pageIdToShow) {
     // 异步包装函数，用于处理包含异步操作的页面显示
@@ -9424,3 +9430,734 @@ showUserProfile = async function() {
     // 加载banner背景
     setTimeout(loadUserBanner, 100);
 };
+
+// ========== 主题色管理功能 ==========
+
+// 默认主题色配置
+const defaultThemeColors = [
+    { color: '#07c160', name: '微信绿' },
+    { color: '#1890ff', name: '天空蓝' },
+    { color: '#722ed1', name: '优雅紫' },
+    { color: '#f5222d', name: '活力红' },
+    { color: '#fa8c16', name: '温暖橙' },
+    { color: '#13c2c2', name: '清新青' },
+    { color: '#eb2f96', name: '少女粉' },
+    { color: '#2f54eb', name: '深海蓝' }
+];
+
+// 默认渐变配置
+const defaultGradientConfig = {
+    enabled: false,
+    primaryColor: '#07c160',
+    secondaryColor: '#1890ff',
+    direction: 'to right'
+};
+
+// IndexedDB 主题配置管理器
+class ThemeConfigManager {
+    constructor() {
+        this.dbName = 'WhaleLLTDB';
+        this.db = null;
+        this.storeName = 'themeConfig';
+    }
+
+    async init() {
+        // 使用已有的数据库连接
+        if (window.db && window.isIndexedDBReady) {
+            this.db = window.db;
+            return this.db;
+        }
+        
+        // 等待数据库就绪
+        return this.waitForDatabase();
+    }
+
+    async waitForDatabase() {
+        return new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                if (window.db && window.isIndexedDBReady) {
+                    this.db = window.db;
+                    clearInterval(checkInterval);
+                    resolve(this.db);
+                }
+            }, 100);
+        });
+    }
+
+
+    async saveThemeConfig(type, data) {
+        try {
+            await this.init();
+            
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                
+                const config = {
+                    type: type,
+                    data: data,
+                    updatedAt: new Date().toISOString()
+                };
+                
+                const request = store.put(config);
+                
+                request.onsuccess = () => {
+                    console.log(`主题配置已保存到IndexedDB (${type}):`, data);
+                    resolve(true);
+                };
+                
+                request.onerror = () => {
+                    console.error('保存主题配置失败:', request.error);
+                    reject(request.error);
+                };
+            });
+        } catch (error) {
+            console.error('保存主题配置时出错:', error);
+            return false;
+        }
+    }
+
+    async getThemeConfig(type) {
+        try {
+            await this.init();
+            
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.get(type);
+                
+                request.onsuccess = () => {
+                    const result = request.result;
+                    resolve(result ? result.data : null);
+                };
+                
+                request.onerror = () => {
+                    console.error('获取主题配置失败:', request.error);
+                    resolve(null);
+                };
+            });
+        } catch (error) {
+            console.error('获取主题配置时出错:', error);
+            return null;
+        }
+    }
+
+    async getAllThemeConfigs() {
+        try {
+            await this.init();
+            
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.getAll();
+                
+                request.onsuccess = () => {
+                    const configs = {};
+                    request.result.forEach(item => {
+                        configs[item.type] = item.data;
+                    });
+                    resolve(configs);
+                };
+                
+                request.onerror = () => {
+                    console.error('获取所有主题配置失败:', request.error);
+                    resolve({});
+                };
+            });
+        } catch (error) {
+            console.error('获取所有主题配置时出错:', error);
+            return {};
+        }
+    }
+
+    async ensureDefaultConfigs() {
+        try {
+            await this.init();
+            
+            // 检查themeConfig存储是否存在
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.log('themeConfig存储不存在，数据库将自动升级到版本10');
+                // 直接返回，让用户刷新页面触发自然升级
+                if (typeof showToast === 'function') {
+                    showToast('检测到数据库需要升级，请刷新页面');
+                }
+                return;
+            }
+            
+            const configs = await this.getAllThemeConfigs();
+            let hasChanges = false;
+            
+            // 如果没有主题配置，创建默认配置
+            if (!configs.theme) {
+                await this.saveThemeConfig('theme', { color: '#07c160', name: '微信绿' });
+                console.log('已创建默认主题配置');
+                hasChanges = true;
+            }
+            
+            if (!configs.gradient) {
+                await this.saveThemeConfig('gradient', defaultGradientConfig);
+                console.log('已创建默认渐变配置');
+                hasChanges = true;
+            }
+            
+            // 如果从旧格式localStorage迁移数据
+            const migrationResult = this.migrateFromOldLocalStorage();
+            if (migrationResult && Object.keys(configs).length === 0) {
+                await this.saveThemeConfig('theme', migrationResult.theme);
+                await this.saveThemeConfig('gradient', migrationResult.gradient);
+                console.log('已从localStorage迁移主题配置到IndexedDB');
+                hasChanges = true;
+            }
+            
+            if (hasChanges) {
+                console.log('主题配置初始化完成');
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('确保默认配置时出错:', error);
+            return false;
+        }
+    }
+
+
+    // 从旧格式localStorage迁移数据（同步方法）
+    migrateFromOldLocalStorage() {
+        try {
+            const savedTheme = localStorage.getItem('user-theme-color');
+            const savedGradient = localStorage.getItem('user-gradient-config');
+            
+            if (!savedTheme && !savedGradient) {
+                return null;
+            }
+            
+            let themeData = { color: '#07c160', name: '微信绿' };
+            let gradientData = defaultGradientConfig;
+            
+            if (savedTheme) {
+                themeData = JSON.parse(savedTheme);
+                console.log('检测到旧格式主题配置:', themeData);
+                // 迁移后清理旧数据
+                localStorage.removeItem('user-theme-color');
+            }
+            
+            if (savedGradient) {
+                gradientData = JSON.parse(savedGradient);
+                console.log('检测到旧格式渐变配置:', gradientData);
+                // 迁移后清理旧数据
+                localStorage.removeItem('user-gradient-config');
+            }
+            
+            return { theme: themeData, gradient: gradientData };
+        } catch (error) {
+            console.error('迁移旧格式配置失败:', error);
+            return null;
+        }
+    }
+}
+
+// 创建全局主题配置管理器实例
+const themeConfigManager = new ThemeConfigManager();
+
+
+
+
+// 从IndexedDB加载保存的主题配置
+async function loadThemeConfig() {
+    try {
+        // 确保默认配置存在（包含从localStorage的自动迁移）
+        await themeConfigManager.ensureDefaultConfigs();
+        
+        // 从IndexedDB加载配置
+        const configs = await themeConfigManager.getAllThemeConfigs();
+        
+        let themeData = configs.theme || { color: '#07c160', name: '微信绿' };
+        let gradientData = configs.gradient || defaultGradientConfig;
+        
+        // 应用主题配置
+        if (gradientData.enabled) {
+            applyGradientTheme(gradientData.primaryColor, gradientData.secondaryColor, gradientData.direction);
+        } else {
+            applyThemeColor(themeData.color);
+        }
+        
+        return { theme: themeData, gradient: gradientData };
+    } catch (error) {
+        console.error('加载主题配置失败:', error);
+        // 使用默认配置
+        const themeData = { color: '#07c160', name: '微信绿' };
+        const gradientData = defaultGradientConfig;
+        applyThemeColor(themeData.color);
+        return { theme: themeData, gradient: gradientData };
+    }
+}
+
+
+
+// 兼容旧的函数名
+function loadThemeColor() {
+    return loadThemeConfig().then(config => config.theme);
+}
+
+// 应用主题色到页面
+function applyThemeColor(color) {
+    // 禁用渐变模式
+    document.body.classList.remove('gradient-mode');
+    
+    // 计算辅助颜色
+    const lightColor = hexToRgba(color, 0.1);
+    const hoverColor = darkenColor(color, 0.1);
+    
+    // 更新CSS变量
+    document.documentElement.style.setProperty('--theme-primary', color);
+    document.documentElement.style.setProperty('--theme-primary-light', lightColor);
+    document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
+    document.documentElement.style.setProperty('--use-gradient', '0');
+    
+    // 更新meta标签中的主题色（影响系统状态栏）
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', color);
+    }
+    
+    // 更新manifest相关的meta标签
+    const tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
+    if (tileMeta) {
+        tileMeta.setAttribute('content', color);
+    }
+    
+    console.log('主题色已应用:', color);
+}
+
+// 应用渐变主题
+function applyGradientTheme(primaryColor, secondaryColor, direction) {
+    // 启用渐变模式
+    document.body.classList.add('gradient-mode');
+    
+    // 计算辅助颜色
+    const lightColor = hexToRgba(primaryColor, 0.1);
+    const hoverColor = darkenColor(primaryColor, 0.1);
+    
+    // 更新CSS变量
+    document.documentElement.style.setProperty('--theme-primary', primaryColor);
+    document.documentElement.style.setProperty('--theme-secondary', secondaryColor);
+    document.documentElement.style.setProperty('--theme-primary-light', lightColor);
+    document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
+    document.documentElement.style.setProperty('--theme-gradient-direction', direction);
+    document.documentElement.style.setProperty('--theme-gradient', `linear-gradient(${direction}, ${primaryColor}, ${secondaryColor})`);
+    document.documentElement.style.setProperty('--use-gradient', '1');
+    
+    // 更新meta标签中的主题色（使用主色）
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', primaryColor);
+    }
+    
+    // 更新manifest相关的meta标签
+    const tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
+    if (tileMeta) {
+        tileMeta.setAttribute('content', primaryColor);
+    }
+    
+    console.log('渐变主题已应用:', { primaryColor, secondaryColor, direction });
+}
+
+// 保存主题色到IndexedDB
+async function saveThemeColor(color, name) {
+    try {
+        const themeData = { color, name };
+        
+        await themeConfigManager.saveThemeConfig('theme', themeData);
+        
+        // 禁用渐变模式
+        const gradientConfig = { ...defaultGradientConfig, enabled: false };
+        await themeConfigManager.saveThemeConfig('gradient', gradientConfig);
+        
+        console.log('主题色已保存:', themeData);
+    } catch (error) {
+        console.error('保存主题色失败:', error);
+    }
+}
+
+// 保存渐变配置到IndexedDB
+async function saveGradientConfig(primaryColor, secondaryColor, direction, enabled = true) {
+    try {
+        const gradientData = { 
+            enabled, 
+            primaryColor, 
+            secondaryColor, 
+            direction 
+        };
+        
+        await themeConfigManager.saveThemeConfig('gradient', gradientData);
+        console.log('渐变配置已保存:', gradientData);
+    } catch (error) {
+        console.error('保存渐变配置失败:', error);
+    }
+}
+
+// 初始化外观管理页面
+async function initAppearanceManagement() {
+    // 获取当前主题配置
+    const config = await loadThemeConfig();
+    const currentTheme = config.theme;
+    const currentGradient = config.gradient;
+    
+    // 设置主题色选项的点击事件
+    document.querySelectorAll('.theme-color-option').forEach(option => {
+        option.addEventListener('click', function() {
+            const color = this.getAttribute('data-color');
+            const name = this.getAttribute('data-name');
+            
+            // 移除其他选项的active状态
+            document.querySelectorAll('.theme-color-option').forEach(opt => {
+                opt.classList.remove('active');
+            });
+            
+            // 添加当前选项的active状态
+            this.classList.add('active');
+            
+            // 应用并保存主题色
+            applyThemeColor(color);
+            saveThemeColor(color, name);
+            
+            // 更新自定义颜色选择器
+            updateCustomColorInputs(color);
+            
+            // 禁用渐变开关
+            const gradientToggle = document.getElementById('gradientToggle');
+            if (gradientToggle) {
+                gradientToggle.checked = false;
+                toggleGradientSettings(false);
+            }
+            
+            // 显示提示
+            showToast(`已切换到${name}`);
+        });
+        
+        // 设置当前选中的主题色
+        if (option.getAttribute('data-color') === currentTheme.color && !currentGradient.enabled) {
+            option.classList.add('active');
+        }
+    });
+    
+    // 设置自定义颜色选择器
+    initCustomColorPicker(currentTheme.color);
+    
+    // 初始化渐变设置
+    initGradientSettings(currentGradient);
+}
+
+// 初始化自定义颜色选择器
+function initCustomColorPicker(initialColor) {
+    const colorPicker = document.getElementById('customColorPicker');
+    const colorText = document.getElementById('customColorText');
+    const colorPreview = document.getElementById('customColorPreview');
+    const applyBtn = document.querySelector('.apply-custom-color-btn');
+    
+    if (!colorPicker || !colorText || !colorPreview) return;
+    
+    // 设置初始值
+    colorPicker.value = initialColor;
+    colorText.value = initialColor.toUpperCase();
+    colorPreview.style.backgroundColor = initialColor;
+    
+    // 颜色选择器变化事件
+    colorPicker.addEventListener('input', function() {
+        const color = this.value.toUpperCase();
+        colorText.value = color;
+        colorPreview.style.backgroundColor = color;
+        validateColorInput(colorText, applyBtn);
+    });
+    
+    // 文本输入框变化事件
+    colorText.addEventListener('input', function() {
+        let color = this.value.trim();
+        
+        // 自动添加#前缀
+        if (color && !color.startsWith('#')) {
+            color = '#' + color;
+            this.value = color;
+        }
+        
+        // 验证颜色格式
+        if (isValidHexColor(color)) {
+            colorPicker.value = color;
+            colorPreview.style.backgroundColor = color;
+            this.classList.remove('invalid');
+        } else {
+            this.classList.add('invalid');
+        }
+        
+        validateColorInput(this, applyBtn);
+    });
+    
+    // 文本框失焦时格式化
+    colorText.addEventListener('blur', function() {
+        if (this.value && isValidHexColor(this.value)) {
+            this.value = this.value.toUpperCase();
+        }
+    });
+    
+    // 按回车键应用颜色
+    colorText.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && isValidHexColor(this.value)) {
+            applyCustomColor();
+        }
+    });
+    
+    // 点击预览圆圈触发颜色选择器
+    colorPreview.addEventListener('click', function() {
+        colorPicker.click();
+    });
+}
+
+// 更新自定义颜色输入框
+function updateCustomColorInputs(color) {
+    const colorPicker = document.getElementById('customColorPicker');
+    const colorText = document.getElementById('customColorText');
+    const colorPreview = document.getElementById('customColorPreview');
+    const applyBtn = document.querySelector('.apply-custom-color-btn');
+    
+    if (colorPicker) colorPicker.value = color;
+    if (colorText) {
+        colorText.value = color.toUpperCase();
+        colorText.classList.remove('invalid');
+    }
+    if (colorPreview) colorPreview.style.backgroundColor = color;
+    if (applyBtn) applyBtn.disabled = false;
+}
+
+// 验证颜色输入
+function validateColorInput(input, button) {
+    const isValid = isValidHexColor(input.value);
+    button.disabled = !isValid;
+    
+    if (isValid) {
+        input.classList.remove('invalid');
+    } else {
+        input.classList.add('invalid');
+    }
+}
+
+// 应用自定义颜色
+function applyCustomColor() {
+    const colorText = document.getElementById('customColorText');
+    const color = colorText.value.trim();
+    
+    if (!color) {
+        showToast('请输入颜色代码');
+        return;
+    }
+    
+    if (!isValidHexColor(color)) {
+        showToast('请输入有效的颜色代码（例如：#FF0000）');
+        colorText.focus();
+        return;
+    }
+    
+    // 移除预设选项的active状态
+    document.querySelectorAll('.theme-color-option').forEach(opt => {
+        opt.classList.remove('active');
+    });
+    
+    // 应用并保存主题色
+    applyThemeColor(color);
+    saveThemeColor(color, '自定义颜色');
+    
+    // 更新预览
+    const colorPreview = document.getElementById('customColorPreview');
+    if (colorPreview) {
+        colorPreview.style.backgroundColor = color;
+    }
+    
+    showToast('自定义颜色已应用：' + color.toUpperCase());
+}
+
+// 工具函数：验证十六进制颜色代码
+function isValidHexColor(color) {
+    return /^#[0-9A-Fa-f]{6}$/.test(color);
+}
+
+// 工具函数：十六进制转RGBA
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// 工具函数：加深颜色
+function darkenColor(hex, percent) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    
+    const newR = Math.round(r * (1 - percent));
+    const newG = Math.round(g * (1 - percent));
+    const newB = Math.round(b * (1 - percent));
+    
+    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+}
+
+// 初始化渐变设置
+function initGradientSettings(gradientConfig) {
+    const gradientToggle = document.getElementById('gradientToggle');
+    const gradientSettings = document.getElementById('gradientSettings');
+    
+    if (!gradientToggle) return;
+    
+    // 设置开关状态
+    gradientToggle.checked = gradientConfig.enabled;
+    toggleGradientSettings(gradientConfig.enabled);
+    
+    // 设置渐变开关事件
+    gradientToggle.addEventListener('change', function() {
+        toggleGradientSettings(this.checked);
+    });
+    
+    // 初始化渐变颜色选择器
+    initGradientColorPickers(gradientConfig);
+    
+    // 初始化渐变方向选择
+    initGradientDirectionPickers(gradientConfig.direction);
+}
+
+// 切换渐变设置显示/隐藏
+function toggleGradientSettings(show) {
+    const gradientSettings = document.getElementById('gradientSettings');
+    if (gradientSettings) {
+        gradientSettings.style.display = show ? 'block' : 'none';
+    }
+}
+
+// 初始化渐变颜色选择器
+function initGradientColorPickers(gradientConfig) {
+    // 主色选择器
+    initSingleGradientColorPicker('Primary', gradientConfig.primaryColor, updateGradientPreview);
+    // 副色选择器
+    initSingleGradientColorPicker('Secondary', gradientConfig.secondaryColor, updateGradientPreview);
+    
+    // 更新预览
+    updateGradientPreview();
+}
+
+// 初始化单个渐变颜色选择器
+function initSingleGradientColorPicker(type, initialColor, callback) {
+    const picker = document.getElementById(`gradient${type}Picker`);
+    const text = document.getElementById(`gradient${type}Text`);
+    const preview = document.getElementById(`gradient${type}Preview`);
+    
+    if (!picker || !text || !preview) return;
+    
+    // 设置初始值
+    picker.value = initialColor;
+    text.value = initialColor.toUpperCase();
+    preview.style.backgroundColor = initialColor;
+    
+    // 颜色选择器变化事件
+    picker.addEventListener('input', function() {
+        const color = this.value.toUpperCase();
+        text.value = color;
+        preview.style.backgroundColor = color;
+        if (callback) callback();
+    });
+    
+    // 文本输入框变化事件
+    text.addEventListener('input', function() {
+        let color = this.value.trim();
+        
+        if (color && !color.startsWith('#')) {
+            color = '#' + color;
+            this.value = color;
+        }
+        
+        if (isValidHexColor(color)) {
+            picker.value = color;
+            preview.style.backgroundColor = color;
+            this.classList.remove('invalid');
+            if (callback) callback();
+        } else {
+            this.classList.add('invalid');
+        }
+    });
+    
+    // 点击预览触发颜色选择器
+    preview.addEventListener('click', function() {
+        picker.click();
+    });
+}
+
+// 初始化渐变方向选择器
+function initGradientDirectionPickers(initialDirection) {
+    const directionInputs = document.querySelectorAll('input[name="gradientDirection"]');
+    
+    directionInputs.forEach(input => {
+        if (input.value === initialDirection) {
+            input.checked = true;
+        }
+        
+        input.addEventListener('change', function() {
+            if (this.checked) {
+                updateGradientPreview();
+            }
+        });
+    });
+}
+
+// 更新渐变预览
+function updateGradientPreview() {
+    const primaryColor = document.getElementById('gradientPrimaryText').value;
+    const secondaryColor = document.getElementById('gradientSecondaryText').value;
+    const direction = document.querySelector('input[name="gradientDirection"]:checked')?.value || 'to right';
+    
+    const previewDemo = document.getElementById('gradientPreviewDemo');
+    if (previewDemo && isValidHexColor(primaryColor) && isValidHexColor(secondaryColor)) {
+        previewDemo.style.background = `linear-gradient(${direction}, ${primaryColor}, ${secondaryColor})`;
+    }
+}
+
+// 应用渐变主题（从UI调用）
+function applyGradientThemeFromUI() {
+    const primaryColor = document.getElementById('gradientPrimaryText').value;
+    const secondaryColor = document.getElementById('gradientSecondaryText').value;
+    const direction = document.querySelector('input[name="gradientDirection"]:checked')?.value || 'to right';
+    
+    if (!isValidHexColor(primaryColor) || !isValidHexColor(secondaryColor)) {
+        showToast('请输入有效的颜色代码');
+        return;
+    }
+    
+    // 应用渐变
+    applyGradientTheme(primaryColor, secondaryColor, direction);
+    
+    // 保存配置
+    saveGradientConfig(primaryColor, secondaryColor, direction, true);
+    
+    // 移除预设主题色的选中状态
+    document.querySelectorAll('.theme-color-option').forEach(opt => {
+        opt.classList.remove('active');
+    });
+    
+    showToast('渐变主题已应用');
+}
+
+// 在页面加载完成后初始化主题色
+document.addEventListener('DOMContentLoaded', async function() {
+    // 加载保存的主题配置
+    await loadThemeConfig();
+    
+    // 当切换到外观管理页面时初始化
+    const originalShowPageAsync = showPageAsync;
+    window.showPageAsync = async function(pageIdToShow) {
+        const result = await originalShowPageAsync(pageIdToShow);
+        
+        if (pageIdToShow === 'appearanceManagementPage') {
+            setTimeout(async () => {
+                await initAppearanceManagement();
+            }, 100);
+        }
+        
+        return result;
+    };
+});

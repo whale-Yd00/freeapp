@@ -3,5 +3,6 @@ node_modules/
 
 #AI
 GEMINI.md
+CLAUDE.md
 .claude
 .env
