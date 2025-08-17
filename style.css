@@ -731,6 +731,13 @@ body:has(.chat-page.active) .bottom-nav {
     display: none;
 }
 
+/* 兼容性备用方案：通过body类控制导航栏隐藏 */
+/* 适用于不支持 :has() 选择器的浏览器 */
+body.chat-active .bottom-nav,
+body.no-has-support.chat-active .bottom-nav {
+    display: none !important;
+}
+
 .nav-item {
     flex: 1;
     display: flex;

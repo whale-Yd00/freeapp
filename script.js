@@ -684,6 +684,39 @@ let selectedMessages = new Set();
 let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
 let currentPlayingElement = null; // 跟踪当前播放的语音元素
 
+// 浏览器兼容性检测
+function checkBrowserCompatibility() {
+    // 检测浏览器是否支持 :has() 选择器
+    let supportsHas = false;
+    
+    try {
+        // 尝试创建一个使用 :has() 的CSS规则来测试支持性
+        const testRule = document.createElement('style');
+        testRule.textContent = 'body:has(div) { color: inherit; }';
+        document.head.appendChild(testRule);
+        
+        // 检查规则是否被正确解析
+        supportsHas = testRule.sheet && testRule.sheet.cssRules.length > 0;
+        
+        // 清理测试元素
+        document.head.removeChild(testRule);
+    } catch (e) {
+        // 如果出现错误，说明不支持
+        supportsHas = false;
+    }
+    
+    // 如果不支持 :has()，为body添加标识类以启用JavaScript备用方案
+    if (!supportsHas) {
+        document.body.classList.add('no-has-support');
+        console.log('检测到浏览器不支持 :has() 选择器，已启用JavaScript备用方案');
+    } else {
+        console.log('浏览器支持 :has() 选择器');
+    }
+    
+    // 将支持状态存储为全局变量，供其他函数使用
+    window.browserSupportsHas = supportsHas;
+}
+
 
 // --- 初始化 ---
 async function init() {
@@ -1747,6 +1780,21 @@ async function showPageAsync(pageIdToShow) {
             item.classList.remove('active');
         }
     });
+
+    // 兼容性适配：显式控制底部导航栏的显示/隐藏
+    // 为不支持 :has() 选择器的浏览器提供JavaScript备用方案
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) {
+        if (pageIdToShow === 'chatPage') {
+            // 聊天页面时隐藏导航栏
+            bottomNav.style.display = 'none';
+            document.body.classList.add('chat-active');
+        } else {
+            // 其他页面时显示导航栏
+            bottomNav.style.display = 'flex';
+            document.body.classList.remove('chat-active');
+        }
+    }
 
     // --- Lazy Loading/Rendering ---
     // Render Weibo posts when the page is shown
@@ -6443,6 +6491,9 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // 兼容性检测：检测浏览器是否支持 :has() 选择器
+    checkBrowserCompatibility();
+    
     // 检查URL中是否有导入ID
     const urlParams = new URLSearchParams(window.location.search);
     const importId = urlParams.get('importId');
