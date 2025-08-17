@@ -98,6 +98,12 @@ class APIService {
                 try {
                     const data = await response.json();
                     console.log('API完整返回:', JSON.stringify(data, null, 2));
+                    
+                    // 检查completion_tokens是否为0
+                    if (data.usage && data.usage.completion_tokens === 0) {
+                        throw new Error('API错误：API响应，但AI空回复了。可能是模型问题、被截断或API提供商问题。请尝试多重试几次，或等待上游解决。');
+                    }
+                    
                     return data;
                 } catch (parseError) {
                     throw new Error(`响应格式错误: 无法解析API返回的JSON数据`);
