@@ -2,6 +2,43 @@
 let consoleLogs = [];
 const maxLogEntries = 500; // 限制日志条目数量避免内存过大
 
+// === 输入框安全聚焦工具函数 ===
+function safeFocus(element, options = {}) {
+    if (!element || typeof element.focus !== 'function') return;
+    
+    const {
+        preventScroll = false,
+        delay = 0,
+        smooth = true
+    } = options;
+    
+    // 防抖机制：如果element已经是activeElement，避免重复操作
+    if (document.activeElement === element) return;
+    
+    const focusAction = () => {
+        try {
+            // 如果元素不在可视区域，先聚焦但阻止滚动
+            element.focus({ preventScroll: true });
+            
+            // 如果需要滚动到可视区域，使用viewportManager的方法
+            if (!preventScroll && window.viewportManager) {
+                // 延迟一下，让focus事件先完成
+                setTimeout(() => {
+                    window.viewportManager.scrollToActiveInput();
+                }, 50);
+            }
+        } catch (error) {
+            console.warn('Focus operation failed:', error);
+        }
+    };
+    
+    if (delay > 0) {
+        setTimeout(focusAction, delay);
+    } else {
+        focusAction();
+    }
+}
+
 // 重写console方法来捕获日志
 function setupConsoleCapture() {
     const originalConsole = {
@@ -5014,7 +5051,7 @@ async function sendUserMessage() {
     await addSingleMessage(userMessage, true); // 单独添加用户消息，使用动画
     await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
-    input.focus();
+    safeFocus(input);
 }
 
 async function sendMessage() {
@@ -8599,7 +8636,7 @@ function showMomentComment(momentId) {
     
     replyContainer.classList.add('active');
     replyContainer.style.display = 'block'; // 确保显示
-    textarea.focus();
+    safeFocus(textarea, { delay: 100 });
     
     // 关闭菜单（发现页面才有菜单）
     if (!isInUserProfile) {
@@ -8716,7 +8753,7 @@ function showCommentReply(commentId, authorName, momentId) {
     const textarea = replyContainer.querySelector('.moment-reply-input');
     
     replyContainer.classList.add('active');
-    textarea.focus();
+    safeFocus(textarea, { delay: 100 });
     textarea.setAttribute('placeholder', `回复${authorName}...`);
 }
 

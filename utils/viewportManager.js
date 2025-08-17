@@ -74,46 +74,83 @@ class ViewportManager {
     /**
      * 处理键盘弹出/收起时的布局调整
      * 使用transform和scroll来适应键盘，而不是改变容器高度
+     * 优化版本：增加防抖和状态检查
      */
     handleKeyboardToggle() {
         if (!window.visualViewport) return;
         
-        const visualHeight = window.visualViewport.height;
-        const windowHeight = window.innerHeight;
-        const heightDiff = windowHeight - visualHeight;
-        
-        // 键盘高度阈值，超过100px认为是键盘弹出
-        const keyboardThreshold = 100;
-        const isKeyboardVisible = heightDiff > keyboardThreshold;
-        
-        const root = document.documentElement;
-        
-        if (isKeyboardVisible) {
-            // 键盘弹出时，设置一个CSS变量来标识状态
-            root.style.setProperty('--keyboard-height', `${heightDiff}px`);
-            root.setAttribute('data-keyboard-visible', 'true');
-            
-            // 确保当前聚焦的输入框可见
-            this.scrollToActiveInput();
-        } else {
-            // 键盘收起时，清除状态
-            root.style.removeProperty('--keyboard-height');
-            root.removeAttribute('data-keyboard-visible');
+        // 防抖机制，避免频繁触发
+        if (this.keyboardToggleTimeout) {
+            clearTimeout(this.keyboardToggleTimeout);
         }
+        
+        this.keyboardToggleTimeout = setTimeout(() => {
+            const visualHeight = window.visualViewport.height;
+            const windowHeight = window.innerHeight;
+            const heightDiff = windowHeight - visualHeight;
+            
+            // 键盘高度阈值，超过150px认为是键盘弹出（提高阈值避免误判）
+            const keyboardThreshold = 150;
+            const isKeyboardVisible = heightDiff > keyboardThreshold;
+            
+            const root = document.documentElement;
+            const currentState = root.getAttribute('data-keyboard-visible') === 'true';
+            
+            // 只有状态真正变化时才执行操作
+            if (isKeyboardVisible !== currentState) {
+                if (isKeyboardVisible) {
+                    // 键盘弹出时，设置一个CSS变量来标识状态
+                    root.style.setProperty('--keyboard-height', `${heightDiff}px`);
+                    root.setAttribute('data-keyboard-visible', 'true');
+                    
+                    // 延迟执行滚动，确保键盘完全弹出
+                    setTimeout(() => {
+                        this.scrollToActiveInput();
+                    }, 50);
+                } else {
+                    // 键盘收起时，清除状态
+                    root.style.removeProperty('--keyboard-height');
+                    root.removeAttribute('data-keyboard-visible');
+                }
+            }
+            
+            this.keyboardToggleTimeout = null;
+        }, 100); // 100ms防抖
     }
 
     /**
      * 将当前聚焦的输入框滚动到可见区域
+     * 优化版本：避免过度滚动和重复调用
      */
     scrollToActiveInput() {
         const activeElement = document.activeElement;
         if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-            setTimeout(() => {
-                activeElement.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center'
-                });
-            }, 300); // 等待键盘动画完成
+            // 防抖机制，避免重复调用
+            if (this.scrollTimeout) {
+                clearTimeout(this.scrollTimeout);
+            }
+            
+            this.scrollTimeout = setTimeout(() => {
+                // 检查元素是否已经在可视区域内
+                const rect = activeElement.getBoundingClientRect();
+                const windowHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                const keyboardHeight = windowHeight - (window.visualViewport ? window.visualViewport.height : windowHeight);
+                const availableHeight = windowHeight - keyboardHeight;
+                
+                // 只有当输入框不在可视区域或被键盘遮挡时才滚动
+                const isVisible = rect.top >= 0 && rect.bottom <= availableHeight;
+                const isPartiallyHidden = rect.bottom > availableHeight * 0.7; // 如果输入框底部超过可用高度的70%，认为需要调整
+                
+                if (!isVisible || isPartiallyHidden) {
+                    activeElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest', // 改为nearest，避免过度滚动
+                        inline: 'nearest'
+                    });
+                }
+                
+                this.scrollTimeout = null;
+            }, 350); // 稍微延长等待时间，确保键盘动画完成
         }
     }
 
