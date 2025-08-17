@@ -769,7 +769,7 @@
                         <label class="form-label">头像（可选）</label>
                         <input type="url" class="form-input" id="contactAvatar" placeholder="可直接粘贴URL或上传本地图片">
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('avatarUploadInput', 'contactAvatar', 'avatarUploadStatus')">
+                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleContactAvatarUpload(event)">
                             <span id="avatarUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -846,7 +846,7 @@
                         <label class="form-label">头像（可选）</label>
                         <input type="url" class="form-input" id="profileAvatarInput" placeholder="可直接粘贴URL或上传本地图片">
                          <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="profileUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('profileUploadInput', 'profileAvatarInput', 'profileUploadStatus')">
+                            <input type="file" id="profileUploadInput" accept="image/*" style="flex: 1;" onchange="handleProfileAvatarUpload(event)">
                             <span id="profileUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -1019,7 +1019,7 @@
                         <label class="form-label">背景图片</label>
                         <input type="url" class="form-input" id="backgroundUrl" placeholder="可直接粘贴URL或上传本地图片">
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('bgUploadInput', 'backgroundUrl', 'bgUploadStatus')">
+                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="handleBgUpload(event)">
                             <span id="bgUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -1041,7 +1041,7 @@
                         <label class="form-label">表情图片</label>
                         <input type="url" class="form-input" id="emojiUrl" placeholder="可直接粘贴URL或上传本地图片" required>
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('emojiUploadInput', 'emojiUrl', 'emojiUploadStatus')">
+                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="handleEmojiFileUpload(event)">
                             <span id="emojiUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>

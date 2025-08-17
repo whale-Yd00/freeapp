@@ -308,6 +308,194 @@ async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
     };
 }
 
+// --- 新的文件系统上传函数 ---
+async function handleAvatarUpload(inputId, entityType, entityId, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储头像
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeAvatar(file, entityType, entityId);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        showToast('头像已保存');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('头像上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        showToast(`上传失败: ${error.message}`);
+        throw error;
+    }
+}
+
+async function handleBackgroundUpload(inputId, contactId, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储背景图片
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeBackground(file, contactId);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        showToast('背景图片已保存');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('背景图片上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        showToast(`上传失败: ${error.message}`);
+        throw error;
+    }
+}
+
+async function handleEmojiUpload(inputId, emojiTag, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储表情包
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        showToast('表情包已保存');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('表情包上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        showToast(`上传失败: ${error.message}`);
+        throw error;
+    }
+}
+
+// --- 特定的上传处理函数 ---
+async function handleContactAvatarUpload(event) {
+    try {
+        // 如果正在编辑联系人，使用联系人ID；否则为新联系人生成临时ID
+        const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
+        const fileId = await handleAvatarUpload('avatarUploadInput', 'contact', contactId, 'avatarUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('contactAvatar').value = `file:${fileId}`;
+        }
+    } catch (error) {
+        console.error('联系人头像上传失败:', error);
+    }
+}
+
+async function handleProfileAvatarUpload(event) {
+    try {
+        const fileId = await handleAvatarUpload('profileUploadInput', 'user', 'profile', 'profileUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('profileAvatarInput').value = `file:${fileId}`;
+        }
+    } catch (error) {
+        console.error('个人头像上传失败:', error);
+    }
+}
+
+async function handleBgUpload(event) {
+    try {
+        if (!currentContact) {
+            showToast('请先选择联系人');
+            return;
+        }
+        
+        const fileId = await handleBackgroundUpload('bgUploadInput', currentContact.id, 'bgUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('backgroundUrl').value = `file:${fileId}`;
+        }
+    } catch (error) {
+        console.error('背景图片上传失败:', error);
+    }
+}
+
+async function handleEmojiFileUpload(event) {
+    try {
+        // 获取表情意思/标签
+        const emojiTag = document.getElementById('emojiMeaning').value.trim();
+        if (!emojiTag) {
+            showToast('请先填写表情意思');
+            return;
+        }
+        
+        const fileId = await handleEmojiUpload('emojiUploadInput', emojiTag, 'emojiUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('emojiUrl').value = `file:${fileId}`;
+        }
+    } catch (error) {
+        console.error('表情包上传失败:', error);
+    }
+}
+
 // --- 全局状态 ---
 let contacts = [];
 // 确保暴露到全局对象
@@ -495,6 +683,39 @@ let selectedMessages = new Set();
 // 语音播放相关全局变量
 let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
 let currentPlayingElement = null; // 跟踪当前播放的语音元素
+
+// 浏览器兼容性检测
+function checkBrowserCompatibility() {
+    // 检测浏览器是否支持 :has() 选择器
+    let supportsHas = false;
+    
+    try {
+        // 尝试创建一个使用 :has() 的CSS规则来测试支持性
+        const testRule = document.createElement('style');
+        testRule.textContent = 'body:has(div) { color: inherit; }';
+        document.head.appendChild(testRule);
+        
+        // 检查规则是否被正确解析
+        supportsHas = testRule.sheet && testRule.sheet.cssRules.length > 0;
+        
+        // 清理测试元素
+        document.head.removeChild(testRule);
+    } catch (e) {
+        // 如果出现错误，说明不支持
+        supportsHas = false;
+    }
+    
+    // 如果不支持 :has()，为body添加标识类以启用JavaScript备用方案
+    if (!supportsHas) {
+        document.body.classList.add('no-has-support');
+        console.log('检测到浏览器不支持 :has() 选择器，已启用JavaScript备用方案');
+    } else {
+        console.log('浏览器支持 :has() 选择器');
+    }
+    
+    // 将支持状态存储为全局变量，供其他函数使用
+    window.browserSupportsHas = supportsHas;
+}
 
 
 // --- 初始化 ---
@@ -1559,6 +1780,21 @@ async function showPageAsync(pageIdToShow) {
             item.classList.remove('active');
         }
     });
+
+    // 兼容性适配：显式控制底部导航栏的显示/隐藏
+    // 为不支持 :has() 选择器的浏览器提供JavaScript备用方案
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) {
+        if (pageIdToShow === 'chatPage') {
+            // 聊天页面时隐藏导航栏
+            bottomNav.style.display = 'none';
+            document.body.classList.add('chat-active');
+        } else {
+            // 其他页面时显示导航栏
+            bottomNav.style.display = 'flex';
+            document.body.classList.remove('chat-active');
+        }
+    }
 
     // --- Lazy Loading/Rendering ---
     // Render Weibo posts when the page is shown
@@ -4657,14 +4893,29 @@ async function showCreateGroupModalAsync() {
 // --- 数据保存与处理 ---
 async function saveContact(event) {
     event.preventDefault();
+    const avatarValue = document.getElementById('contactAvatar').value;
+    
+    // 处理头像数据：如果是新的fileId格式，分别保存到avatar和avatarFileId字段
     const contactData = {
         name: document.getElementById('contactName').value,
-        avatar: document.getElementById('contactAvatar').value,
         personality: document.getElementById('contactPersonality').value,
         customPrompts: document.getElementById('customPrompts').value,
         // 保存语音ID
         voiceId: document.getElementById('contactVoiceId').value.trim()
     };
+    
+    // 处理头像字段
+    if (avatarValue.startsWith('file:')) {
+        // 新的fileSystem格式
+        contactData.avatarFileId = avatarValue.substring(5); // 移除 "file:" 前缀
+        // 保留原avatar字段为空或删除，确保向后兼容
+        contactData.avatar = '';
+    } else {
+        // 传统的URL或base64格式
+        contactData.avatar = avatarValue;
+        // 清除可能存在的avatarFileId
+        contactData.avatarFileId = null;
+    }
     if (editingContact) {
         Object.assign(editingContact, contactData);
         showToast('修改成功');
@@ -4717,9 +4968,24 @@ function importPrompts(event) {
 
 async function saveProfile(event) {
     event.preventDefault();
+    const avatarValue = document.getElementById('profileAvatarInput').value;
+    
     userProfile.name = document.getElementById('profileNameInput').value;
-    userProfile.avatar = document.getElementById('profileAvatarInput').value;
     userProfile.personality = document.getElementById('profilePersonality').value;
+    
+    // 处理头像字段
+    if (avatarValue.startsWith('file:')) {
+        // 新的fileSystem格式
+        userProfile.avatarFileId = avatarValue.substring(5); // 移除 "file:" 前缀
+        // 保留原avatar字段为空，确保向后兼容
+        userProfile.avatar = '';
+    } else {
+        // 传统的URL或base64格式
+        userProfile.avatar = avatarValue;
+        // 清除可能存在的avatarFileId
+        userProfile.avatarFileId = null;
+    }
+    
     await saveDataToDB(); // 使用IndexedDB保存
     await updateUserProfileUI();
     closeModal('editProfileModal');
@@ -5660,9 +5926,14 @@ async function addEmoji(event) {
     
     const imageUrl = document.getElementById('emojiUrl').value;
     
-    // 如果是base64图片，存储到emojiImages，否则直接存储URL
+    // 处理不同格式的图片
     let imageData = imageUrl;
-    if (imageUrl.startsWith('data:image/')) {
+    if (imageUrl.startsWith('file:')) {
+        // 新的fileSystem格式 - 表情包已经在上传时保存到文件系统
+        // 只需要保存emoji记录即可，不需要额外处理
+        imageData = imageUrl; // 保留file:fileId格式用于引用
+    } else if (imageUrl.startsWith('data:image/')) {
+        // 传统的base64格式
         await saveEmojiImage(meaning, imageUrl);
         imageData = `[emoji:${meaning}]`; // 内部存储格式
     }
@@ -5670,7 +5941,9 @@ async function addEmoji(event) {
     const emoji = { 
         id: Date.now().toString(), 
         tag: meaning,  // 使用tag而不是meaning
-        meaning: meaning // 保留meaning用于显示
+        meaning: meaning, // 保留meaning用于显示
+        // 新增：如果是fileId格式，保存fileId字段
+        ...(imageUrl.startsWith('file:') ? { fileId: imageUrl.substring(5) } : {})
     };
     emojis.push(emoji);
     await saveDataToDB(); // 使用IndexedDB保存
@@ -6218,6 +6491,9 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // 兼容性检测：检测浏览器是否支持 :has() 选择器
+    checkBrowserCompatibility();
+    
     // 检查URL中是否有导入ID
     const urlParams = new URLSearchParams(window.location.search);
     const importId = urlParams.get('importId');
