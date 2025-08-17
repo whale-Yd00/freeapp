@@ -4266,3 +4266,32 @@ textarea:focus {
     /* 确保聚焦的输入框有足够的滚动空间 */
     scroll-margin: 20px;
 }
+
+/* 防止页面因为滚动操作而跳出可视区域 */
+html {
+    scroll-behavior: smooth;
+    /* 限制滚动范围，防止滚动超出页面边界 */
+    overscroll-behavior: contain;
+}
+
+body {
+    /* 防止橡皮筋滚动效果导致的布局问题 */
+    overscroll-behavior-y: contain;
+    /* 确保页面在键盘弹出时不会产生意外的滚动 */
+    touch-action: pan-x pan-y;
+}
+
+/* 为iOS Safari提供额外的滚动保护 */
+@supports (-webkit-touch-callout: none) {
+    .main-container {
+        /* 在iOS设备上限制滚动行为 */
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* 防止键盘弹出时的布局跳动 */
+    .chat-page {
+        position: fixed;
+        transform: translateZ(0); /* 开启硬件加速，减少重绘 */
+    }
+}
