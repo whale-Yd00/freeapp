@@ -2614,7 +2614,7 @@ async function showReplyBox(postHtmlId) {
             renderAllWeiboPosts();
 
         } catch (error) {
-            showToast(`生成失败: ${error.message}`);
+            showApiError(error);
             console.error('AI回复生成失败:', error);
             // On failure, remove the user's comment that was added optimistically
             postData.comments.pop();
@@ -3371,7 +3371,7 @@ async function generateMomentContent() {
 
     } catch (error) {
         console.error('生成朋友圈失败:', error);
-        showToast('生成失败: ' + error.message);
+        showApiError(error);
     } finally {
         generateBtn.disabled = false;
         generateBtn.textContent = '生成朋友圈';
@@ -4206,11 +4206,19 @@ function updateContextValue(value) {
     document.getElementById('contextValue').textContent = value + '条';
 }
 
-function showToast(message) {
+function showToast(message, duration = 2000) {
     const toast = document.getElementById('toast');
     toast.textContent = message;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2000);
+    setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// 处理API错误的专用函数，自动检测空回复并设置合适的显示时长
+function showApiError(prefix, error) {
+    const errorMessage = error.message || '未知错误';
+    const isEmptyResponse = errorMessage.includes('空回');
+    const duration = isEmptyResponse ? 6000 : 2000;
+    showToast(`${prefix}: ${errorMessage}`, duration);
 }
 
 // === 表情图片管理函数 ===
@@ -5142,7 +5150,7 @@ async function sendMessage() {
             timestamp: new Date().toISOString(),
             url: window.location.href
         });
-        showToast('发送失败：' + error.message);
+        showApiError(error);
         hideTypingIndicator();
     } finally {
         sendBtn.disabled = false;
