@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 10;
+        this.dbVersion = 11;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
@@ -29,7 +29,8 @@ class IndexedDBManager {
             memoryProcessedIndex: { keyPath: 'contactId' },
             fileStorage: { keyPath: 'fileId' }, // 新增：存储原始文件Blob数据
             fileReferences: { keyPath: 'referenceId' }, // 新增：存储文件引用关系
-            themeConfig: { keyPath: 'type' } // 新增：存储主题配置（颜色、渐变等）
+            themeConfig: { keyPath: 'type' }, // 新增：存储主题配置（颜色、渐变等）
+            bubbleDesignerStickers: { keyPath: 'id' } // 新增：气泡设计器贴图库
         };
     }
 
@@ -417,6 +418,11 @@ class IndexedDBManager {
             this.migrateFrom9To10(migratedData);
         }
         
+        if (fromVersion <= 10 && toVersion >= 11) {
+            // 版本10到11的迁移：添加气泡设计器贴图库
+            this.migrateFrom10To11(migratedData);
+        }
+        
         console.log('数据迁移完成');
         return migratedData;
     }
@@ -580,6 +586,32 @@ class IndexedDBManager {
         }
         
         console.log('版本9到10迁移完成：主题配置系统已添加');
+    }
+    
+    /**
+     * 从版本10迁移到版本11
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom10To11(data) {
+        console.log('执行版本10到11的迁移：添加气泡设计器贴图库');
+        
+        // 版本11新增：气泡设计器贴图库
+        if (!data.bubbleDesignerStickers) {
+            data.bubbleDesignerStickers = [];
+            console.log('添加 bubbleDesignerStickers 存储');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            const newStores = ['bubbleDesignerStickers'];
+            for (const store of newStores) {
+                if (!data._metadata.stores.includes(store)) {
+                    data._metadata.stores.push(store);
+                }
+            }
+        }
+        
+        console.log('版本10到11迁移完成：气泡设计器贴图库已添加');
     }
 
     /**

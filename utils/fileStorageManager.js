@@ -6,7 +6,7 @@
 class FileStorageManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 9; // 增加版本号以支持新的文件存储表
+        this.dbVersion = 11; // 与主应用保持一致的版本号
         this.db = null;
         this.urlCache = new Map(); // 缓存已创建的Object URLs
         

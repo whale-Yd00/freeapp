@@ -26,6 +26,17 @@
     <link rel="manifest" href="manifest.json">
     
     <link rel="stylesheet" href="style.css">
+    
+    <!-- 中文字体CDN导入 -->
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/syst/dist/SourceHanSerifCN/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/lxgwwenkaibright/dist/LXGWBright-Regular/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/dymh/dist/DouyinSansBold/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hwmct/dist/汇文明朝体/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ToneOZ-Pinyin-Kai/dist/ToneOZ-PinyinW-Kai-Simplified/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hcqyt/dist/ChillRoundFBold/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ysbzt/dist/峄山碑篆体/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
+    
     <script src="config/sync-config.js"></script>
 
     <!-- Analytics -->
@@ -508,6 +519,22 @@
                         </div>
                         
                         <button type="button" class="apply-gradient-btn" onclick="applyGradientThemeFromUI()">应用渐变主题</button>
+                    </div>
+                </div>
+                
+                <!-- 聊天气泡设计器 -->
+                <div class="appearance-section">
+                    <h3 class="appearance-section-title">聊天气泡设计</h3>
+                    <p class="appearance-section-desc">设计个性化的聊天气泡样式，添加贴图装饰</p>
+                    <div class="bubble-designer-option">
+                        <button type="button" class="bubble-designer-btn" onclick="openBubbleDesigner()">
+                            <div class="bubble-designer-icon">💬</div>
+                            <div class="bubble-designer-info">
+                                <div class="bubble-designer-title">气泡样式设计器</div>
+                                <div class="bubble-designer-desc">自定义气泡颜色、边框、贴图装饰等</div>
+                            </div>
+                            <div class="bubble-designer-arrow">›</div>
+                        </button>
                     </div>
                 </div>
                 
