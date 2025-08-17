@@ -432,13 +432,23 @@ class CharacterMemoryManager {
             
             if (shouldUpdate) {
                 // 第二步：使用主要模型生成/更新记忆
-                await this.generateAndUpdateMemory(contact, currentContact);
+                const updateSuccess = await this.generateAndUpdateMemory(contact, currentContact);
+                
+                // 只有记忆更新成功时才标记消息已处理
+                if (updateSuccess) {
+                    await this.markMessagesProcessed(currentContact);
+                    console.log('记忆更新成功，lastProcessedIndex已更新');
+                } else {
+                    console.warn('记忆更新失败，lastProcessedIndex保持不变');
+                }
+            } else {
+                // 判断为不需要更新时，仍然标记消息已处理
+                await this.markMessagesProcessed(currentContact);
+                console.log('无需更新记忆，lastProcessedIndex已更新');
             }
-            
-            // 无论是否更新记忆，都标记当前消息已处理
-            await this.markMessagesProcessed(currentContact);
         } catch (error) {
             console.error('检查更新记忆时发生错误:', error);
+            console.warn('由于错误，lastProcessedIndex保持不变');
         }
     }
 
@@ -875,23 +885,25 @@ class CharacterMemoryManager {
             // 安全检查API响应格式
             if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
                 console.warn('生成记忆API响应格式异常:', response);
-                return;
+                return false;
             }
             
             const content = response.choices[0].message.content;
             if (!content || typeof content !== 'string') {
                 console.warn('生成记忆API响应内容为空或格式错误:', content);
-                return;
+                return false;
             }
             
             const newMemory = content.trim();
             console.log('生成的新记忆:', newMemory);
             
             // 追加新记忆（累积式保存）
-            await this.appendCharacterMemory(contact.id, newMemory);
+            const saveSuccess = await this.appendCharacterMemory(contact.id, newMemory);
+            return saveSuccess;
             
         } catch (error) {
             console.error('生成记忆失败:', error);
+            return false;
         }
     }
 
