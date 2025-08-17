@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>独立的交互式气泡样式设计器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入FileStorageManager相关脚本 -->
+    <script src="utils/fileStorageManager.js"></script>
+    <script src="utils/imageStorageAPI.js"></script>
+    <script src="utils/imageDisplayHelper.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 中文字体CDN导入 -->
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/syst/dist/SourceHanSerifCN/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/lxgwwenkaibright/dist/LXGWBright-Regular/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/dymh/dist/DouyinSansBold/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hwmct/dist/汇文明朝体/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ToneOZ-Pinyin-Kai/dist/ToneOZ-PinyinW-Kai-Simplified/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hcqyt/dist/ChillRoundFBold/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ysbzt/dist/峄山碑篆体/result.css' />
+    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:#e2e8f0;border-radius:3px;outline:none;opacity:.7;transition:opacity .2s}
+        input[type="range"]:hover{opacity:1}
+        input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;background:#4f46e5;cursor:pointer;border-radius:50%;border:2px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.2)}
+        input[type="color"]{-webkit-appearance:none;-moz-appearance:none;appearance:none;width:40px;height:40px;background-color:transparent;border:none;cursor:pointer}
+        input[type="color"]::-webkit-color-swatch{border-radius:50%;border:2px solid #e2e8f0}
+        
+        .sticker-wrapper {
+            position: absolute;
+            width: 120px;
+            height: auto;
+            cursor: grab;
+            user-select: none;
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease;
+        }
+        .sticker-wrapper.selected {
+            border: 2px dashed #4f46e5;
+        }
+        .sticker-wrapper.dragging {
+            cursor: grabbing;
+            z-index: 10000 !important;
+        }
+        .sticker-image {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: fill; 
+        }
+        
+        .resize-handle {
+            position: absolute;
+            bottom: -8px;
+            right: -8px;
+            width: 16px;
+            height: 16px;
+            background-color: #4f46e5;
+            border: 2px solid white;
+            border-radius: 4px;
+            cursor: se-resize;
+            z-index: 1001;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+
+        #imageEditorCanvas.dropper-cursor { cursor: crosshair; }
+        #stickerLibrary { position: absolute; bottom: 1rem; left: 1rem; z-index: 500; display: flex; flex-wrap: wrap; gap: 0.5rem; background: rgba(255,255,255,0.8); padding: 0.5rem; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); backdrop-filter: blur(5px); max-width: 280px; }
+        .library-sticker { width: 60px; height: 60px; object-fit: contain; cursor: grab; transition: transform 0.2s; }
+        .library-sticker:hover { transform: scale(1.1); }
+
+        .toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 3000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">交互式气泡样式设计器</h1>
+            <p class="text-slate-500 mt-2">单击选中贴图可调整图层，双击可删除。</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6 flex items-center justify-center min-h-[400px] lg:min-h-[600px] overflow-hidden">
+                <div id="previewContainer" class="relative w-full h-full flex items-center justify-center">
+                    <div id="previewBubble" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(255, 255, 255); border-radius: 12px;">
+                        <span id="bubbleTextContent" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
+                            这里是你的气泡预览区域。点击"管理贴图库"开始创作！
+                        </span>
+                    </div>
+                    <div id="stickerLibrary"></div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-1 bg-white rounded-2xl shadow-lg p-6 space-y-6 overflow-y-auto max-h-[calc(100vh-100px)]">
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">贴图装饰 (Stickers)</h3>
+                    <button id="manageStickersBtn" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">管理贴图库</button>
+                </div>
+                <div id="layerControlPanel">
+                    <h3 class="font-semibold text-lg mb-3">图层顺序</h3>
+                    <div class="flex gap-2">
+                        <button id="sendToBackBtn" class="w-full bg-slate-500 text-white font-medium py-2 rounded-lg hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>置于底层</button>
+                        <button id="bringToFrontBtn" class="w-full bg-slate-500 text-white font-medium py-2 rounded-lg hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>置于顶层</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">气泡基础样式</h3>
+                    <div class="space-y-4">
+                        <div><label for="borderWidth" class="flex justify-between text-sm font-medium text-slate-700">边框宽度 <span id="borderWidthValue">1px</span></label><input type="range" id="borderWidth" min="0" max="50" value="1" class="mt-1"></div>
+                        <div><label for="borderColor" class="flex justify-between items-center text-sm font-medium text-slate-700">边框颜色 <input type="color" id="borderColor" value="#4f46e5"></label></div>
+                        <!-- 【新增】文本颜色控制器 -->
+                        <div><label for="textColor" class="flex justify-between items-center text-sm font-medium text-slate-700">文本颜色 <input type="color" id="textColor" value="#333333"></label></div>
+                        <!-- 【新增】字体选择器 -->
+                        <div>
+                            <label for="fontFamily" class="text-sm font-medium text-slate-700">字体选择</label>
+                            <select id="fontFamily" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                                <option value="Inter">默认字体 (Inter)</option>
+                                <option value="Source Han Serif CN VF">思源宋体</option>
+                                <option value="LXGW WenKai">霞鹜文楷</option>
+                                <option value="Douyin Sans">抖音美好体</option>
+                                <option value="Huiwen-mincho">汇文明朝体</option>
+                                <option value="ToneOZ-PinyinW-Kai-Simplified">拼音鼎楷</option>
+                                <option value="寒蝉全圆体 Bold">寒蝉全圆体</option>
+                                <option value="峄山碑篆体">峄山碑篆体</option>
+                                <option value="YuFanXinYu-Medium">余繁新语</option>
+                            </select>
+                        </div>
+                        <div><label for="borderRadius" class="flex justify-between text-sm font-medium text-slate-700">圆角半径 <span id="borderRadiusValue">12px</span></label><input type="range" id="borderRadius" min="0" max="100" value="12" class="mt-1"></div>
+                        <div class="flex items-center justify-between"><span class="text-sm font-medium text-slate-700">背景类型</span><div class="flex items-center bg-slate-200 rounded-full p-1"><button id="bgTypeSolid" class="bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold">纯色</button><button id="bgTypeGradient" class="bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold">渐变</button></div></div>
+                        <div id="solidBgControls">
+                             <div class="flex items-center justify-between"><label for="bgColor" class="text-sm font-medium text-slate-700">背景颜色</label><input type="color" id="bgColor" value="#ffffff"></div>
+                            <div><label for="bgOpacity" class="flex justify-between text-sm font-medium text-slate-700">透明度 <span id="bgOpacityValue">100%</span></label><input type="range" id="bgOpacity" min="0" max="1" step="0.01" value="1" class="mt-1"></div>
+                        </div>
+                        <div id="gradientBgControls" class="hidden space-y-4">
+                            <div class="flex items-center justify-between"><label for="gradientColor1" class="text-sm font-medium text-slate-700">颜色 1</label><input type="color" id="gradientColor1" value="#a5b4fc"></div>
+                            <div class="flex items-center justify-between"><label for="gradientColor2" class="text-sm font-medium text-slate-700">颜色 2</label><input type="color" id="gradientColor2" value="#e0e7ff"></div>
+                            <div><label for="gradientAngle" class="flex justify-between text-sm font-medium text-slate-700">渐变角度 <span id="gradientAngleValue">145deg</span></label><input type="range" id="gradientAngle" min="0" max="360" value="145" class="mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">内容与代码</h3>
+                    <div class="space-y-4">
+                        <div><label for="bubbleText" class="text-sm font-medium text-slate-700">气泡文本</label><textarea id="bubbleText" rows="3" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">这里是你的气泡预览区域。点击"管理贴图库"开始创作！</textarea></div>
+                        <button id="generateCodeBtn" class="w-full bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-emerald-600 transition-colors">应用此样式到聊天</button>
+                        <button id="resetToDefaultBtn" class="w-full bg-slate-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors">恢复默认气泡</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 贴图管理器 Modal -->
+    <div id="imageProcessorModal" class="fixed inset-0 bg-black bg-opacity-50 z-[1000] hidden flex items-center justify-center p-4">
+        <div class="w-full h-full max-w-6xl max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row">
+            <div class="w-full md:w-1/3 flex flex-col border-r border-slate-200">
+                <div class="p-4 border-b border-slate-200">
+                    <h3 class="font-bold text-xl">贴图库</h3>
+                    <p class="text-sm text-slate-500">在这里管理和编辑你的贴图。</p>
+                </div>
+                <div id="stickerGallery" class="flex-1 p-4 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 gap-4">
+                </div>
+                <div class="p-4 border-t border-slate-200 space-y-2">
+                    <label for="galleryStickerUpload" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">上传新贴图</label>
+                    <input type="file" id="galleryStickerUpload" accept="image/*" multiple class="hidden">
+                    <p class="text-xs text-slate-500 mt-2 text-center">提示：移除背景功能不支持GIF动图。请先使用外部工具处理GIF，再上传。</p>
+                    <button id="closeProcessorBtn" class="w-full bg-slate-600 text-white font-medium py-2 rounded-lg hover:bg-slate-700 mt-2">完成并关闭</button>
+                </div>
+            </div>
+            <div class="w-full md:w-2/3 flex flex-col">
+                <div id="imageEditor" class="flex-1 flex items-center justify-center bg-slate-100 p-4 relative">
+                    <canvas id="imageEditorCanvas" class="max-w-full max-h-full shadow-lg"></canvas>
+                    <div id="editorPlaceholder" class="text-slate-500">从左侧选择一张图片进行编辑</div>
+                </div>
+                <div id="editorControls" class="p-4 border-t border-slate-200 bg-white space-y-4 hidden">
+                    <button id="removeBgBtn" class="w-full bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-indigo-600">💧 移除背景</button>
+                    <div>
+                        <label for="tolerance" class="flex justify-between text-sm font-medium text-slate-700">容差 <span id="toleranceValue">20</span></label>
+                        <input type="range" id="tolerance" min="0" max="150" value="20" class="mt-1">
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="saveChangesBtn" class="w-full bg-emerald-500 text-white font-medium py-2 rounded-lg hover:bg-emerald-600">保存更改</button>
+                        <button id="resetStickerBtn" class="w-full bg-gray-500 text-white font-medium py-2 rounded-lg hover:bg-gray-600">重置图片</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const previewContainer = document.getElementById('previewContainer');
+            const previewBubble = document.getElementById('previewBubble');
+            const bubbleTextContent = document.getElementById('bubbleTextContent');
+            const stickerLibraryContainer = document.getElementById('stickerLibrary');
+            const imageProcessorModal = document.getElementById('imageProcessorModal');
+            const stickerGallery = document.getElementById('stickerGallery');
+            const imageEditorCanvas = document.getElementById('imageEditorCanvas');
+            const editorControls = document.getElementById('editorControls');
+            const editorPlaceholder = document.getElementById('editorPlaceholder');
+            const ctx = imageEditorCanvas.getContext('2d');
+            
+            const controls = {
+                manageStickersBtn: document.getElementById('manageStickersBtn'),
+                closeProcessorBtn: document.getElementById('closeProcessorBtn'),
+                galleryStickerUpload: document.getElementById('galleryStickerUpload'),
+                removeBgBtn: document.getElementById('removeBgBtn'),
+                tolerance: document.getElementById('tolerance'),
+                toleranceValue: document.getElementById('toleranceValue'),
+                saveChangesBtn: document.getElementById('saveChangesBtn'),
+                resetStickerBtn: document.getElementById('resetStickerBtn'),
+                sendToBackBtn: document.getElementById('sendToBackBtn'),
+                bringToFrontBtn: document.getElementById('bringToFrontBtn'),
+                borderWidth: document.getElementById('borderWidth'),
+                borderWidthValue: document.getElementById('borderWidthValue'),
+                borderColor: document.getElementById('borderColor'),
+                textColor: document.getElementById('textColor'), // 【新增】
+                fontFamily: document.getElementById('fontFamily'), // 【新增】字体选择器
+                borderRadius: document.getElementById('borderRadius'),
+                borderRadiusValue: document.getElementById('borderRadiusValue'),
+                bgTypeSolid: document.getElementById('bgTypeSolid'),
+                bgTypeGradient: document.getElementById('bgTypeGradient'),
+                solidBgControls: document.getElementById('solidBgControls'),
+                gradientBgControls: document.getElementById('gradientBgControls'),
+                bgColor: document.getElementById('bgColor'),
+                bgOpacity: document.getElementById('bgOpacity'),
+                bgOpacityValue: document.getElementById('bgOpacityValue'),
+                gradientColor1: document.getElementById('gradientColor1'),
+                gradientColor2: document.getElementById('gradientColor2'),
+                gradientAngle: document.getElementById('gradientAngle'),
+                gradientAngleValue: document.getElementById('gradientAngleValue'),
+                bubbleText: document.getElementById('bubbleText'),
+                generateCodeBtn: document.getElementById('generateCodeBtn'),
+                resetToDefaultBtn: document.getElementById('resetToDefaultBtn'),
+            };
+
+            const DB_NAME = 'WhaleLLTDB';
+            const DB_VERSION = 11;
+            let db = null;
+            let fileStorageManager = null;
+            let stickerLibrary = [];
+            let currentEditingStickerId = null;
+            let targetColor = null;
+            let currentBgType = 'solid';
+            let selectedStickerWrapper = null;
+            let zIndexCounter = 11;
+
+            function showToast(message) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2000);
+            }
+
+            async function initStorageSystem() {
+                try {
+                    // 直接使用主应用的现有数据库连接
+                    if (window.parent && window.parent.db && window.parent.isIndexedDBReady) {
+                        db = window.parent.db;
+                        console.log('使用主应用的现有数据库连接，版本:', db.version);
+                    } else {
+                        // 如果没有父窗口连接，创建独立连接
+                        fileStorageManager = new FileStorageManager();
+                        await fileStorageManager.init();
+                        db = fileStorageManager.db;
+                        console.log('创建独立数据库连接成功');
+                    }
+                    
+                    // 如果还没有fileStorageManager，创建一个并使用现有连接
+                    if (!fileStorageManager) {
+                        fileStorageManager = new FileStorageManager();
+                        fileStorageManager.db = db;
+                        console.log('FileStorageManager初始化成功');
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    console.error('存储系统初始化失败:', error);
+                    showToast('存储系统初始化失败，将使用内存存储');
+                    return false;
+                }
+            }
+
+            async function saveStickerLibraryToStorage() {
+                try {
+                    if (!db) {
+                        console.warn('数据库连接不可用，跳过保存');
+                        return;
+                    }
+                    
+                    // 使用现有数据库的 themeConfig 表保存贴图库
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    // 保存整个贴图库作为一个主题配置
+                    const libraryData = {
+                        type: 'bubbleStickers',
+                        data: stickerLibrary,
+                        lastModified: new Date().toISOString()
+                    };
+                    
+                    store.put(libraryData);
+                    
+                    transaction.oncomplete = () => {
+                        console.log('贴图库保存到 themeConfig 成功');
+                    };
+                    
+                    transaction.onerror = () => {
+                        console.error('贴图库保存失败:', transaction.error);
+                        showToast('保存失败：' + transaction.error.message);
+                    };
+                } catch (e) {
+                    console.error("无法保存贴图库:", e);
+                    showToast("错误：无法保存贴图库。");
+                }
+            }
+
+            async function loadStickerLibraryFromStorage() {
+                try {
+                    if (!db) {
+                        console.warn('数据库连接不可用，使用空贴图库');
+                        stickerLibrary = [];
+                        return;
+                    }
+                    
+                    return new Promise((resolve) => {
+                        const transaction = db.transaction(['themeConfig'], 'readonly');
+                        const store = transaction.objectStore('themeConfig');
+                        const request = store.get('bubbleStickers');
+                        
+                        request.onsuccess = () => {
+                            const result = request.result;
+                            if (result && result.data) {
+                                stickerLibrary = result.data;
+                                console.log('贴图库从 themeConfig 加载成功，共', stickerLibrary.length, '个贴图');
+                            } else {
+                                stickerLibrary = [];
+                                console.log('未找到已保存的贴图库，使用空库');
+                            }
+                            resolve();
+                        };
+                        
+                        request.onerror = () => {
+                            console.error('加载贴图库失败:', request.error);
+                            stickerLibrary = [];
+                            resolve(); // 即使失败也要继续
+                        };
+                    });
+                } catch (e) {
+                    console.error("无法加载贴图库:", e);
+                    stickerLibrary = [];
+                }
+            }
+
+            function updateBubbleStyle() {
+                const borderWidth = controls.borderWidth.value;
+                const borderRadius = controls.borderRadius.value;
+                previewBubble.style.borderWidth = `${borderWidth}px`;
+                previewBubble.style.borderColor = controls.borderColor.value;
+                previewBubble.style.borderRadius = `${borderRadius}px`;
+                
+                // 【新增】更新文本颜色
+                bubbleTextContent.style.color = controls.textColor.value;
+                
+                // 【新增】更新字体
+                bubbleTextContent.style.fontFamily = controls.fontFamily.value;
+
+                if (currentBgType === 'solid') {
+                    const color = controls.bgColor.value;
+                    const opacity = controls.bgOpacity.value;
+                    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+                    previewBubble.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                } else {
+                    const color1 = controls.gradientColor1.value, color2 = controls.gradientColor2.value, angle = controls.gradientAngle.value;
+                    previewBubble.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+                }
+                controls.borderWidthValue.textContent = `${borderWidth}px`;
+                controls.borderRadiusValue.textContent = `${borderRadius}px`;
+                controls.bgOpacityValue.textContent = `${Math.round(controls.bgOpacity.value * 100)}%`;
+                controls.gradientAngleValue.textContent = `${controls.gradientAngle.value}deg`;
+            }
+
+            function openProcessor() { 
+                imageProcessorModal.style.display = 'flex'; 
+                populateStickerGallery().catch(error => console.error('填充贴图库失败:', error)); 
+            }
+            function closeProcessor() { 
+                imageProcessorModal.style.display = 'none'; 
+                renderStickerLibrary().catch(error => console.error('渲染贴图库失败:', error)); 
+            }
+
+            async function handleStickerUpload(event) {
+                const files = event.target.files;
+                if (!files || files.length === 0) return;
+                
+                try {
+                    showToast('正在上传贴图...');
+                    
+                    for (const file of files) {
+                        if (!file.type.startsWith('image/')) {
+                            console.warn('跳过非图片文件:', file.name);
+                            continue;
+                        }
+                        
+                        // 生成唯一ID
+                        const stickerId = 'sticker_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                        
+                        if (fileStorageManager) {
+                            // 直接使用FileStorageManager存储文件到IndexedDB
+                            try {
+                                const storeResult = await fileStorageManager.storeFile(file, {
+                                    category: 'bubble_sticker',
+                                    originalName: file.name
+                                });
+                                
+                                // storeResult 是一个对象 {fileId, type, size}，我们需要 fileId
+                                const actualFileId = storeResult.fileId;
+                                console.log('存储结果:', storeResult, '实际fileId:', actualFileId, '类型:', typeof actualFileId);
+                                
+                                // 创建文件引用
+                                await fileStorageManager.createFileReference(
+                                    actualFileId,
+                                    'bubble_sticker',
+                                    stickerId,
+                                    {
+                                        originalName: file.name,
+                                        fileType: storeResult.type,
+                                        fileSize: storeResult.size
+                                    }
+                                );
+                                
+                                // 创建贴图记录（保存fileId字符串，用于获取fileSystem引用）
+                                const newSticker = {
+                                    id: stickerId,
+                                    fileId: actualFileId,
+                                    originalName: file.name,
+                                    fileType: storeResult.type,
+                                    fileSize: storeResult.size,
+                                    createdAt: new Date().toISOString()
+                                };
+                                
+                                stickerLibrary.push(newSticker);
+                                console.log('贴图存储成功(IndexedDB+FileSystem):', newSticker);
+                                
+                            } catch (error) {
+                                console.error('FileStorageManager存储失败，回退到base64:', error);
+                                // 回退到base64存储
+                                await handleStickerUploadFallback(file, stickerId);
+                            }
+                        } else {
+                            // 回退到base64存储
+                            await handleStickerUploadFallback(file, stickerId);
+                        }
+                    }
+                    
+                    await saveStickerLibraryToStorage();
+                    populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                    showToast(`成功上传 ${files.length} 个贴图`);
+                    
+                } catch (error) {
+                    console.error('贴图上传失败:', error);
+                    showToast('上传失败: ' + error.message);
+                }
+                
+                event.target.value = '';
+            }
+            
+            // 回退到base64存储的函数
+            async function handleStickerUploadFallback(file, stickerId) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const newSticker = {
+                            id: stickerId,
+                            baseSrc: e.target.result,
+                            currentSrc: e.target.result,
+                            originalName: file.name,
+                            fileType: file.type,
+                            fileSize: file.size,
+                            createdAt: new Date().toISOString(),
+                            isBase64: true // 标记为base64存储
+                        };
+                        stickerLibrary.push(newSticker);
+                        console.log('贴图base64存储成功:', newSticker);
+                        resolve();
+                    };
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
+                });
+            }
+            
+            async function populateStickerGallery() {
+                stickerGallery.innerHTML = '';
+                
+                for (const sticker of stickerLibrary) {
+                    const container = document.createElement('div');
+                    container.className = 'relative group';
+                    
+                    const img = document.createElement('img');
+                    img.className = 'w-full h-full object-contain bg-slate-200 rounded-md cursor-pointer hover:ring-2 ring-indigo-500';
+                    img.dataset.id = sticker.id;
+                    img.addEventListener('click', () => selectStickerForEditing(sticker.id));
+                    
+                    // 获取图片URL
+                    try {
+                        let imageUrl;
+                        if (sticker.fileId && fileStorageManager) {
+                            // 使用FileStorageManager获取fileSystem引用URL
+                            console.log('尝试获取图片URL，fileId:', sticker.fileId, '类型:', typeof sticker.fileId);
+                            imageUrl = await fileStorageManager.createFileURL(sticker.fileId);
+                        } else if (sticker.currentSrc || sticker.baseSrc) {
+                            // 回退到base64
+                            imageUrl = sticker.currentSrc || sticker.baseSrc;
+                        } else {
+                            console.warn('贴图无有效的图片源:', sticker);
+                            imageUrl = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNmNWY1ZjUiLz48dGV4dCB4PSI1MCIgeT0iNTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTk5OTkiPu+8n++8s++8ne+8kO+8hu+8l++8jjwvdGV4dD48L3N2Zz4='; // 占位符SVG
+                        }
+                        
+                        img.src = imageUrl;
+                    } catch (error) {
+                        console.error('获取贴图URL失败:', error);
+                        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNmNWY1ZjUiLz48dGV4dCB4PSI1MCIgeT0iNTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTk5OTkiPu+8n++8s++8ne+8kO+8hu+8l++8jjwvdGV4dD48L3N2Zz4=';
+                    }
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.className = 'absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10';
+                    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteSticker(sticker.id); });
+                    
+                    container.appendChild(img);
+                    container.appendChild(deleteBtn);
+                    stickerGallery.appendChild(container);
+                }
+            }
+            
+            function deleteSticker(id) {
+                stickerLibrary = stickerLibrary.filter(s => s.id != id);
+                saveStickerLibraryToStorage();
+                populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                if (currentEditingStickerId == id) {
+                    currentEditingStickerId = null;
+                    editorPlaceholder.classList.remove('hidden');
+                    editorControls.classList.add('hidden');
+                    ctx.clearRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                }
+            }
+
+            async function renderStickerLibrary() {
+                stickerLibraryContainer.innerHTML = '';
+                
+                for (const sticker of stickerLibrary) {
+                    const img = document.createElement('img');
+                    img.className = 'library-sticker';
+                    img.dataset.id = sticker.id;
+                    
+                    // 获取图片URL
+                    try {
+                        let imageUrl;
+                        if (sticker.fileId && fileStorageManager) {
+                            imageUrl = await fileStorageManager.createFileURL(sticker.fileId);
+                        } else if (sticker.currentSrc || sticker.baseSrc) {
+                            imageUrl = sticker.currentSrc || sticker.baseSrc;
+                        } else {
+                            console.warn('贴图无有效的图片源:', sticker);
+                            continue; // 跳过无效贴图
+                        }
+                        
+                        img.src = imageUrl;
+                    } catch (error) {
+                        console.error('获取贴图URL失败:', error);
+                        continue; // 跳过失败的贴图
+                    }
+                    
+                    makeLibraryStickerDraggable(img);
+                    stickerLibraryContainer.appendChild(img);
+                }
+            }
+
+            function selectStickerForEditing(id) {
+                currentEditingStickerId = id;
+                const sticker = stickerLibrary.find(s => s.id == id);
+                if (!sticker) return;
+                editorPlaceholder.classList.add('hidden');
+                editorControls.classList.remove('hidden');
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = sticker.currentSrc;
+                img.onload = () => {
+                    imageEditorCanvas.width = img.naturalWidth;
+                    imageEditorCanvas.height = img.naturalHeight;
+                    ctx.clearRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                    ctx.drawImage(img, 0, 0);
+                }
+            }
+            
+            function processImage(colorToRemove, tolerance) {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (!sticker) return;
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = sticker.baseSrc;
+                img.onload = () => {
+                    imageEditorCanvas.width = img.naturalWidth;
+                    imageEditorCanvas.height = img.naturalHeight;
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                    const data = imageData.data;
+                    const [tr, tg, tb] = colorToRemove;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i], g = data[i + 1], b = data[i + 2];
+                        const distance = Math.sqrt(Math.pow(r - tr, 2) + Math.pow(g - tg, 2) + Math.pow(b - tb, 2));
+                        if (distance < tolerance) { data[i + 3] = 0; }
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                };
+            }
+
+            // 获取贴图URL的辅助函数
+            async function getStickerImageURL(sticker) {
+                try {
+                    if (sticker.fileId && fileStorageManager) {
+                        return await fileStorageManager.createFileURL(sticker.fileId);
+                    } else if (sticker.currentSrc || sticker.baseSrc) {
+                        return sticker.currentSrc || sticker.baseSrc;
+                    } else {
+                        console.warn('贴图无有效的图片源:', sticker);
+                        return null;
+                    }
+                } catch (error) {
+                    console.error('获取贴图URL失败:', error);
+                    return sticker.currentSrc || sticker.baseSrc || null;
+                }
+            }
+
+            function makeLibraryStickerDraggable(element) {
+                element.addEventListener('mousedown', async (e) => {
+                    e.preventDefault();
+                    const stickerData = stickerLibrary.find(s => s.id == element.dataset.id);
+                    if (!stickerData) return;
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'sticker-wrapper';
+                    wrapper.dataset.id = stickerData.id;
+                    wrapper.style.zIndex = zIndexCounter++; 
+                    
+                    const newSticker = document.createElement('img');
+                    newSticker.className = 'sticker-image';
+                    
+                    // 异步获取图片URL
+                    const imageUrl = await getStickerImageURL(stickerData);
+                    if (!imageUrl) {
+                        console.error('无法获取贴图URL，跳过创建');
+                        return;
+                    }
+                    newSticker.src = imageUrl;
+                    
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.className = 'resize-handle';
+                    
+                    wrapper.appendChild(newSticker);
+                    wrapper.appendChild(resizeHandle);
+                    
+                    previewBubble.appendChild(wrapper);
+
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    const initialWidth = 120;
+                    wrapper.style.width = `${initialWidth}px`;
+                    const tempImg = new Image();
+                    tempImg.src = imageUrl;
+                    tempImg.onload = () => {
+                        const aspectRatio = tempImg.naturalHeight / tempImg.naturalWidth;
+                        wrapper.style.height = `${initialWidth * aspectRatio}px`;
+                        wrapper.style.left = `${(bubbleRect.width - wrapper.offsetWidth) / 2}px`;
+                        wrapper.style.top = `${(bubbleRect.height - wrapper.offsetHeight) / 2}px`;
+                    };
+                    
+                    makePlacedStickerInteractive(wrapper);
+                });
+            }
+            
+            function makePlacedStickerInteractive(wrapper) {
+                const resizeHandle = wrapper.querySelector('.resize-handle');
+                let isDragging = false, isResizing = false;
+                let offsetX, offsetY;
+
+                function onMoveDown(e) {
+                    isDragging = true;
+                    wrapper.classList.add('dragging');
+                    const event = e.touches ? e.touches[0] : e;
+                    const rect = wrapper.getBoundingClientRect();
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    offsetX = event.clientX - rect.left;
+                    offsetY = event.clientY - rect.top;
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onMoveUp);
+                    document.addEventListener('touchmove', onMove, { passive: false });
+                    document.addEventListener('touchend', onMoveUp);
+                }
+                function onMove(e) {
+                    if (!isDragging) return;
+                    e.preventDefault();
+                    const event = e.touches ? e.touches[0] : e;
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    wrapper.style.left = `${event.clientX - bubbleRect.left - offsetX}px`;
+                    wrapper.style.top = `${event.clientY - bubbleRect.top - offsetY}px`;
+                }
+                function onMoveUp() {
+                    isDragging = false;
+                    wrapper.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onMoveUp);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onMoveUp);
+                }
+                wrapper.addEventListener('mousedown', onMoveDown);
+                wrapper.addEventListener('touchstart', onMoveDown, { passive: false });
+
+                function onResizeDown(e) {
+                    e.stopPropagation();
+                    isResizing = true;
+                    const event = e.touches ? e.touches[0] : e;
+                    const initialWidth = wrapper.offsetWidth;
+                    const initialHeight = wrapper.offsetHeight;
+                    const initialX = event.clientX;
+                    const initialY = event.clientY;
+
+                    function onResizeMove(e) {
+                        if (!isResizing) return;
+                        const event = e.touches ? e.touches[0] : e;
+                        const deltaX = event.clientX - initialX;
+                        const deltaY = event.clientY - initialY;
+                        const newWidth = Math.max(20, initialWidth + deltaX);
+                        const newHeight = Math.max(20, initialHeight + deltaY);
+                        wrapper.style.width = `${newWidth}px`;
+                        wrapper.style.height = `${newHeight}px`;
+                    }
+
+                    function onResizeUp() {
+                        isResizing = false;
+                        document.removeEventListener('mousemove', onResizeMove);
+                        document.removeEventListener('mouseup', onResizeUp);
+                        document.removeEventListener('touchmove', onResizeMove);
+                        document.removeEventListener('touchend', onResizeUp);
+                    }
+                    
+                    document.addEventListener('mousemove', onResizeMove);
+                    document.addEventListener('mouseup', onResizeUp);
+                    document.addEventListener('touchmove', onResizeMove, { passive: false });
+                    document.addEventListener('touchend', onResizeUp);
+                }
+                resizeHandle.addEventListener('mousedown', onResizeDown);
+                resizeHandle.addEventListener('touchstart', onResizeDown, { passive: false });
+
+                wrapper.addEventListener('dblclick', () => {
+                    wrapper.remove();
+                    showToast('贴图已移除');
+                });
+
+                wrapper.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectSticker(wrapper);
+                });
+            }
+
+            function selectSticker(wrapper) {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.classList.remove('selected');
+                }
+                selectedStickerWrapper = wrapper;
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.classList.add('selected');
+                    controls.sendToBackBtn.disabled = false;
+                    controls.bringToFrontBtn.disabled = false;
+                } else {
+                    controls.sendToBackBtn.disabled = true;
+                    controls.bringToFrontBtn.disabled = true;
+                }
+            }
+            previewContainer.addEventListener('click', (e) => {
+                if (e.target === previewContainer || e.target === previewBubble) {
+                    selectSticker(null);
+                }
+            });
+
+            controls.sendToBackBtn.addEventListener('click', () => {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.style.zIndex = 1;
+                    showToast('已置于文字底层');
+                }
+            });
+            controls.bringToFrontBtn.addEventListener('click', () => {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.style.zIndex = zIndexCounter++;
+                    showToast('已置于文字顶层');
+                }
+            });
+
+
+            controls.manageStickersBtn.addEventListener('click', openProcessor);
+            controls.closeProcessorBtn.addEventListener('click', closeProcessor);
+            controls.galleryStickerUpload.addEventListener('change', handleStickerUpload);
+            controls.removeBgBtn.addEventListener('click', () => imageEditorCanvas.classList.add('dropper-cursor'));
+            imageEditorCanvas.addEventListener('click', (e) => {
+                if (!imageEditorCanvas.classList.contains('dropper-cursor')) return;
+                const rect = imageEditorCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pixel = ctx.getImageData(x, y, 1, 1).data;
+                targetColor = [pixel[0], pixel[1], pixel[2]];
+                imageEditorCanvas.classList.remove('dropper-cursor');
+                processImage(targetColor, controls.tolerance.value);
+            });
+            controls.tolerance.addEventListener('input', () => {
+                controls.toleranceValue.textContent = controls.tolerance.value;
+                if (currentEditingStickerId && targetColor) {
+                    processImage(targetColor, controls.tolerance.value);
+                }
+            });
+            controls.saveChangesBtn.addEventListener('click', () => {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (sticker) {
+                    sticker.currentSrc = imageEditorCanvas.toDataURL();
+                    saveStickerLibraryToStorage();
+                    populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                }
+            });
+            controls.resetStickerBtn.addEventListener('click', () => {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (sticker) {
+                    sticker.currentSrc = sticker.baseSrc;
+                    saveStickerLibraryToStorage();
+                    selectStickerForEditing(sticker.id);
+                    populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                }
+            });
+
+            // 【修改】将 textColor 和 fontFamily 添加到事件监听循环中
+            ['borderWidth', 'borderColor', 'borderRadius', 'bgColor', 'bgOpacity', 'gradientColor1', 'gradientColor2', 'gradientAngle', 'textColor', 'fontFamily'].forEach(id => { if (controls[id]) { controls[id].addEventListener('input', updateBubbleStyle); } });
+            controls.bubbleText.addEventListener('input', () => { bubbleTextContent.textContent = controls.bubbleText.value; });
+            controls.bgTypeSolid.addEventListener('click', () => { currentBgType = 'solid'; controls.solidBgControls.classList.remove('hidden'); controls.gradientBgControls.classList.add('hidden'); controls.bgTypeSolid.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.remove('text-slate-600'); controls.bgTypeGradient.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.add('text-slate-600'); updateBubbleStyle(); });
+            controls.bgTypeGradient.addEventListener('click', () => { currentBgType = 'gradient'; controls.solidBgControls.classList.add('hidden'); controls.gradientBgControls.classList.remove('hidden'); controls.bgTypeGradient.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.remove('text-slate-600'); controls.bgTypeSolid.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.add('text-slate-600'); updateBubbleStyle(); });
+            
+            controls.generateCodeBtn.addEventListener('click', async () => {
+                // 1. 像以前一样，生成HTML和CSS代码
+                const bubbleStyle = window.getComputedStyle(previewBubble);
+                const textStyle = window.getComputedStyle(bubbleTextContent);
+                
+                // 【替换开始】
+                let htmlStickers = '';
+                const bubbleWidth = previewBubble.offsetWidth;
+                const bubbleHeight = previewBubble.offsetHeight;
+
+                previewBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
+                    const stickerImg = stickerWrapper.querySelector('.sticker-image');
+                    const stickerId = stickerWrapper.dataset.id;
+                    const stickerData = stickerLibrary.find(s => s.id == stickerId);
+                    const stickerSrc = stickerImg.src; // 使用当前显示的URL
+
+                    // --- 全新的定位和尺寸逻辑 ---
+                    
+                    // 1. 获取贴图的固定像素尺寸和位置
+                    const leftPx = parseFloat(stickerWrapper.style.left) || 0;
+                    const topPx = parseFloat(stickerWrapper.style.top) || 0;
+                    const stickerWidth = stickerWrapper.offsetWidth;
+                    const stickerHeight = stickerWrapper.offsetHeight;
+
+                    // 2. 判断贴图在气泡的哪个象限，以决定其定位锚点
+                    const leftPercent = (leftPx + stickerWidth / 2) / bubbleWidth;
+                    const topPercent = (topPx + stickerHeight / 2) / bubbleHeight;
+                    
+                    let positionStyle = '';
+
+                    // 如果贴图中心点超过了气泡高度的50%，则使用 bottom 定位
+                    if (topPercent > 0.5) {
+                        const bottomPx = bubbleHeight - (topPx + stickerHeight);
+                        positionStyle += `bottom: ${bottomPx.toFixed(0)}px; `;
+                    } else {
+                        positionStyle += `top: ${topPx.toFixed(0)}px; `;
+                    }
+
+                    // 如果贴图中心点超过了气泡宽度的50%，则使用 right 定位
+                    if (leftPercent > 0.5) {
+                        const rightPx = bubbleWidth - (leftPx + stickerWidth);
+                        positionStyle += `right: ${rightPx.toFixed(0)}px; `;
+                    } else {
+                        positionStyle += `left: ${leftPx.toFixed(0)}px; `;
+                    }
+                    
+                    // 3. 生成代码：位置用计算出的锚点定位，尺寸用固定的像素值
+                    htmlStickers += `    <img src="${stickerSrc}" class="sticker-${index}" alt="sticker" style="position: absolute; ${positionStyle} width: ${stickerWidth.toFixed(0)}px; height: ${stickerHeight.toFixed(0)}px; z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;">\\n`;
+                });
+                // 【替换结束】
+
+                const htmlTemplate = `<div class="custom-bubble-container" style="position: relative; padding: ${bubbleStyle.padding}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; background: ${bubbleStyle.background};">\\n    <span class="bubble-text" style="position: relative; z-index: 10; color: ${textStyle.color}; font-family: &quot;${textStyle.fontFamily.replace(/"/g, '')}&quot;;">{{BUBBLE_TEXT}}</span>\\n${htmlStickers}</div>`;
+                
+                // 我们不再需要生成CSS，因为样式已经内联到HTML中了
+                const cssCode = `/* CSS 已内联，此部分为空 */`;
+
+                // 2. 将按钮文本改为 "应用此样式"
+                controls.generateCodeBtn.textContent = '应用此样式';
+
+                // 3. 收集完整的样式配置
+                const completeStyleConfig = {
+                    // 基础样式
+                    borderWidth: controls.borderWidth.value,
+                    borderColor: controls.borderColor.value,
+                    borderRadius: controls.borderRadius.value,
+                    textColor: controls.textColor.value,
+                    fontFamily: controls.fontFamily.value,
+                    
+                    // 背景样式
+                    backgroundType: currentBgType,
+                    backgroundColor: controls.bgColor.value,
+                    backgroundOpacity: controls.bgOpacity.value,
+                    gradientColor1: controls.gradientColor1.value,
+                    gradientColor2: controls.gradientColor2.value,
+                    gradientAngle: controls.gradientAngle.value,
+                    
+                    // 文本内容
+                    bubbleText: controls.bubbleText.value,
+                    
+                    // 贴图配置
+                    stickers: Array.from(previewBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
+                        id: wrapper.dataset.id,
+                        left: parseFloat(wrapper.style.left) || 0,
+                        top: parseFloat(wrapper.style.top) || 0,
+                        width: wrapper.offsetWidth,
+                        height: wrapper.offsetHeight,
+                        zIndex: wrapper.style.zIndex || 1
+                    })),
+                    
+                    // 生成的HTML模板
+                    html: htmlTemplate,
+                    css: cssCode,
+                    
+                    // 元数据
+                    createdAt: new Date().toISOString(),
+                    version: '1.0'
+                };
+
+                // 4. 确保启用标志为 true（每次保存都自动启用）
+                completeStyleConfig.enabled = true;
+                
+                // 5. 保存完整配置到本地存储
+                await saveBubbleStyleConfig(completeStyleConfig);
+
+                // 6. 使用 postMessage 将完整配置发送给父窗口
+                window.parent.postMessage({
+                    type: 'apply-bubble-style',
+                    payload: completeStyleConfig
+                }, '*');
+
+                // 7. 给用户一个反馈
+                showToast('样式已应用到聊天界面！');
+                const originalText = controls.generateCodeBtn.textContent;
+                controls.generateCodeBtn.textContent = '✅ 已应用!';
+                setTimeout(() => {
+                    controls.generateCodeBtn.textContent = originalText;
+                }, 2000);
+            });
+
+            // 恢复默认气泡样式按钮事件
+            controls.resetToDefaultBtn.addEventListener('click', async () => {
+                // 显示确认对话框
+                if (confirm('确定要恢复默认气泡样式吗？这将删除所有自定义设置。')) {
+                    controls.resetToDefaultBtn.textContent = '正在恢复...';
+                    controls.resetToDefaultBtn.disabled = true;
+                    
+                    await resetToDefaultBubbleStyle();
+                    
+                    // 恢复按钮状态
+                    setTimeout(() => {
+                        controls.resetToDefaultBtn.textContent = '恢复默认气泡';
+                        controls.resetToDefaultBtn.disabled = false;
+                    }, 1500);
+                }
+            });
+
+            // 保存完整的气泡样式配置
+            async function saveBubbleStyleConfig(styleConfig) {
+                try {
+                    if (!db) {
+                        console.warn('数据库连接不可用，跳过保存配置');
+                        return;
+                    }
+                    
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    // 将 enabled 属性添加到 styleConfig 本身
+                    const configData = {
+                        type: 'bubbleStyle',
+                        ...styleConfig, // 展开所有样式配置到顶层
+                        enabled: true,
+                        lastModified: new Date().toISOString()
+                    };
+                    
+                    store.put(configData);
+                    
+                    transaction.oncomplete = () => {
+                        console.log('气泡样式配置保存成功');
+                    };
+                    
+                    transaction.onerror = () => {
+                        console.error('气泡样式配置保存失败:', transaction.error);
+                    };
+                } catch (e) {
+                    console.error("无法保存气泡样式配置:", e);
+                }
+            }
+
+            // 恢复默认气泡样式
+            async function resetToDefaultBubbleStyle() {
+                try {
+                    if (!db) {
+                        console.warn('数据库连接不可用，跳过禁用配置');
+                        return;
+                    }
+                    
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    // 删除自定义气泡样式配置
+                    store.delete('bubbleStyle');
+                    
+                    transaction.oncomplete = () => {
+                        console.log('自定义气泡样式配置已删除');
+                    };
+                    
+                    transaction.onerror = () => {
+                        console.error('删除气泡样式配置失败:', transaction.error);
+                    };
+                    
+                    // 使用 postMessage 通知父窗口恢复默认样式
+                    window.parent.postMessage({
+                        type: 'reset-bubble-style'
+                    }, '*');
+                    
+                    showToast('已恢复默认气泡样式！');
+                } catch (e) {
+                    console.error("无法恢复默认气泡样式:", e);
+                    showToast("恢复默认样式失败");
+                }
+            }
+
+            // 加载完整的气泡样式配置
+            async function loadBubbleStyleConfig() {
+                try {
+                    if (!db) {
+                        console.warn('数据库连接不可用，跳过加载配置');
+                        return null;
+                    }
+                    
+                    return new Promise((resolve) => {
+                        const transaction = db.transaction(['themeConfig'], 'readonly');
+                        const store = transaction.objectStore('themeConfig');
+                        const request = store.get('bubbleStyle');
+                        
+                        request.onsuccess = () => {
+                            const result = request.result;
+                            if (result) {
+                                console.log('气泡样式配置加载成功');
+                                // 移除 type 和系统字段，返回样式配置
+                                const { type, lastModified, ...styleConfig } = result;
+                                resolve(styleConfig);
+                            } else {
+                                console.log('未找到已保存的气泡样式配置');
+                                resolve(null);
+                            }
+                        };
+                        
+                        request.onerror = () => {
+                            console.error('加载气泡样式配置失败:', request.error);
+                            resolve(null);
+                        };
+                    });
+                } catch (e) {
+                    console.error("无法加载气泡样式配置:", e);
+                    return null;
+                }
+            }
+
+            // 应用保存的配置到界面
+            async function applyBubbleStyleConfig(config) {
+                if (!config) return;
+                
+                try {
+                    // 应用基础样式
+                    controls.borderWidth.value = config.borderWidth || 1;
+                    controls.borderColor.value = config.borderColor || '#4f46e5';
+                    controls.borderRadius.value = config.borderRadius || 12;
+                    controls.textColor.value = config.textColor || '#333333';
+                    controls.fontFamily.value = config.fontFamily || 'Inter';
+                    
+                    // 应用背景样式
+                    currentBgType = config.backgroundType || 'solid';
+                    controls.bgColor.value = config.backgroundColor || '#ffffff';
+                    controls.bgOpacity.value = config.backgroundOpacity || 1;
+                    controls.gradientColor1.value = config.gradientColor1 || '#a5b4fc';
+                    controls.gradientColor2.value = config.gradientColor2 || '#e0e7ff';
+                    controls.gradientAngle.value = config.gradientAngle || 145;
+                    
+                    // 切换背景类型
+                    if (currentBgType === 'gradient') {
+                        controls.bgTypeGradient.click();
+                    } else {
+                        controls.bgTypeSolid.click();
+                    }
+                    
+                    // 应用文本内容
+                    controls.bubbleText.value = config.bubbleText || '';
+                    bubbleTextContent.textContent = config.bubbleText || '';
+                    
+                    // 恢复贴图
+                    if (config.stickers && config.stickers.length > 0) {
+                        await restoreStickers(config.stickers);
+                    }
+                    
+                    // 更新样式
+                    updateBubbleStyle();
+                    
+                    console.log('气泡样式配置已应用到界面');
+                } catch (error) {
+                    console.error('应用气泡样式配置失败:', error);
+                }
+            }
+
+            // 恢复贴图
+            async function restoreStickers(stickerConfigs) {
+                // 清除现有贴图
+                previewBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
+                
+                for (const stickerConfig of stickerConfigs) {
+                    const stickerData = stickerLibrary.find(s => s.id === stickerConfig.id);
+                    if (!stickerData) {
+                        console.warn('找不到贴图数据:', stickerConfig.id);
+                        continue;
+                    }
+                    
+                    // 创建贴图元素
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'sticker-wrapper';
+                    wrapper.dataset.id = stickerData.id;
+                    wrapper.style.zIndex = stickerConfig.zIndex;
+                    wrapper.style.left = stickerConfig.left + 'px';
+                    wrapper.style.top = stickerConfig.top + 'px';
+                    wrapper.style.width = stickerConfig.width + 'px';
+                    wrapper.style.height = stickerConfig.height + 'px';
+                    
+                    const newSticker = document.createElement('img');
+                    newSticker.className = 'sticker-image';
+                    
+                    // 获取图片URL
+                    const imageUrl = await getStickerImageURL(stickerData);
+                    if (imageUrl) {
+                        newSticker.src = imageUrl;
+                    }
+                    
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.className = 'resize-handle';
+                    
+                    wrapper.appendChild(newSticker);
+                    wrapper.appendChild(resizeHandle);
+                    previewBubble.appendChild(wrapper);
+                    
+                    makePlacedStickerInteractive(wrapper);
+                }
+            }
+
+            // 异步初始化
+            async function initializeApp() {
+                await initStorageSystem();
+                await loadStickerLibraryFromStorage();
+                await renderStickerLibrary();
+                
+                // 加载并应用保存的配置
+                const savedConfig = await loadBubbleStyleConfig();
+                if (savedConfig) {
+                    await applyBubbleStyleConfig(savedConfig);
+                } else {
+                    updateBubbleStyle();
+                }
+            }
+            
+            initializeApp();
+        });
+    </script>
+</body>
+</html>

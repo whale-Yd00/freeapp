@@ -4220,6 +4220,82 @@ body.no-has-support.chat-active .bottom-nav {
     transform: translateY(0);
 }
 
+/* 气泡设计器按钮 */
+.bubble-designer-option {
+    margin-top: 12px;
+}
+
+.bubble-designer-btn {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.bubble-designer-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.bubble-designer-btn:active {
+    transform: translateY(0);
+}
+
+.bubble-designer-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
+}
+
+.bubble-designer-btn:hover::before {
+    left: 100%;
+}
+
+.bubble-designer-icon {
+    font-size: 28px;
+    margin-right: 16px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+}
+
+.bubble-designer-info {
+    flex: 1;
+    text-align: left;
+}
+
+.bubble-designer-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    line-height: 1.2;
+}
+
+.bubble-designer-desc {
+    font-size: 13px;
+    opacity: 0.9;
+    line-height: 1.3;
+}
+
+.bubble-designer-arrow {
+    font-size: 20px;
+    margin-left: 12px;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
 /* 即将推出区域 */
 .coming-soon {
     display: flex;

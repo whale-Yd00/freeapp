@@ -33,9 +33,12 @@ module.exports = async function handler(req, res) {
 
     const response = await fetch(apiUrl, options);
 
+    console.log('ElevenLabs API Response Status:', response.status);
+    console.log('ElevenLabs API Response Headers:', Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
       const errorBody = await response.json();
-      console.error('ElevenLabs API Error:', errorBody);
+      console.error('ElevenLabs API Error Response:', errorBody);
       return res.status(response.status).json({ 
         error: errorBody.detail?.message || '语音生成失败' 
       });

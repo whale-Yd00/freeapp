@@ -1075,7 +1075,7 @@ async function handleConnectionLoss() {
 function openDB() {
     return new Promise((resolve, reject) => {
         console.log('开始尝试打开数据库...');
-        const request = indexedDB.open('WhaleLLTDB', 10);
+        const request = indexedDB.open('WhaleLLTDB', 11);
 
         request.onupgradeneeded = event => {
             const db = event.target.result;
@@ -5074,6 +5074,9 @@ async function openChat(contact) {
     // 重置消息加载状态
     currentlyDisplayedMessageCount = 0; 
     
+    // 检查并加载最新的气泡样式（每次进入聊天都检查）
+    await loadCustomBubbleStyle();
+    
     await renderMessages(true); // 初始加载
     
     updateContextIndicator();
@@ -5202,17 +5205,105 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
             }
         }
 
+        // 检查是否有自定义气泡样式
+        let bubbleHtml = '';
+        if (window.customBubbleStyle && window.customBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
+            // 使用自定义气泡样式 - 获取原始内容，不包装 message-content
+            console.log('应用自定义气泡样式');
+            
+            let rawContent = '';
+            if (msg.type === 'emoji') {
+                rawContent = await renderEmojiContent(msg.content);
+            } else if (msg.type === 'red_packet') {
+                // 红包保持原有格式
+                rawContent = contentHtml;
+            } else {
+                // 处理文本，但不包装 message-content
+                rawContent = msg.content.replace(/\n/g, '<br>');
+                
+                // 处理内联表情
+                const emojiTagRegex = /\[emoji:([^\]]+)\]/g;
+                const emojiMatches = [...rawContent.matchAll(emojiTagRegex)];
+                for (const match of emojiMatches) {
+                    const fullMatch = match[0];
+                    const emojiName = match[1];
+                    const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+                    
+                    if (foundEmoji && foundEmoji.tag) {
+                        const emojiHtml = await renderEmojiContent(`[emoji:${foundEmoji.tag}]`, true);
+                        rawContent = rawContent.replace(fullMatch, emojiHtml);
+                    } else if (foundEmoji && foundEmoji.url) {
+                        const replacement = `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">`;
+                        rawContent = rawContent.replace(fullMatch, replacement);
+                    }
+                }
+            }
+            
+            bubbleHtml = window.customBubbleStyle.html.replace('{{BUBBLE_TEXT}}', rawContent);
+            // 清理 HTML 中的转义换行符，避免显示 \n
+            bubbleHtml = bubbleHtml.replace(/\\n/g, '');
+            console.log('生成的自定义气泡 HTML:', bubbleHtml);
+        } else {
+            // 使用默认气泡样式
+            console.log('使用默认气泡样式，自定义样式状态:', {
+                hasCustomStyle: !!window.customBubbleStyle,
+                hasHtml: !!window.customBubbleStyle?.html
+            });
+            bubbleHtml = `<div class="message-bubble">${contentHtml}</div>`;
+        }
+
         if (currentContact.type === 'group' && msg.role !== 'user') {
             const sender = contacts.find(c => c.id === msg.senderId);
             const senderName = sender ? sender.name : '未知';
-            msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble"><div class="group-message-header"><div class="group-message-name">${senderName}</div></div>${contentHtml}</div>`;
+            if (window.customBubbleStyle && window.customBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
+                // 对于群聊消息，在自定义气泡前添加发送者信息
+                const groupHeader = `<div class="group-message-header"><div class="group-message-name">${senderName}</div></div>`;
+                
+                // 获取原始内容（与上面相同的逻辑）
+                let rawContent = '';
+                if (msg.type === 'emoji') {
+                    rawContent = await renderEmojiContent(msg.content);
+                } else if (msg.type === 'red_packet') {
+                    rawContent = contentHtml;
+                } else {
+                    rawContent = msg.content.replace(/\n/g, '<br>');
+                    const emojiTagRegex = /\[emoji:([^\]]+)\]/g;
+                    const emojiMatches = [...rawContent.matchAll(emojiTagRegex)];
+                    for (const match of emojiMatches) {
+                        const fullMatch = match[0];
+                        const emojiName = match[1];
+                        const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+                        
+                        if (foundEmoji && foundEmoji.tag) {
+                            const emojiHtml = await renderEmojiContent(`[emoji:${foundEmoji.tag}]`, true);
+                            rawContent = rawContent.replace(fullMatch, emojiHtml);
+                        } else if (foundEmoji && foundEmoji.url) {
+                            const replacement = `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">`;
+                            rawContent = rawContent.replace(fullMatch, replacement);
+                        }
+                    }
+                }
+                
+                let customBubbleWithHeader = window.customBubbleStyle.html.replace('{{BUBBLE_TEXT}}', groupHeader + rawContent);
+                // 清理 HTML 中的转义换行符，避免显示 \n
+                customBubbleWithHeader = customBubbleWithHeader.replace(/\\n/g, '');
+                msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${customBubbleWithHeader}`;
+            } else {
+                msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble"><div class="group-message-header"><div class="group-message-name">${senderName}</div></div>${contentHtml}</div>`;
+            }
         } else {
-            msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble">${contentHtml}</div>`;
+            msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${bubbleHtml}`;
+        }
+        
+        // 调试：输出最终的 HTML 结构
+        if (window.customBubbleStyle && window.customBubbleStyle.html) {
+            console.log('最终消息 HTML 结构:', msgDiv.innerHTML);
         }
         
         // 检查 forceVoice 标志, contact.voiceId 和 Minimax 的凭证
         if (msg.forceVoice && currentContact.voiceId && apiSettings.minimaxGroupId && apiSettings.minimaxApiKey) {
-            const bubble = msgDiv.querySelector('.message-bubble');
+            // 兼容自定义气泡和默认气泡
+            const bubble = msgDiv.querySelector('.message-bubble') || msgDiv.querySelector('.custom-bubble-container');
             if (bubble) {
                 const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
                 const voicePlayer = document.createElement('div');
@@ -7946,19 +8037,25 @@ async function playVoiceMessage(playerElement, text, voiceId) {
             body: JSON.stringify(requestBody)
         });
 
+        console.log('Minimax TTS API Response Status:', response.status);
+        console.log('Minimax TTS API Response Headers:', Object.fromEntries(response.headers.entries()));
+
         // 7. 处理 API 响应
         if (!response.ok) {
             // 如果请求失败，解析错误信息
             let errorMsg = `语音服务错误 (状态码: ${response.status})`;
             try {
                 const errorData = await response.json();
+                console.error('Minimax TTS API Error Response:', errorData);
                 // 尝试从返回的JSON中获取更具体的错误信息
                 if (errorData && errorData.base_resp && errorData.base_resp.status_msg) {
                     errorMsg += `: ${errorData.base_resp.status_msg}`;
                 }
             } catch (e) {
                 // 如果解析JSON失败，则直接显示文本响应
-                errorMsg += `: ${await response.text()}`;
+                const errorText = await response.text();
+                console.error('Minimax TTS API Error Text Response:', errorText);
+                errorMsg += `: ${errorText}`;
             }
             throw new Error(errorMsg);
         }
@@ -10461,10 +10558,33 @@ function applyGradientThemeFromUI() {
     showToast('渐变主题已应用');
 }
 
+// 打开气泡设计器
+function openBubbleDesigner() {
+    try {
+        // 在新窗口中打开气泡设计器
+        const bubbleWindow = window.open('bubble.html', 'bubbleDesigner', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+        
+        if (!bubbleWindow) {
+            showToast('无法打开气泡设计器，请检查浏览器弹窗设置');
+            return;
+        }
+        
+        // 聚焦到新窗口
+        bubbleWindow.focus();
+        
+    } catch (error) {
+        console.error('打开气泡设计器时出错:', error);
+        showToast('打开气泡设计器失败，请重试');
+    }
+}
+
 // 在页面加载完成后初始化主题色
 document.addEventListener('DOMContentLoaded', async function() {
     // 加载保存的主题配置
     await loadThemeConfig();
+    
+    // 加载自定义气泡样式
+    await loadCustomBubbleStyle();
     
     // 当切换到外观管理页面时初始化
     const originalShowPageAsync = showPageAsync;
@@ -10480,3 +10600,241 @@ document.addEventListener('DOMContentLoaded', async function() {
         return result;
     };
 });
+
+// 监听来自气泡设计器的样式应用消息
+window.addEventListener('message', async function(event) {
+    // 检查消息类型
+    if (event.data && event.data.type === 'apply-bubble-style') {
+        try {
+            const bubbleStyleData = event.data.payload;
+            
+            // 存储气泡样式到 IndexedDB
+            saveBubbleStyleToStorage(bubbleStyleData).then(() => {
+                console.log('气泡样式已保存到存储');
+                
+                // 如果当前在聊天页面，立即应用样式
+                if (document.getElementById('chatPage').classList.contains('active')) {
+                    applyBubbleStyleToCurrentChat();
+                }
+                
+                // 显示成功提示
+                if (typeof showToast === 'function') {
+                    showToast('气泡样式已应用！');
+                }
+            }).catch(error => {
+                console.error('保存气泡样式失败:', error);
+                if (typeof showToast === 'function') {
+                    showToast('样式保存失败: ' + error.message);
+                }
+            });
+            
+        } catch (error) {
+            console.error('处理气泡样式消息失败:', error);
+        }
+    } else if (event.data && event.data.type === 'reset-bubble-style') {
+        try {
+            // 恢复默认气泡样式
+            await resetBubbleStyleToDefault();
+            
+            // 显示成功提示
+            if (typeof showToast === 'function') {
+                showToast('已恢复默认气泡样式！');
+            }
+            
+        } catch (error) {
+            console.error('恢复默认气泡样式失败:', error);
+            if (typeof showToast === 'function') {
+                showToast('恢复默认样式失败: ' + error.message);
+            }
+        }
+    }
+});
+
+/**
+ * 保存气泡样式到存储
+ */
+async function saveBubbleStyleToStorage(styleData) {
+    try {
+        // 保存完整的气泡样式数据（包含所有配置）
+        const bubbleStyleConfig = {
+            ...styleData,  // 包含所有样式配置
+            enabled: true,  // 每次保存都自动启用
+            lastModified: new Date().toISOString()  // 添加时间戳以跟踪更新
+        };
+        
+        await themeConfigManager.saveThemeConfig('bubbleStyle', bubbleStyleConfig);
+        console.log('气泡样式已保存到 themeConfig 并自动启用');
+        
+    } catch (error) {
+        console.error('保存气泡样式失败:', error);
+        throw error;
+    }
+}
+
+/**
+ * 应用气泡样式到当前聊天
+ */
+async function applyBubbleStyleToCurrentChat() {
+    try {
+        // 直接从数据库读取气泡样式（兼容两种存储方式）
+        await themeConfigManager.init();
+        const bubbleStyle = await themeConfigManager.getThemeConfig('bubbleStyle');
+        
+        // 如果通过 themeConfigManager 获取不到，直接从数据库读取
+        let directBubbleStyle = null;
+        if (!bubbleStyle) {
+            directBubbleStyle = await new Promise((resolve) => {
+                const transaction = themeConfigManager.db.transaction(['themeConfig'], 'readonly');
+                const store = transaction.objectStore('themeConfig');
+                const request = store.get('bubbleStyle');
+                
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+                
+                request.onerror = () => {
+                    resolve(null);
+                };
+            });
+        }
+        
+        // 使用找到的数据
+        const styleData = bubbleStyle || directBubbleStyle;
+        
+        // 兼容多种数据结构
+        const isEnabled = styleData?.enabled || styleData?.data?.enabled;
+        const actualStyleData = styleData?.data || styleData;
+        
+        // 如果有html内容，就认为是启用的（向后兼容）
+        // 或者没有enabled字段但有完整配置，也认为是启用的（新保存的样式）
+        const shouldEnable = isEnabled || 
+                           (styleData && actualStyleData?.html) || 
+                           (styleData && actualStyleData?.borderWidth !== undefined && !('enabled' in styleData));
+        
+        if (styleData && shouldEnable && actualStyleData?.html) {
+            // 将自定义样式应用到全局样式变量
+            window.customBubbleStyle = actualStyleData;
+            console.log('应用气泡样式到当前聊天');
+            
+            // 重新渲染当前聊天消息以应用新样式
+            if (window.currentContact) {
+                await renderMessages();
+            }
+            
+            console.log('气泡样式已应用到当前聊天');
+        } else {
+            // 清除自定义样式，使用默认样式
+            window.customBubbleStyle = null;
+            console.log('未找到启用的气泡样式，使用默认样式');
+        }
+        
+    } catch (error) {
+        console.error('应用气泡样式失败:', error);
+    }
+}
+
+/**
+ * 获取当前联系人ID
+ */
+function getCurrentContactId() {
+    // 从当前活动的聊天页面获取联系人ID
+    const chatTitle = document.getElementById('chatTitle');
+    if (chatTitle && chatTitle.dataset.contactId) {
+        return chatTitle.dataset.contactId;
+    }
+    
+    // 备用方法：从全局变量或当前联系人获取
+    return window.currentContactId || (window.currentContact && window.currentContact.id) || null;
+}
+
+/**
+ * 加载自定义气泡样式
+ */
+async function loadCustomBubbleStyle() {
+    try {
+        // 直接从数据库读取气泡样式（兼容两种存储方式）
+        await themeConfigManager.init();
+        const bubbleStyle = await themeConfigManager.getThemeConfig('bubbleStyle');
+        
+        // 如果通过 themeConfigManager 获取不到，直接从数据库读取
+        let directBubbleStyle = null;
+        if (!bubbleStyle) {
+            directBubbleStyle = await new Promise((resolve) => {
+                const transaction = themeConfigManager.db.transaction(['themeConfig'], 'readonly');
+                const store = transaction.objectStore('themeConfig');
+                const request = store.get('bubbleStyle');
+                
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+                
+                request.onerror = () => {
+                    resolve(null);
+                };
+            });
+        }
+        
+        // 使用找到的数据
+        const styleData = bubbleStyle || directBubbleStyle;
+        
+        console.log('加载的气泡样式配置:', styleData);
+        console.log('styleData.enabled:', styleData?.enabled);
+        console.log('styleData.data?.enabled:', styleData?.data?.enabled);
+        console.log('styleData.html 存在:', !!styleData?.html);
+        console.log('直接从数据库读取:', !!directBubbleStyle);
+        
+        // 兼容多种数据结构：直接在顶层的enabled，或者在data中的enabled
+        const isEnabled = styleData?.enabled || styleData?.data?.enabled;
+        const actualStyleData = styleData?.data || styleData;
+        
+        // 如果有html内容，就认为是启用的（向后兼容）
+        // 或者没有enabled字段但有完整配置，也认为是启用的（新保存的样式）
+        const shouldEnable = isEnabled || 
+                           (styleData && actualStyleData?.html) || 
+                           (styleData && actualStyleData?.borderWidth !== undefined && !('enabled' in styleData));
+        
+        if (styleData && shouldEnable && actualStyleData?.html) {
+            window.customBubbleStyle = actualStyleData;
+            console.log('自定义气泡样式已从 themeConfig 加载并启用');
+            console.log('设置的 window.customBubbleStyle:', window.customBubbleStyle);
+            console.log('html 内容存在:', !!window.customBubbleStyle.html);
+        } else {
+            // 清除任何之前的自定义样式
+            window.customBubbleStyle = null;
+            console.log('未找到启用的自定义气泡样式，使用默认样式', {
+                hasStyleData: !!styleData,
+                isEnabled,
+                shouldEnable,
+                hasHtml: !!actualStyleData?.html
+            });
+        }
+        
+    } catch (error) {
+        console.error('加载气泡样式失败:', error);
+    }
+}
+
+/**
+ * 恢复默认气泡样式
+ */
+async function resetBubbleStyleToDefault() {
+    try {
+        // 从数据库删除自定义气泡样式配置
+        await themeConfigManager.init();
+        await themeConfigManager.deleteThemeConfig('bubbleStyle');
+        
+        // 清除内存中的自定义样式
+        window.customBubbleStyle = null;
+        
+        console.log('自定义气泡样式已清除，恢复默认样式');
+        
+        // 如果当前在聊天页面，重新渲染消息以应用默认样式
+        if (window.currentContact && document.getElementById('chatPage').classList.contains('active')) {
+            await renderMessages();
+        }
+        
+    } catch (error) {
+        console.error('恢复默认气泡样式失败:', error);
+        throw error;
+    }
+}
