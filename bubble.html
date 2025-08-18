@@ -52,7 +52,7 @@
             width: 100%;
             height: 100%;
             display: block;
-            object-fit: fill; 
+            object-fit: contain; /* 改为contain以更好地支持SVG */
         }
         
         .resize-handle {
@@ -226,6 +226,21 @@
                 <div class="p-4 border-t border-slate-200 space-y-2">
                     <label for="galleryStickerUpload" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">上传新贴图</label>
                     <input type="file" id="galleryStickerUpload" accept="image/*" multiple class="hidden">
+                    
+                    <button id="toggleSvgInputBtn" class="w-full bg-purple-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-purple-700 transition-colors">输入SVG代码</button>
+                    
+                    <div id="svgInputSection" class="hidden space-y-2 bg-slate-50 p-3 rounded-lg border">
+                        <label for="svgCodeInput" class="text-sm font-medium text-slate-700">SVG代码</label>
+                        <textarea id="svgCodeInput" rows="4" class="w-full p-2 border border-slate-300 rounded text-xs font-mono" placeholder='输入SVG代码，例如：
+&lt;svg width="100" height="100" viewBox="0 0 100 100"&gt;
+  &lt;circle cx="50" cy="50" r="40" fill="blue" /&gt;
+&lt;/svg&gt;'></textarea>
+                        <div class="flex gap-2">
+                            <button id="addSvgBtn" class="flex-1 bg-green-600 text-white text-sm font-medium py-1.5 px-3 rounded hover:bg-green-700 transition-colors">添加SVG</button>
+                            <button id="clearSvgBtn" class="flex-1 bg-slate-500 text-white text-sm font-medium py-1.5 px-3 rounded hover:bg-slate-600 transition-colors">清空</button>
+                        </div>
+                    </div>
+                    
                     <p class="text-xs text-slate-500 mt-2 text-center">提示：移除背景功能不支持GIF动图。请先使用外部工具处理GIF，再上传。</p>
                     <button id="closeProcessorBtn" class="w-full bg-slate-600 text-white font-medium py-2 rounded-lg hover:bg-slate-700 mt-2">完成并关闭</button>
                 </div>
@@ -271,6 +286,11 @@
                 manageStickersBtn: document.getElementById('manageStickersBtn'),
                 closeProcessorBtn: document.getElementById('closeProcessorBtn'),
                 galleryStickerUpload: document.getElementById('galleryStickerUpload'),
+                toggleSvgInputBtn: document.getElementById('toggleSvgInputBtn'),
+                svgInputSection: document.getElementById('svgInputSection'),
+                svgCodeInput: document.getElementById('svgCodeInput'),
+                addSvgBtn: document.getElementById('addSvgBtn'),
+                clearSvgBtn: document.getElementById('clearSvgBtn'),
                 removeBgBtn: document.getElementById('removeBgBtn'),
                 tolerance: document.getElementById('tolerance'),
                 toleranceValue: document.getElementById('toleranceValue'),
@@ -594,8 +614,25 @@
                     showToast('正在上传贴图...');
                     
                     for (const file of files) {
-                        if (!file.type.startsWith('image/')) {
-                            console.warn('跳过非图片文件:', file.name);
+                        // 检查文件类型：支持常见图片格式和SVG
+                        const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+                        const isSupported = supportedTypes.includes(file.type) || 
+                                          file.name.toLowerCase().endsWith('.svg') ||
+                                          file.type.startsWith('image/');
+                        
+                        if (!isSupported) {
+                            console.warn('跳过不支持的文件格式:', file.name, file.type);
+                            continue;
+                        }
+                        
+                        // 文件大小限制：5MB，SVG可以适当放宽到10MB
+                        const maxSize = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg') 
+                                      ? 10 * 1024 * 1024  // SVG: 10MB
+                                      : 5 * 1024 * 1024;   // 其他图片: 5MB
+                        
+                        if (file.size > maxSize) {
+                            const sizeLimitMB = maxSize / (1024 * 1024);
+                            showToast(`文件 ${file.name} 超过 ${sizeLimitMB}MB 大小限制`);
                             continue;
                         }
                         
@@ -684,6 +721,175 @@
                     reader.onerror = () => reject(reader.error);
                     reader.readAsDataURL(file);
                 });
+            }
+            
+            // SVG代码处理函数
+            function validateSvgCode(svgCode) {
+                // 基本验证：检查是否包含svg标签
+                const svgRegex = /<svg[\s\S]*?<\/svg>/i;
+                if (!svgRegex.test(svgCode)) {
+                    return { valid: false, error: 'SVG代码必须包含完整的<svg>...</svg>标签' };
+                }
+                
+                // 检查是否包含潜在的危险内容（基础安全检查）
+                const dangerousPatterns = [
+                    /<script/i,
+                    /javascript:/i,
+                    /on\w+\s*=/i,  // onclick, onload等事件
+                ];
+                
+                for (const pattern of dangerousPatterns) {
+                    if (pattern.test(svgCode)) {
+                        return { valid: false, error: 'SVG代码包含不安全的内容' };
+                    }
+                }
+                
+                return { valid: true };
+            }
+            
+            function normalizeSvgCode(svgCode) {
+                // 清理和规范化SVG代码
+                let cleaned = svgCode.trim();
+                
+                // 如果没有XML声明，确保SVG有正确的命名空间
+                if (!cleaned.includes('xmlns=')) {
+                    cleaned = cleaned.replace(
+                        /<svg/i, 
+                        '<svg xmlns="http://www.w3.org/2000/svg"'
+                    );
+                }
+                
+                // 如果没有viewBox，尝试从width/height生成一个
+                if (!cleaned.includes('viewBox') && cleaned.includes('width=') && cleaned.includes('height=')) {
+                    const widthMatch = cleaned.match(/width="?(\d+)"?/i);
+                    const heightMatch = cleaned.match(/height="?(\d+)"?/i);
+                    if (widthMatch && heightMatch) {
+                        const width = widthMatch[1];
+                        const height = heightMatch[1];
+                        cleaned = cleaned.replace(
+                            /<svg([^>]*)>/i,
+                            `<svg$1 viewBox="0 0 ${width} ${height}">`
+                        );
+                    }
+                }
+                
+                return cleaned;
+            }
+            
+            async function handleSvgCodeInput() {
+                const svgCode = controls.svgCodeInput.value.trim();
+                
+                if (!svgCode) {
+                    showToast('请输入SVG代码');
+                    return;
+                }
+                
+                try {
+                    // 验证SVG代码
+                    const validation = validateSvgCode(svgCode);
+                    if (!validation.valid) {
+                        showToast('错误: ' + validation.error);
+                        return;
+                    }
+                    
+                    // 规范化SVG代码
+                    const normalizedSvg = normalizeSvgCode(svgCode);
+                    
+                    // 创建SVG Blob
+                    const svgBlob = new Blob([normalizedSvg], { type: 'image/svg+xml' });
+                    
+                    // 检查大小限制 (10MB)
+                    if (svgBlob.size > 10 * 1024 * 1024) {
+                        showToast('SVG代码过大，请尝试简化');
+                        return;
+                    }
+                    
+                    showToast('正在添加SVG贴图...');
+                    
+                    // 生成唯一ID
+                    const stickerId = 'sticker_svg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    
+                    if (fileStorageManager) {
+                        try {
+                            // 使用FileStorageManager存储SVG
+                            const storeResult = await fileStorageManager.storeFile(svgBlob, {
+                                category: 'bubble_sticker',
+                                originalName: `svg_${Date.now()}.svg`,
+                                isUserCreated: true
+                            });
+                            
+                            const actualFileId = typeof storeResult.fileId === 'string' 
+                                               ? storeResult.fileId 
+                                               : String(storeResult.fileId);
+                            
+                            // 创建文件引用
+                            await fileStorageManager.createFileReference(
+                                actualFileId,
+                                'bubble_sticker',
+                                stickerId,
+                                {
+                                    originalName: `svg_${Date.now()}.svg`,
+                                    fileType: 'image/svg+xml',
+                                    isUserCreated: true
+                                }
+                            );
+                            
+                            // 创建贴图记录
+                            const newSticker = {
+                                id: stickerId,
+                                fileId: actualFileId,
+                                originalName: `svg_${Date.now()}.svg`,
+                                fileType: 'image/svg+xml',
+                                fileSize: svgBlob.size,
+                                createdAt: new Date().toISOString(),
+                                isUserCreated: true
+                            };
+                            
+                            stickerLibrary.push(newSticker);
+                            console.log('SVG贴图存储成功(IndexedDB+FileSystem):', newSticker);
+                            
+                        } catch (error) {
+                            console.error('FileStorageManager存储失败，回退到base64:', error);
+                            // 回退到base64存储
+                            await handleSvgFallbackStorage(normalizedSvg, stickerId);
+                        }
+                    } else {
+                        // 回退到base64存储
+                        await handleSvgFallbackStorage(normalizedSvg, stickerId);
+                    }
+                    
+                    // 保存和更新界面
+                    await saveStickerLibraryToStorage();
+                    populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                    showToast('SVG贴图添加成功！');
+                    
+                    // 清空输入框
+                    controls.svgCodeInput.value = '';
+                    
+                } catch (error) {
+                    console.error('SVG处理失败:', error);
+                    showToast('SVG处理失败: ' + error.message);
+                }
+            }
+            
+            async function handleSvgFallbackStorage(svgCode, stickerId) {
+                // 转换为data URL
+                const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgCode)));
+                
+                const newSticker = {
+                    id: stickerId,
+                    baseSrc: dataUrl,
+                    currentSrc: dataUrl,
+                    originalName: `svg_${Date.now()}.svg`,
+                    fileType: 'image/svg+xml',
+                    fileSize: svgCode.length,
+                    createdAt: new Date().toISOString(),
+                    isBase64: true,
+                    isUserCreated: true
+                };
+                
+                stickerLibrary.push(newSticker);
+                console.log('SVG贴图base64存储成功:', newSticker);
             }
             
             async function populateStickerGallery() {
@@ -805,11 +1011,41 @@
                 currentEditingStickerId = id;
                 const sticker = stickerLibrary.find(s => s.id == id);
                 if (!sticker) return;
+                
+                // 检查是否为SVG文件
+                const isSVG = sticker.fileType === 'image/svg+xml' || 
+                            sticker.originalName?.toLowerCase().endsWith('.svg');
+                
                 editorPlaceholder.classList.add('hidden');
                 editorControls.classList.remove('hidden');
+                
+                // 如果是SVG文件，禁用背景移除相关功能
+                const removeBgBtn = document.getElementById('removeBgBtn');
+                const toleranceContainer = document.querySelector('#editorControls .space-y-2:nth-child(2)');
+                
+                if (isSVG) {
+                    if (removeBgBtn) removeBgBtn.style.display = 'none';
+                    if (toleranceContainer) toleranceContainer.style.display = 'none';
+                    // 显示SVG提示信息
+                    const existingNotice = document.getElementById('svgEditNotice');
+                    if (!existingNotice) {
+                        const notice = document.createElement('div');
+                        notice.id = 'svgEditNotice';
+                        notice.className = 'text-sm text-slate-600 bg-slate-100 p-2 rounded';
+                        notice.textContent = 'SVG文件不支持背景移除功能';
+                        removeBgBtn.parentNode.insertBefore(notice, removeBgBtn);
+                    }
+                } else {
+                    if (removeBgBtn) removeBgBtn.style.display = 'block';
+                    if (toleranceContainer) toleranceContainer.style.display = 'block';
+                    // 移除SVG提示信息
+                    const existingNotice = document.getElementById('svgEditNotice');
+                    if (existingNotice) existingNotice.remove();
+                }
+                
                 const img = new Image();
                 img.crossOrigin = "Anonymous";
-                img.src = sticker.currentSrc;
+                img.src = sticker.currentSrc || sticker.baseSrc;
                 img.onload = () => {
                     imageEditorCanvas.width = img.naturalWidth;
                     imageEditorCanvas.height = img.naturalHeight;
@@ -1057,6 +1293,32 @@
             controls.manageStickersBtn.addEventListener('click', openProcessor);
             controls.closeProcessorBtn.addEventListener('click', closeProcessor);
             controls.galleryStickerUpload.addEventListener('change', handleStickerUpload);
+            
+            // SVG代码输入相关事件
+            controls.toggleSvgInputBtn.addEventListener('click', () => {
+                const isHidden = controls.svgInputSection.classList.contains('hidden');
+                if (isHidden) {
+                    controls.svgInputSection.classList.remove('hidden');
+                    controls.toggleSvgInputBtn.textContent = '隐藏SVG输入';
+                } else {
+                    controls.svgInputSection.classList.add('hidden');
+                    controls.toggleSvgInputBtn.textContent = '输入SVG代码';
+                }
+            });
+            
+            controls.addSvgBtn.addEventListener('click', handleSvgCodeInput);
+            controls.clearSvgBtn.addEventListener('click', () => {
+                controls.svgCodeInput.value = '';
+                showToast('已清空SVG代码');
+            });
+            
+            // 支持Ctrl+Enter快捷键提交SVG
+            controls.svgCodeInput.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSvgCodeInput();
+                }
+            });
             controls.removeBgBtn.addEventListener('click', () => imageEditorCanvas.classList.add('dropper-cursor'));
             imageEditorCanvas.addEventListener('click', (e) => {
                 if (!imageEditorCanvas.classList.contains('dropper-cursor')) return;
