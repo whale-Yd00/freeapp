@@ -1190,7 +1190,7 @@
                     htmlStickers += `    <img src="${stickerSrc}" class="sticker-${index}" alt="sticker" style="position: absolute; ${positionStyle} width: ${stickerWidth.toFixed(0)}px; height: ${stickerHeight.toFixed(0)}px; z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;">\\n`;
                 });
 
-                const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.backgroundColor || bubbleStyle.background}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    ${targetTextContent.textContent}\\n${htmlStickers}</div>`;
+                const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.backgroundColor || bubbleStyle.background}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    {{BUBBLE_TEXT}}\\n${htmlStickers}</div>`;
 
                 return {
                     borderWidth: parseInt(bubbleStyle.borderWidth) || 0,
