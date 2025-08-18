@@ -1190,7 +1190,7 @@
                     htmlStickers += `    <img src="${stickerSrc}" class="sticker-${index}" alt="sticker" style="position: absolute; ${positionStyle} width: ${stickerWidth.toFixed(0)}px; height: ${stickerHeight.toFixed(0)}px; z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;">\\n`;
                 });
 
-                const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.backgroundColor || bubbleStyle.background}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    {{BUBBLE_TEXT}}\\n${htmlStickers}</div>`;
+                const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.background || bubbleStyle.backgroundColor}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    {{BUBBLE_TEXT}}\\n${htmlStickers}</div>`;
 
                 return {
                     borderWidth: parseInt(bubbleStyle.borderWidth) || 0,
@@ -1526,19 +1526,19 @@
                 if (!config) return;
                 
                 try {
-                    // 应用基础样式
+                    // 应用基础样式 - 使用颜色转换确保格式正确
                     controls.borderWidth.value = config.borderWidth || 1;
-                    controls.borderColor.value = config.borderColor || '#4f46e5';
+                    controls.borderColor.value = extractRgbColor(config.borderColor) || '#4f46e5';
                     controls.borderRadius.value = config.borderRadius || 12;
-                    controls.textColor.value = config.textColor || '#333333';
+                    controls.textColor.value = extractRgbColor(config.textColor) || '#333333';
                     controls.fontFamily.value = config.fontFamily || 'Inter';
                     
-                    // 应用背景样式
+                    // 应用背景样式 - 使用颜色转换确保格式正确
                     currentBgType = config.backgroundType || 'solid';
-                    controls.bgColor.value = config.backgroundColor || '#ffffff';
+                    controls.bgColor.value = extractRgbColor(config.backgroundColor) || '#ffffff';
                     controls.bgOpacity.value = config.backgroundOpacity || 1;
-                    controls.gradientColor1.value = config.gradientColor1 || '#a5b4fc';
-                    controls.gradientColor2.value = config.gradientColor2 || '#e0e7ff';
+                    controls.gradientColor1.value = extractRgbColor(config.gradientColor1) || '#a5b4fc';
+                    controls.gradientColor2.value = extractRgbColor(config.gradientColor2) || '#e0e7ff';
                     controls.gradientAngle.value = config.gradientAngle || 145;
                     
                     // 切换背景类型
