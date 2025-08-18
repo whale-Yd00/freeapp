@@ -772,8 +772,8 @@ async function init() {
     voiceAudio.onended = () => {
         if (currentPlayingElement) {
             currentPlayingElement.classList.remove('playing');
-            const playButton = currentPlayingElement.querySelector('.play-button');
-            if (playButton) playButton.textContent = '▶';
+            const voiceIcon = currentPlayingElement.querySelector('.voice-icon');
+            if (voiceIcon) voiceIcon.innerHTML = createVoiceIcon();
             currentPlayingElement = null;
         }
     };
@@ -781,8 +781,8 @@ async function init() {
         showToast('音频文件加载失败');
         if (currentPlayingElement) {
              currentPlayingElement.classList.remove('playing', 'loading');
-             const playButton = currentPlayingElement.querySelector('.play-button');
-             if (playButton) playButton.textContent = '▶';
+             const voiceIcon = currentPlayingElement.querySelector('.voice-icon');
+             if (voiceIcon) voiceIcon.innerHTML = createVoiceIcon();
              currentPlayingElement = null;
         }
     };
@@ -5307,32 +5307,60 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
         // 检查 forceVoice 标志, contact.voiceId 和 Minimax 的凭证
         if (msg.forceVoice && currentContact.voiceId && apiSettings.minimaxGroupId && apiSettings.minimaxApiKey) {
             // 兼容自定义气泡和默认气泡
-            const bubble = msgDiv.querySelector('.message-bubble') || msgDiv.querySelector('.custom-bubble-container');
+            const bubble = msgDiv.querySelector('.message-bubble') || 
+                          msgDiv.querySelector('.custom-bubble-container') || 
+                          msgDiv.querySelector('.chat-bubble');
             if (bubble) {
                 const messageUniqueId = `${currentContact.id}-${msg.time}`; // 使用时间戳保证唯一性
-                const voicePlayer = document.createElement('div');
-                voicePlayer.className = 'voice-player';
-                voicePlayer.id = `voice-player-${messageUniqueId}`;
                 
-                // 使用匿名函数包装，确保传递正确的参数
-                voicePlayer.onclick = () => playVoiceMessage(voicePlayer, msg.content, currentContact.voiceId);
+                // 给气泡添加语音消息标识
+                bubble.classList.add('voice-message');
+                bubble.dataset.voiceMessageId = `voice-${messageUniqueId}`;
                 
-                voicePlayer.innerHTML = `
-                    <div class="play-button">▶</div>
-                    <div class="waveform">
-                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
-                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
-                        <div class="waveform-bar"></div><div class="waveform-bar"></div><div class="waveform-bar"></div>
-                    </div>
-                    <div class="duration"></div>
-                `;
-                // 将播放器插入到气泡的开头
-                bubble.prepend(voicePlayer);
-                
-                const textContentDiv = bubble.querySelector('.message-content');
-                if (textContentDiv) {
-                    textContentDiv.classList.add('has-voice-player');
+                // 在消息内容前添加语音符号
+                // 优先查找.message-content，如果没有则直接在气泡内添加
+                const textContentDiv = bubble.querySelector('.message-content') || bubble;
+                if (textContentDiv && !textContentDiv.querySelector('.voice-icon')) {
+                    const voiceIcon = document.createElement('span');
+                    voiceIcon.className = 'voice-icon';
+                    voiceIcon.innerHTML = createVoiceIcon(); // SVG音频波形图标
+                    
+                    // 将语音符号插入到文本内容的最前面
+                    if (textContentDiv === bubble) {
+                        // 如果是直接在气泡内，需要在文本节点前插入
+                        const firstTextNode = Array.from(textContentDiv.childNodes).find(node => 
+                            node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ''
+                        );
+                        if (firstTextNode) {
+                            textContentDiv.insertBefore(voiceIcon, firstTextNode);
+                        } else {
+                            textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
+                        }
+                    } else {
+                        textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
+                    }
                 }
+                
+                // 给整个气泡添加点击事件来播放语音
+                bubble.style.cursor = 'pointer';
+                
+                // 移除任何已存在的语音播放事件监听器
+                const existingHandler = bubble._voiceClickHandler;
+                if (existingHandler) {
+                    bubble.removeEventListener('click', existingHandler);
+                }
+                
+                // 创建新的事件处理器
+                const voiceClickHandler = (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    console.log('语音气泡被点击，开始播放:', { text: msg.content, voiceId: currentContact.voiceId });
+                    playVoiceMessage(bubble, msg.content, currentContact.voiceId);
+                };
+                
+                // 保存处理器引用并添加事件监听器
+                bubble._voiceClickHandler = voiceClickHandler;
+                bubble.addEventListener('click', voiceClickHandler);
             }
         }
 
@@ -7968,14 +7996,28 @@ async function saveExistingCharacterMemory(characterId, content) {
     return false;
 }
 
+// 语音图标生成函数
+function createVoiceIcon(state = 'default') {
+    const baseProps = 'width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
+    
+    switch (state) {
+        case 'loading':
+            return `<svg xmlns="http://www.w3.org/2000/svg" ${baseProps} stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6"/></svg>`;
+        case 'playing':
+            return `<svg xmlns="http://www.w3.org/2000/svg" ${baseProps} stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+        default:
+            return `<svg xmlns="http://www.w3.org/2000/svg" ${baseProps} stroke-width="2.5"><path d="M3 10v4 M7 7v10 M12 4v16 M17 7v10 M21 10v4" /></svg>`;
+    }
+}
+
 // ElevenLabs 语音播放功能
 /**
- * [MODIFIED] 播放或停止语音消息 - 直接从前端调用 Minimax API
- * @param {HTMLElement} playerElement - 被点击的播放器元素
+ * [MODIFIED] 播放或停止语音消息 - 支持缓存的 Minimax API
+ * @param {HTMLElement} bubbleElement - 被点击的气泡元素
  * @param {string} text - 需要转换为语音的文本
  * @param {string} voiceId - Minimax 的声音ID
  */
-async function playVoiceMessage(playerElement, text, voiceId) {
+async function playVoiceMessage(bubbleElement, text, voiceId) {
     // 1. 检查 Minimax API 凭证是否已在设置中配置
     if (!apiSettings.minimaxGroupId || !apiSettings.minimaxApiKey) {
         showToast('请在设置中填写 Minimax Group ID 和 API Key');
@@ -7986,105 +8028,145 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         return;
     }
 
-    // 2. 判断当前点击的播放器是否正在播放
-    const wasPlaying = playerElement === currentPlayingElement && !voiceAudio.paused;
+    // 2. 判断当前点击的气泡是否正在播放
+    const wasPlaying = bubbleElement === currentPlayingElement && !voiceAudio.paused;
 
     // 3. 如果有任何音频正在播放，先停止它
     if (currentPlayingElement) {
         voiceAudio.pause();
         voiceAudio.currentTime = 0;
-        const oldPlayButton = currentPlayingElement.querySelector('.play-button');
-        if (oldPlayButton) oldPlayButton.textContent = '▶';
+        const oldVoiceIcon = currentPlayingElement.querySelector('.voice-icon');
+        if (oldVoiceIcon) oldVoiceIcon.innerHTML = createVoiceIcon();
         currentPlayingElement.classList.remove('playing', 'loading');
     }
 
-    // 4. 如果点击的是正在播放的按钮，则仅停止，然后退出
+    // 4. 如果点击的是正在播放的气泡，则仅停止，然后退出
     if (wasPlaying) {
         currentPlayingElement = null;
         return;
     }
 
-    // 5. 设置当前播放器为活动状态并更新UI
-    currentPlayingElement = playerElement;
-    const playButton = playerElement.querySelector('.play-button');
-    const durationEl = playerElement.querySelector('.duration');
+    // 5. 设置当前气泡为活动状态并更新UI
+    currentPlayingElement = bubbleElement;
+    const voiceIcon = bubbleElement.querySelector('.voice-icon');
 
     try {
         // 显示加载状态
-        playerElement.classList.add('loading');
-        playButton.textContent = '...';
+        bubbleElement.classList.add('loading');
+        if (voiceIcon) voiceIcon.innerHTML = createVoiceIcon('loading');
 
-        // 6. 准备并直接发送 API 请求到 Minimax (纯前端)
-        const groupId = apiSettings.minimaxGroupId;
-        const apiKey = apiSettings.minimaxApiKey;
-        
-        // Minimax API URL，将 GroupId 放在查询参数中
-        const apiUrl = `https://api.minimax.chat/v1/text_to_speech?GroupId=${groupId}`;
-        
-        // 请求体
-        const requestBody = {
-            "voice_id": voiceId,
-            "text": text,
-            "model": "speech-01",
-            "speed": 1.0,
-            "vol": 1.0,
-            "pitch": 0
-        };
+        let audioUrl = null;
+        let fromCache = false;
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                // 授权头，注意这里只用 API Key
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-        });
-
-        console.log('Minimax TTS API Response Status:', response.status);
-        console.log('Minimax TTS API Response Headers:', Object.fromEntries(response.headers.entries()));
-
-        // 7. 处理 API 响应
-        if (!response.ok) {
-            // 如果请求失败，解析错误信息
-            let errorMsg = `语音服务错误 (状态码: ${response.status})`;
+        // 6. 首先检查语音缓存
+        if (window.VoiceStorageAPI) {
             try {
-                const errorData = await response.json();
-                console.error('Minimax TTS API Error Response:', errorData);
-                // 尝试从返回的JSON中获取更具体的错误信息
-                if (errorData && errorData.base_resp && errorData.base_resp.status_msg) {
-                    errorMsg += `: ${errorData.base_resp.status_msg}`;
+                audioUrl = await window.VoiceStorageAPI.getVoiceURL(text, voiceId);
+                if (audioUrl) {
+                    fromCache = true;
+                    console.log('使用语音缓存:', { textLength: text.length, voiceId });
                 }
-            } catch (e) {
-                // 如果解析JSON失败，则直接显示文本响应
-                const errorText = await response.text();
-                console.error('Minimax TTS API Error Text Response:', errorText);
-                errorMsg += `: ${errorText}`;
+            } catch (error) {
+                console.error('检查语音缓存失败:', error);
             }
-            throw new Error(errorMsg);
         }
 
-        // 8. 处理成功的响应
-        // 服务器返回的是音频数据流，我们将其转换为 Blob
-        const audioBlob = await response.blob();
-        
-        if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
-            console.error("服务器未返回有效的音频。Content-Type:", audioBlob.type);
-            throw new Error(`服务器返回了非预期的内容类型: ${audioBlob.type}`);
+        // 7. 如果缓存中没有，则调用 API 生成语音
+        if (!audioUrl) {
+            console.log('语音缓存未命中，调用API生成语音');
+            
+            const groupId = apiSettings.minimaxGroupId;
+            const apiKey = apiSettings.minimaxApiKey;
+            
+            // Minimax API URL，将 GroupId 放在查询参数中
+            const apiUrl = `https://api.minimax.chat/v1/text_to_speech?GroupId=${groupId}`;
+            
+            // 请求体
+            const requestBody = {
+                "voice_id": voiceId,
+                "text": text,
+                "model": "speech-01",
+                "speed": 1.0,
+                "vol": 1.0,
+                "pitch": 0
+            };
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    // 授权头，注意这里只用 API Key
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            console.log('Minimax TTS API Response Status:', response.status);
+            console.log('Minimax TTS API Response Headers:', Object.fromEntries(response.headers.entries()));
+
+            // 处理 API 响应
+            const contentType = response.headers.get('content-type') || '';
+            
+            // 检查是否返回了JSON错误信息（即使状态码是200）
+            if (!response.ok || contentType.includes('application/json')) {
+                let errorMsg = `语音服务错误 (状态码: ${response.status})`;
+                try {
+                    const errorData = await response.json();
+                    console.error('Minimax TTS API Error Response:', errorData);
+                    
+                    // 尝试从返回的JSON中获取更具体的错误信息
+                    if (errorData && errorData.base_resp && errorData.base_resp.status_msg) {
+                        errorMsg += `: ${errorData.base_resp.status_msg}`;
+                    } else if (errorData && errorData.error) {
+                        errorMsg += `: ${errorData.error}`;
+                    } else if (errorData && errorData.message) {
+                        errorMsg += `: ${errorData.message}`;
+                    } else {
+                        errorMsg += `: ${JSON.stringify(errorData)}`;
+                    }
+                } catch (e) {
+                    // 如果解析JSON失败，则直接显示文本响应
+                    const errorText = await response.text();
+                    console.error('Minimax TTS API Error Text Response:', errorText);
+                    errorMsg += `: ${errorText}`;
+                }
+                throw new Error(errorMsg);
+            }
+
+            // 处理成功的响应
+            // 服务器返回的是音频数据流，我们将其转换为 Blob
+            const audioBlob = await response.blob();
+            
+            if (!audioBlob || !audioBlob.type.startsWith('audio/')) {
+                console.error("服务器未返回有效的音频。Content-Type:", audioBlob.type);
+                throw new Error(`服务器返回了非预期的内容类型: ${audioBlob.type}`);
+            }
+
+            // 8. 保存到缓存（异步进行，不阻塞播放）
+            if (window.VoiceStorageAPI) {
+                window.VoiceStorageAPI.storeVoice(audioBlob, text, voiceId, {
+                    model: "speech-01",
+                    apiSource: "minimax",
+                    generatedAt: new Date().toISOString()
+                }).then(() => {
+                    console.log('语音已保存到缓存:', { textLength: text.length, voiceId });
+                }).catch(error => {
+                    console.error('语音缓存保存失败:', error);
+                });
+            }
+
+            // 创建一个临时的 URL 指向这个 Blob 数据
+            audioUrl = URL.createObjectURL(audioBlob);
         }
 
-        // 创建一个临时的 URL 指向这个 Blob 数据
-        const audioUrl = URL.createObjectURL(audioBlob);
-        
-        // 将这个 URL 设置为音频元素的源
+        // 9. 播放音频
         voiceAudio.src = audioUrl;
 
-        // 当音频元数据加载完成后，显示时长
+        // 当音频元数据加载完成后，显示时长（可选，语音图标方案可以不显示时长）
         voiceAudio.onloadedmetadata = () => {
             if (isFinite(voiceAudio.duration)) {
-                const minutes = Math.floor(voiceAudio.duration / 60);
-                const seconds = Math.floor(voiceAudio.duration % 60).toString().padStart(2, '0');
-                durationEl.textContent = `${minutes}:${seconds}`;
+                // 在新的设计中，我们不需要显示时长，因为没有duration元素
+                console.log('语音时长:', voiceAudio.duration + '秒');
             }
         };
 
@@ -8092,16 +8174,23 @@ async function playVoiceMessage(playerElement, text, voiceId) {
         await voiceAudio.play();
 
         // 更新UI为播放状态
-        playerElement.classList.remove('loading');
-        playerElement.classList.add('playing');
-        playButton.textContent = '❚❚';
+        bubbleElement.classList.remove('loading');
+        bubbleElement.classList.add('playing');
+        if (voiceIcon) voiceIcon.innerHTML = createVoiceIcon('playing');
+
+        // 显示缓存状态提示（可选）
+        if (fromCache) {
+            console.log('语音播放成功（来自缓存）');
+        } else {
+            console.log('语音播放成功（来自API）');
+        }
 
     } catch (error) {
-        // 9. 统一处理所有错误
+        // 10. 统一处理所有错误
         console.error('语音播放失败:', error);
         showToast(`语音播放错误: ${error.message}`);
-        playerElement.classList.remove('loading');
-        playButton.textContent = '▶';
+        bubbleElement.classList.remove('loading');
+        if (voiceIcon) voiceIcon.innerHTML = createVoiceIcon();
         currentPlayingElement = null; // 重置当前播放元素
     }
 }

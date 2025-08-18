@@ -2666,94 +2666,77 @@ body.no-has-support.chat-active .bottom-nav {
     background-color: #c82333;
 }
 
-/* 语音播放器样式 */
-.voice-player {
-    display: flex;
-    align-items: center;
-    background-color: #f0f0f0;
-    border-radius: 18px;
-    padding: 8px 12px;
+/* 语音消息样式 */
+.voice-message {
+    position: relative;
     cursor: pointer;
-    transition: background-color 0.2s;
-    margin-bottom: 8px;
-}
-.message.sent .voice-player {
-    background-color: #8be061; /* 适配发送气泡的颜色 */
-}
-.voice-player:hover {
-    background-color: #e0e0e0;
-}
-.message.sent .voice-player:hover {
-    background-color: #7dce55;
+    transition: opacity 0.2s;
 }
 
-.play-button {
-    font-size: 16px;
-    width: 20px;
-    text-align: center;
-    margin-right: 8px;
-    color: #555;
-}
-.message.sent .play-button {
-    color: #333;
+.voice-message:hover {
+    opacity: 0.9;
 }
 
-.waveform {
-    flex: 1;
-    height: 20px;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-.waveform-bar {
-    width: 2px;
-    background-color: #aaa;
-    border-radius: 1px;
-}
-.message.sent .waveform-bar {
-     background-color: #666;
-}
-.waveform-bar:nth-child(1) { height: 40%; }
-.waveform-bar:nth-child(2) { height: 70%; }
-.waveform-bar:nth-child(3) { height: 100%; }
-.waveform-bar:nth-child(4) { height: 80%; }
-.waveform-bar:nth-child(5) { height: 50%; }
-.waveform-bar:nth-child(6) { height: 90%; }
-.waveform-bar:nth-child(7) { height: 60%; }
-.waveform-bar:nth-child(8) { height: 30%; }
-.waveform-bar:nth-child(9) { height: 75%; }
-
-.voice-player.playing .waveform-bar {
-    animation: wave 1.2s infinite ease-in-out;
-}
-@keyframes wave {
-    0%, 100% { transform: scaleY(0.4); }
-    50% { transform: scaleY(1); }
-}
-.voice-player.playing .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
-.voice-player.playing .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
-.voice-player.playing .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
-.voice-player.playing .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
-
-.duration {
-    font-size: 12px;
-    color: #666;
-    margin-left: 8px;
-    min-width: 35px;
-    text-align: right;
-}
-.message.sent .duration {
-    color: #333;
+/* 语音图标样式 */
+.voice-icon {
+    display: inline-block;
+    margin-right: 6px;
+    margin-left: 2px;
+    vertical-align: middle;
+    line-height: 1;
+    user-select: none;
+    color: inherit;
 }
 
-/* 如果有播放器，给下面的文本消息增加一点间距 */
+/* SVG图标样式 */
+.voice-icon svg {
+    display: inline-block;
+    vertical-align: middle;
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+}
+
+/* 播放状态样式 */
+.voice-message.playing .voice-icon {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+}
+
+/* 加载状态样式 */
+.voice-message.loading .voice-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 为了向后兼容，保留一些旧样式但标记为废弃 */
+/* DEPRECATED: 以下样式将在未来版本中移除 */
+.voice-player { display: none !important; }
+.play-button { display: none !important; }
+.waveform { display: none !important; }
+.duration { display: none !important; }
 .message-content.has-voice-player {
-    border-top: 1px solid rgba(0,0,0,0.05);
-    padding-top: 8px;
-    margin-top: 8px;
-}
-.message.sent .message-content.has-voice-player {
-     border-top: 1px solid rgba(0,0,0,0.1);
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
 }
 
 /* === 调试日志页面样式 === */
