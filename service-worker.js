@@ -35,8 +35,16 @@ self.addEventListener('fetch', event => {
           return response;
         }
         return fetch(event.request);
-      }
-    )
+      })
+      .catch(error => {
+        console.warn('Fetch failed:', event.request.url, error);
+        // 对于关键资源失败，返回一个基本的响应
+        if (event.request.url.includes('.html') || event.request.url.includes('.js') || event.request.url.includes('.css')) {
+          return new Response('', { status: 200, statusText: 'OK' });
+        }
+        // 对于其他资源，重新抛出错误
+        throw error;
+      })
   );
 });
 
