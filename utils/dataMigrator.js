@@ -104,6 +104,12 @@ class IndexedDBManager {
                 return { upgraded: true, fromVersion: currentVersion, toVersion: this.dbVersion };
             } else {
                 console.log(`数据库版本正常 (版本 ${currentVersion})`);
+                
+                // 即使版本正确，也要确保dbManager.db被正确设置
+                if (!this.db) {
+                    await this.initDB();
+                }
+                
                 return { upgraded: false, currentVersion };
             }
             
@@ -193,6 +199,11 @@ class IndexedDBManager {
             
             request.onsuccess = () => {
                 this.db = request.result;
+                
+                // 同时更新全局变量
+                window.db = this.db;
+                window.isIndexedDBReady = true;
+                
                 resolve(this.db);
             };
             
@@ -1372,10 +1383,9 @@ window.DatabaseManager = {
             // 如果已经有现有的db实例，先检查版本
             if (window.db && window.isIndexedDBReady) {
                 dbManager.db = window.db;
-                dbManager.dbVersion = window.db.version;
                 
-                // 检查是否需要升级
-                if (window.db.version < dbManager.dbVersion) {
+                // 检查是否需要升级（确保使用正确的目标版本）
+                if (window.db.version < 11) {
                     console.log('检测到已有数据库版本较低，需要升级');
                     // 重置状态以便进行升级
                     window.db.close();
@@ -1392,6 +1402,10 @@ window.DatabaseManager = {
                     
                     return { success: true, upgraded: upgradeResult.upgraded, upgradeResult };
                 } else {
+                    // 版本正确，确保dbManager状态同步
+                    dbManager.db = window.db;
+                    dbManager.dbVersion = window.db.version;
+                    
                     return { success: true, upgraded: false };
                 }
             } else {

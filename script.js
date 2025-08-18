@@ -553,6 +553,30 @@ let hashtagCache = {};
 let audio = null;
 let db = null; // IndexedDB 实例
 
+// 全局错误处理 - 捕获未处理的Promise拒绝
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('未处理的Promise拒绝:', {
+        reason: event.reason,
+        promise: event.promise,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 记录到全局错误日志
+    if (!window.errorLog) window.errorLog = [];
+    window.errorLog.push({
+        type: 'unhandledrejection',
+        reason: event.reason?.toString() || 'Unknown',
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 防止控制台显示未处理的错误（已记录）
+    event.preventDefault();
+});
+
 // === 图片处理辅助函数 ===
 
 /**
@@ -733,6 +757,15 @@ async function init() {
                     if (result.upgraded) {
                         console.log('数据库已自动升级到最新版本');
                     }
+                    
+                    // 确保全局变量和本地变量都正确设置
+                    db = window.db;
+                    isIndexedDBReady = window.isIndexedDBReady || true;
+                    
+                    // 验证数据库连接是否真正建立
+                    if (!db) {
+                        throw new Error('dataMigrator成功但数据库实例为空');
+                    }
                 } else {
                     console.warn('dataMigrator 初始化失败，回退到直接初始化:', result.error);
                     await openDB();
@@ -741,15 +774,30 @@ async function init() {
                 console.log('dataMigrator 未加载，使用直接初始化');
                 await openDB();
             }
+            
+            // 二次确认数据库连接状态
+            if (!db) {
+                throw new Error('数据库连接未建立：db变量为null');
+            }
+            
+            if (!window.db) {
+                throw new Error('数据库连接未建立：window.db为null');
+            }
             console.log('数据库连接建立成功');
         }, '应用初始化 - 数据库连接');
         
-        // 检查数据库版本并提示用户
-        if (!db.objectStoreNames.contains('emojiImages')) {
+        // 检查数据库版本并提示用户（安全检查）
+        if (db && db.objectStoreNames && !db.objectStoreNames.contains('emojiImages')) {
             console.log('检测到数据库需要升级，表情包功能将使用兼容模式。');
             if (typeof showToast === 'function') {
                 showToast('数据库已更新，表情包功能已优化！如需使用新功能，请点击"🚀数据库优化"按钮');
             }
+        } else if (!db) {
+            console.error('数据库连接失败，无法检查存储结构');
+            if (typeof showToast === 'function') {
+                showToast('数据库连接失败，请刷新页面重试', 'error');
+            }
+            throw new Error('数据库连接失败');
         }
         
         // 从IndexedDB加载数据
@@ -758,6 +806,30 @@ async function init() {
         
     } catch (error) {
         console.error('应用初始化失败:', error);
+        
+        // 分析错误类型并提供针对性解决方案
+        let errorType = 'unknown';
+        if (error.message.includes('数据库') || error.message.includes('IndexedDB') || error.message.includes('objectStoreNames')) {
+            errorType = 'database';
+        } else if (error.message.includes('网络') || error.message.includes('fetch')) {
+            errorType = 'network';
+        }
+        
+        // 记录详细错误信息用于调试
+        window.lastInitError = {
+            timestamp: new Date().toISOString(),
+            error: error.message,
+            stack: error.stack,
+            userAgent: navigator.userAgent,
+            url: window.location.href,
+            type: errorType,
+            dbState: {
+                hasWindow: !!window.db,
+                isReady: !!window.isIndexedDBReady,
+                dbVersion: window.db?.version
+            }
+        };
+        
         showDatabaseErrorDialog(error, false);
         throw error;
     }
@@ -9630,19 +9702,43 @@ async function createUserProfileMomentElement(moment) {
     return momentDiv;
 }
 
-// 页面加载后自动检查迁移状态
+// 页面加载后自动检查迁移状态 - 延迟至数据库初始化完成后
 document.addEventListener('DOMContentLoaded', () => {
-    // 等待所有脚本加载完成后再检查
-    setTimeout(() => {
+    // 等待数据库完全初始化后再检查迁移状态
+    const checkMigrationWhenReady = async () => {
+        // 等待数据库就绪
+        let attempts = 0;
+        while ((!window.db || !window.isIndexedDBReady) && attempts < 30) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+        }
+        
+        if (!window.db) {
+            console.warn('数据库初始化超时，跳过迁移检查');
+            return;
+        }
+        
+        // 数据库就绪后执行迁移检查
         if (window.ImageMigrationManager && document.getElementById('migrationStatusText')) {
-            checkImageMigrationStatus();
+            try {
+                await checkImageMigrationStatus();
+            } catch (error) {
+                console.error('检查图片迁移状态失败:', error);
+            }
         }
         
         // 检查聊天表情迁移状态
         if (window.ChatEmojiMigrationManager && document.getElementById('chatEmojiMigrationStatusText')) {
-            checkChatEmojiMigrationStatus();
+            try {
+                await checkChatEmojiMigrationStatus();
+            } catch (error) {
+                console.error('检查聊天表情迁移状态失败:', error);
+            }
         }
-    }, 2000);
+    };
+    
+    // 异步执行，不阻塞其他初始化
+    checkMigrationWhenReady().catch(console.error);
 });
 
 // === Banner上传功能 ===
