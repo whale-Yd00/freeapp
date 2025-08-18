@@ -723,9 +723,24 @@ async function init() {
     try {
         console.log('开始应用初始化...');
         
-        // 使用增强的重试机制打开数据库
+        // 使用 dataMigrator 统一处理数据库初始化和升级
         await executeWithRetry(async () => {
-            await openDB();
+            // 优先使用 dataMigrator 的自动升级功能
+            if (window.DatabaseManager && window.DatabaseManager.init) {
+                const result = await window.DatabaseManager.init();
+                if (result.success) {
+                    console.log('数据库通过 dataMigrator 初始化成功');
+                    if (result.upgraded) {
+                        console.log('数据库已自动升级到最新版本');
+                    }
+                } else {
+                    console.warn('dataMigrator 初始化失败，回退到直接初始化:', result.error);
+                    await openDB();
+                }
+            } else {
+                console.log('dataMigrator 未加载，使用直接初始化');
+                await openDB();
+            }
             console.log('数据库连接建立成功');
         }, '应用初始化 - 数据库连接');
         
@@ -831,47 +846,6 @@ async function init() {
 
 // --- IndexedDB 核心函数 ---
 
-// 静默升级数据库以添加 emojiImages 存储
-async function upgradeToAddEmojiImages() {
-    return new Promise((resolve, reject) => {
-        // 关闭当前连接
-        if (db) {
-            db.close();
-        }
-        
-        // 以更高版本号重新打开数据库，触发升级
-        const upgradeRequest = indexedDB.open('WhaleLLTDB', 9);
-        
-        upgradeRequest.onupgradeneeded = event => {
-            const upgradeDb = event.target.result;
-            console.log('正在升级数据库以添加 emojiImages 存储...');
-            
-            // 创建缺失的 emojiImages 存储
-            if (!upgradeDb.objectStoreNames.contains('emojiImages')) {
-                upgradeDb.createObjectStore('emojiImages', { keyPath: 'tag' });
-                console.log('emojiImages 存储已创建');
-            }
-        };
-        
-        upgradeRequest.onsuccess = event => {
-            db = event.target.result;
-            window.db = db;
-            isIndexedDBReady = true;
-            window.isIndexedDBReady = true;
-            
-            console.log('数据库升级完成，emojiImages 存储已创建');
-            if (typeof showToast === 'function') {
-                showToast('数据库已自动升级，表情图片功能已启用');
-            }
-            resolve();
-        };
-        
-        upgradeRequest.onerror = event => {
-            console.error('数据库升级失败:', event.target.error);
-            reject(event.target.error);
-        };
-    });
-}
 
 // 数据库重试配置
 const DB_RETRY_CONFIG = {
@@ -4537,10 +4511,13 @@ async function saveEmojiImage(tag, base64Data) {
         return;
     }
     
-    // 如果 emojiImages 存储不存在，静默升级数据库
+    // 如果 emojiImages 存储不存在，提示用户刷新页面
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
-        await upgradeToAddEmojiImages();
+        console.log('检测到 emojiImages 存储不存在，需要升级数据库');
+        if (typeof showToast === 'function') {
+            showToast('检测到数据库需要升级，请刷新页面');
+        }
+        return;
     }
     
     try {
@@ -4575,8 +4552,11 @@ async function getEmojiImage(tag) {
         
         // 回退到旧的 emojiImages 存储
         if (!db.objectStoreNames.contains('emojiImages')) {
-            console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
-            await upgradeToAddEmojiImages();
+            console.log('检测到 emojiImages 存储不存在，需要升级数据库');
+            if (typeof showToast === 'function') {
+                showToast('检测到数据库需要升级，请刷新页面');
+            }
+            return null;
         }
         
         const transaction = db.transaction(['emojiImages'], 'readonly');
@@ -4596,10 +4576,13 @@ async function deleteEmojiImage(tag) {
         return;
     }
     
-    // 如果 emojiImages 存储不存在，静默升级数据库
+    // 如果 emojiImages 存储不存在，提示用户刷新页面
     if (!db.objectStoreNames.contains('emojiImages')) {
-        console.log('检测到 emojiImages 存储不存在，正在自动升级数据库...');
-        await upgradeToAddEmojiImages();
+        console.log('检测到 emojiImages 存储不存在，需要升级数据库');
+        if (typeof showToast === 'function') {
+            showToast('检测到数据库需要升级，请刷新页面');
+        }
+        return;
     }
     
     try {
