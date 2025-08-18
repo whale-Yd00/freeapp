@@ -5205,11 +5205,15 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
             }
         }
 
-        // 检查是否有自定义气泡样式
+        // 检查是否有自定义气泡样式（根据消息角色选择不同样式）
         let bubbleHtml = '';
-        if (window.customBubbleStyle && window.customBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
+        const currentBubbleStyle = msg.role === 'user' ? 
+            (window.customBubbleStyleSelf || window.customBubbleStyle) : 
+            (window.customBubbleStyleOthers || window.customBubbleStyle);
+            
+        if (currentBubbleStyle && currentBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
             // 使用自定义气泡样式 - 获取原始内容，不包装 message-content
-            console.log('应用自定义气泡样式');
+            console.log(`应用${msg.role === 'user' ? '我的' : '对方的'}自定义气泡样式`);
             
             let rawContent = '';
             if (msg.type === 'emoji') {
@@ -5239,7 +5243,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
                 }
             }
             
-            bubbleHtml = window.customBubbleStyle.html.replace('{{BUBBLE_TEXT}}', rawContent);
+            bubbleHtml = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', rawContent);
             // 清理 HTML 中的转义换行符，避免显示 \n
             bubbleHtml = bubbleHtml.replace(/\\n/g, '');
             console.log('生成的自定义气泡 HTML:', bubbleHtml);
@@ -5255,7 +5259,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
         if (currentContact.type === 'group' && msg.role !== 'user') {
             const sender = contacts.find(c => c.id === msg.senderId);
             const senderName = sender ? sender.name : '未知';
-            if (window.customBubbleStyle && window.customBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
+            if (currentBubbleStyle && currentBubbleStyle.html && msg.type !== 'emoji' && msg.type !== 'red_packet') {
                 // 对于群聊消息，在自定义气泡前添加发送者信息
                 const groupHeader = `<div class="group-message-header"><div class="group-message-name">${senderName}</div></div>`;
                 
@@ -5284,7 +5288,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
                     }
                 }
                 
-                let customBubbleWithHeader = window.customBubbleStyle.html.replace('{{BUBBLE_TEXT}}', groupHeader + rawContent);
+                let customBubbleWithHeader = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', groupHeader + rawContent);
                 // 清理 HTML 中的转义换行符，避免显示 \n
                 customBubbleWithHeader = customBubbleWithHeader.replace(/\\n/g, '');
                 msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${customBubbleWithHeader}`;
@@ -5296,7 +5300,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
         }
         
         // 调试：输出最终的 HTML 结构
-        if (window.customBubbleStyle && window.customBubbleStyle.html) {
+        if (currentBubbleStyle && currentBubbleStyle.html) {
             console.log('最终消息 HTML 结构:', msgDiv.innerHTML);
         }
         
@@ -10607,10 +10611,14 @@ window.addEventListener('message', async function(event) {
     if (event.data && event.data.type === 'apply-bubble-style') {
         try {
             const bubbleStyleData = event.data.payload;
+            const bubbleType = event.data.bubbleType || 'others'; // 默认为别人的气泡
+            
+            // 根据气泡类型存储到不同的键
+            const storageKey = bubbleType === 'self' ? 'bubbleStyleSelf' : 'bubbleStyle';
             
             // 存储气泡样式到 IndexedDB
-            saveBubbleStyleToStorage(bubbleStyleData).then(() => {
-                console.log('气泡样式已保存到存储');
+            saveBubbleStyleToStorage(bubbleStyleData, storageKey).then(() => {
+                console.log(`${bubbleType === 'self' ? '我的' : '对方的'}气泡样式已保存到存储`);
                 
                 // 如果当前在聊天页面，立即应用样式
                 if (document.getElementById('chatPage').classList.contains('active')) {
@@ -10619,7 +10627,7 @@ window.addEventListener('message', async function(event) {
                 
                 // 显示成功提示
                 if (typeof showToast === 'function') {
-                    showToast('气泡样式已应用！');
+                    showToast(`${bubbleType === 'self' ? '我的' : '对方的'}气泡样式已应用！`);
                 }
             }).catch(error => {
                 console.error('保存气泡样式失败:', error);
@@ -10653,7 +10661,7 @@ window.addEventListener('message', async function(event) {
 /**
  * 保存气泡样式到存储
  */
-async function saveBubbleStyleToStorage(styleData) {
+async function saveBubbleStyleToStorage(styleData, storageKey = 'bubbleStyle') {
     try {
         // 保存完整的气泡样式数据（包含所有配置）
         const bubbleStyleConfig = {
@@ -10662,11 +10670,11 @@ async function saveBubbleStyleToStorage(styleData) {
             lastModified: new Date().toISOString()  // 添加时间戳以跟踪更新
         };
         
-        await themeConfigManager.saveThemeConfig('bubbleStyle', bubbleStyleConfig);
-        console.log('气泡样式已保存到 themeConfig 并自动启用');
+        await themeConfigManager.saveThemeConfig(storageKey, bubbleStyleConfig);
+        console.log(`${storageKey}已保存到 themeConfig 并自动启用`);
         
     } catch (error) {
-        console.error('保存气泡样式失败:', error);
+        console.error(`保存${storageKey}失败:`, error);
         throw error;
     }
 }
@@ -10676,53 +10684,92 @@ async function saveBubbleStyleToStorage(styleData) {
  */
 async function applyBubbleStyleToCurrentChat() {
     try {
-        // 直接从数据库读取气泡样式（兼容两种存储方式）
+        // 同时读取两种气泡样式
         await themeConfigManager.init();
-        const bubbleStyle = await themeConfigManager.getThemeConfig('bubbleStyle');
+        const bubbleStyleOthers = await themeConfigManager.getThemeConfig('bubbleStyle');
+        const bubbleStyleSelf = await themeConfigManager.getThemeConfig('bubbleStyleSelf');
         
         // 如果通过 themeConfigManager 获取不到，直接从数据库读取
-        let directBubbleStyle = null;
-        if (!bubbleStyle) {
-            directBubbleStyle = await new Promise((resolve) => {
+        let directBubbleStyleOthers = null;
+        let directBubbleStyleSelf = null;
+        
+        if (!bubbleStyleOthers || !bubbleStyleSelf) {
+            const results = await new Promise((resolve) => {
                 const transaction = themeConfigManager.db.transaction(['themeConfig'], 'readonly');
                 const store = transaction.objectStore('themeConfig');
-                const request = store.get('bubbleStyle');
+                let others = null, self = null, completed = 0;
                 
-                request.onsuccess = () => {
-                    resolve(request.result);
+                const checkComplete = () => {
+                    completed++;
+                    if (completed === 2) {
+                        resolve({ others, self });
+                    }
                 };
                 
-                request.onerror = () => {
-                    resolve(null);
+                const requestOthers = store.get('bubbleStyle');
+                requestOthers.onsuccess = () => {
+                    others = requestOthers.result;
+                    checkComplete();
                 };
+                requestOthers.onerror = () => checkComplete();
+                
+                const requestSelf = store.get('bubbleStyleSelf');
+                requestSelf.onsuccess = () => {
+                    self = requestSelf.result;
+                    checkComplete();
+                };
+                requestSelf.onerror = () => checkComplete();
             });
+            
+            directBubbleStyleOthers = results.others;
+            directBubbleStyleSelf = results.self;
         }
         
         // 使用找到的数据
-        const styleData = bubbleStyle || directBubbleStyle;
+        const styleDataOthers = bubbleStyleOthers || directBubbleStyleOthers;
+        const styleDataSelf = bubbleStyleSelf || directBubbleStyleSelf;
         
-        // 兼容多种数据结构
-        const isEnabled = styleData?.enabled || styleData?.data?.enabled;
-        const actualStyleData = styleData?.data || styleData;
+        // 处理别人的气泡样式
+        const isEnabledOthers = styleDataOthers?.enabled || styleDataOthers?.data?.enabled;
+        const actualStyleDataOthers = styleDataOthers?.data || styleDataOthers;
         
-        // 如果有html内容，就认为是启用的（向后兼容）
-        // 或者没有enabled字段但有完整配置，也认为是启用的（新保存的样式）
-        const shouldEnable = isEnabled || 
-                           (styleData && actualStyleData?.html) || 
-                           (styleData && actualStyleData?.borderWidth !== undefined && !('enabled' in styleData));
+        const shouldEnableOthers = isEnabledOthers || 
+                                 (styleDataOthers && actualStyleDataOthers?.html) || 
+                                 (styleDataOthers && actualStyleDataOthers?.borderWidth !== undefined && !('enabled' in styleDataOthers));
         
-        if (styleData && shouldEnable && actualStyleData?.html) {
-            // 将自定义样式应用到全局样式变量
-            window.customBubbleStyle = actualStyleData;
-            console.log('应用气泡样式到当前聊天');
-            
-            // 重新渲染当前聊天消息以应用新样式
-            if (window.currentContact) {
-                await renderMessages();
-            }
-            
-            console.log('气泡样式已应用到当前聊天');
+        // 处理自己的气泡样式
+        const isEnabledSelf = styleDataSelf?.enabled || styleDataSelf?.data?.enabled;
+        const actualStyleDataSelf = styleDataSelf?.data || styleDataSelf;
+        
+        const shouldEnableSelf = isEnabledSelf || 
+                               (styleDataSelf && actualStyleDataSelf?.html) || 
+                               (styleDataSelf && actualStyleDataSelf?.borderWidth !== undefined && !('enabled' in styleDataSelf));
+        
+        // 将自定义样式应用到全局样式变量
+        if (styleDataOthers && shouldEnableOthers && actualStyleDataOthers?.html) {
+            window.customBubbleStyleOthers = actualStyleDataOthers;
+            console.log('应用对方气泡样式到当前聊天');
         } else {
+            window.customBubbleStyleOthers = null;
+        }
+        
+        if (styleDataSelf && shouldEnableSelf && actualStyleDataSelf?.html) {
+            window.customBubbleStyleSelf = actualStyleDataSelf;
+            console.log('应用我的气泡样式到当前聊天');
+        } else {
+            window.customBubbleStyleSelf = null;
+        }
+        
+        // 兼容旧版本：如果有旧的customBubbleStyle，保持向后兼容
+        if (window.customBubbleStyleOthers && !window.customBubbleStyle) {
+            window.customBubbleStyle = window.customBubbleStyleOthers;
+        }
+        
+        // 重新渲染当前聊天消息以应用新样式
+        if (window.currentContact && (window.customBubbleStyleOthers || window.customBubbleStyleSelf)) {
+            await renderMessages();
+            console.log('气泡样式已应用到当前聊天');
+        } else if (!window.customBubbleStyleOthers && !window.customBubbleStyleSelf) {
             // 清除自定义样式，使用默认样式
             window.customBubbleStyle = null;
             console.log('未找到启用的气泡样式，使用默认样式');
@@ -10752,61 +10799,95 @@ function getCurrentContactId() {
  */
 async function loadCustomBubbleStyle() {
     try {
-        // 直接从数据库读取气泡样式（兼容两种存储方式）
+        // 同时读取两种气泡样式
         await themeConfigManager.init();
-        const bubbleStyle = await themeConfigManager.getThemeConfig('bubbleStyle');
+        const bubbleStyleOthers = await themeConfigManager.getThemeConfig('bubbleStyle');
+        const bubbleStyleSelf = await themeConfigManager.getThemeConfig('bubbleStyleSelf');
         
         // 如果通过 themeConfigManager 获取不到，直接从数据库读取
-        let directBubbleStyle = null;
-        if (!bubbleStyle) {
-            directBubbleStyle = await new Promise((resolve) => {
+        let directBubbleStyleOthers = null;
+        let directBubbleStyleSelf = null;
+        
+        if (!bubbleStyleOthers || !bubbleStyleSelf) {
+            const results = await new Promise((resolve) => {
                 const transaction = themeConfigManager.db.transaction(['themeConfig'], 'readonly');
                 const store = transaction.objectStore('themeConfig');
-                const request = store.get('bubbleStyle');
+                let others = null, self = null, completed = 0;
                 
-                request.onsuccess = () => {
-                    resolve(request.result);
+                const checkComplete = () => {
+                    completed++;
+                    if (completed === 2) {
+                        resolve({ others, self });
+                    }
                 };
                 
-                request.onerror = () => {
-                    resolve(null);
+                const requestOthers = store.get('bubbleStyle');
+                requestOthers.onsuccess = () => {
+                    others = requestOthers.result;
+                    checkComplete();
                 };
+                requestOthers.onerror = () => checkComplete();
+                
+                const requestSelf = store.get('bubbleStyleSelf');
+                requestSelf.onsuccess = () => {
+                    self = requestSelf.result;
+                    checkComplete();
+                };
+                requestSelf.onerror = () => checkComplete();
             });
+            
+            directBubbleStyleOthers = results.others;
+            directBubbleStyleSelf = results.self;
         }
         
         // 使用找到的数据
-        const styleData = bubbleStyle || directBubbleStyle;
+        const styleDataOthers = bubbleStyleOthers || directBubbleStyleOthers;
+        const styleDataSelf = bubbleStyleSelf || directBubbleStyleSelf;
         
-        console.log('加载的气泡样式配置:', styleData);
-        console.log('styleData.enabled:', styleData?.enabled);
-        console.log('styleData.data?.enabled:', styleData?.data?.enabled);
-        console.log('styleData.html 存在:', !!styleData?.html);
-        console.log('直接从数据库读取:', !!directBubbleStyle);
+        console.log('加载的对方气泡样式配置:', styleDataOthers);
+        console.log('加载的我的气泡样式配置:', styleDataSelf);
         
-        // 兼容多种数据结构：直接在顶层的enabled，或者在data中的enabled
-        const isEnabled = styleData?.enabled || styleData?.data?.enabled;
-        const actualStyleData = styleData?.data || styleData;
+        // 处理对方气泡样式
+        const isEnabledOthers = styleDataOthers?.enabled || styleDataOthers?.data?.enabled;
+        const actualStyleDataOthers = styleDataOthers?.data || styleDataOthers;
         
-        // 如果有html内容，就认为是启用的（向后兼容）
-        // 或者没有enabled字段但有完整配置，也认为是启用的（新保存的样式）
-        const shouldEnable = isEnabled || 
-                           (styleData && actualStyleData?.html) || 
-                           (styleData && actualStyleData?.borderWidth !== undefined && !('enabled' in styleData));
+        const shouldEnableOthers = isEnabledOthers || 
+                                 (styleDataOthers && actualStyleDataOthers?.html) || 
+                                 (styleDataOthers && actualStyleDataOthers?.borderWidth !== undefined && !('enabled' in styleDataOthers));
         
-        if (styleData && shouldEnable && actualStyleData?.html) {
-            window.customBubbleStyle = actualStyleData;
-            console.log('自定义气泡样式已从 themeConfig 加载并启用');
-            console.log('设置的 window.customBubbleStyle:', window.customBubbleStyle);
-            console.log('html 内容存在:', !!window.customBubbleStyle.html);
+        // 处理我的气泡样式
+        const isEnabledSelf = styleDataSelf?.enabled || styleDataSelf?.data?.enabled;
+        const actualStyleDataSelf = styleDataSelf?.data || styleDataSelf;
+        
+        const shouldEnableSelf = isEnabledSelf || 
+                               (styleDataSelf && actualStyleDataSelf?.html) || 
+                               (styleDataSelf && actualStyleDataSelf?.borderWidth !== undefined && !('enabled' in styleDataSelf));
+        
+        // 应用对方气泡样式
+        if (styleDataOthers && shouldEnableOthers && actualStyleDataOthers?.html) {
+            window.customBubbleStyleOthers = actualStyleDataOthers;
+            console.log('对方气泡样式已从 themeConfig 加载并启用');
         } else {
+            window.customBubbleStyleOthers = null;
+            console.log('未找到启用的对方气泡样式，使用默认样式');
+        }
+        
+        // 应用我的气泡样式
+        if (styleDataSelf && shouldEnableSelf && actualStyleDataSelf?.html) {
+            window.customBubbleStyleSelf = actualStyleDataSelf;
+            console.log('我的气泡样式已从 themeConfig 加载并启用');
+        } else {
+            window.customBubbleStyleSelf = null;
+            console.log('未找到启用的我的气泡样式，使用默认样式');
+        }
+        
+        // 兼容旧版本：如果有对方气泡样式，保持向后兼容
+        if (window.customBubbleStyleOthers && !window.customBubbleStyle) {
+            window.customBubbleStyle = window.customBubbleStyleOthers;
+            console.log('设置向后兼容的 customBubbleStyle');
+        } else if (!window.customBubbleStyleOthers && !window.customBubbleStyleSelf) {
             // 清除任何之前的自定义样式
             window.customBubbleStyle = null;
-            console.log('未找到启用的自定义气泡样式，使用默认样式', {
-                hasStyleData: !!styleData,
-                isEnabled,
-                shouldEnable,
-                hasHtml: !!actualStyleData?.html
-            });
         }
         
     } catch (error) {

@@ -43,6 +43,11 @@
             cursor: grabbing;
             z-index: 10000 !important;
         }
+        .sticker-wrapper.inactive {
+            opacity: 0.5;
+            pointer-events: none;
+            cursor: not-allowed;
+        }
         .sticker-image {
             width: 100%;
             height: 100%;
@@ -87,6 +92,20 @@
         .toast.show {
             opacity: 1;
         }
+
+        .bubble-type-btn {
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: none;
+            outline: none;
+        }
+        .bubble-type-btn:hover {
+            opacity: 0.8;
+        }
+        
+        .sticker-container {
+            position: relative;
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
@@ -98,14 +117,40 @@
         </header>
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6 flex items-center justify-center min-h-[400px] lg:min-h-[600px] overflow-hidden">
-                <div id="previewContainer" class="relative w-full h-full flex items-center justify-center">
-                    <div id="previewBubble" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(255, 255, 255); border-radius: 12px;">
-                        <span id="bubbleTextContent" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
-                            这里是你的气泡预览区域。点击"管理贴图库"开始创作！
-                        </span>
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6 flex flex-col min-h-[400px] lg:min-h-[600px] overflow-hidden">
+                <div class="flex-1 flex flex-col">
+                    <!-- 气泡类型选择控件 -->
+                    <div class="mb-4 text-center">
+                        <div class="inline-flex items-center bg-slate-200 rounded-full p-1">
+                            <button id="bubbleTypeSelf" class="bubble-type-btn bg-white text-indigo-600 rounded-full px-4 py-2 text-sm font-semibold">我的气泡</button>
+                            <button id="bubbleTypeOthers" class="bubble-type-btn text-slate-600 rounded-full px-4 py-2 text-sm font-semibold">对方气泡</button>
+                        </div>
                     </div>
-                    <div id="stickerLibrary"></div>
+                    
+                    <!-- 双气泡预览区域 -->
+                    <div id="previewContainer" class="relative flex-1 flex flex-col justify-center space-y-4 p-4">
+                        <!-- 我的气泡 -->
+                        <div class="flex justify-end">
+                            <div id="previewBubbleSelf" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(135, 206, 250); border-radius: 12px;">
+                                <span id="bubbleTextContentSelf" style="position: relative; z-index: 10; color: rgb(255, 255, 255);">
+                                    这是我发的消息
+                                </span>
+                                <div id="stickerLibrarySelf" class="sticker-container"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- 对方气泡 -->
+                        <div class="flex justify-start">
+                            <div id="previewBubbleOthers" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(255, 255, 255); border-radius: 12px;">
+                                <span id="bubbleTextContentOthers" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
+                                    这是对方发的消息
+                                </span>
+                                <div id="stickerLibraryOthers" class="sticker-container"></div>
+                            </div>
+                        </div>
+                        
+                        <div id="stickerLibrary"></div>
+                    </div>
                 </div>
             </div>
 
@@ -210,8 +255,10 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const previewContainer = document.getElementById('previewContainer');
-            const previewBubble = document.getElementById('previewBubble');
-            const bubbleTextContent = document.getElementById('bubbleTextContent');
+            const previewBubbleSelf = document.getElementById('previewBubbleSelf');
+            const previewBubbleOthers = document.getElementById('previewBubbleOthers');
+            const bubbleTextContentSelf = document.getElementById('bubbleTextContentSelf');
+            const bubbleTextContentOthers = document.getElementById('bubbleTextContentOthers');
             const stickerLibraryContainer = document.getElementById('stickerLibrary');
             const imageProcessorModal = document.getElementById('imageProcessorModal');
             const stickerGallery = document.getElementById('stickerGallery');
@@ -234,8 +281,8 @@
                 borderWidth: document.getElementById('borderWidth'),
                 borderWidthValue: document.getElementById('borderWidthValue'),
                 borderColor: document.getElementById('borderColor'),
-                textColor: document.getElementById('textColor'), // 【新增】
-                fontFamily: document.getElementById('fontFamily'), // 【新增】字体选择器
+                textColor: document.getElementById('textColor'),
+                fontFamily: document.getElementById('fontFamily'),
                 borderRadius: document.getElementById('borderRadius'),
                 borderRadiusValue: document.getElementById('borderRadiusValue'),
                 bgTypeSolid: document.getElementById('bgTypeSolid'),
@@ -252,6 +299,8 @@
                 bubbleText: document.getElementById('bubbleText'),
                 generateCodeBtn: document.getElementById('generateCodeBtn'),
                 resetToDefaultBtn: document.getElementById('resetToDefaultBtn'),
+                bubbleTypeSelf: document.getElementById('bubbleTypeSelf'),
+                bubbleTypeOthers: document.getElementById('bubbleTypeOthers'),
             };
 
             const DB_NAME = 'WhaleLLTDB';
@@ -264,6 +313,7 @@
             let currentBgType = 'solid';
             let selectedStickerWrapper = null;
             let zIndexCounter = 11;
+            let currentBubbleType = 'self'; // 'self' 或 'others'
 
             function showToast(message) {
                 const toast = document.getElementById('toast');
@@ -375,29 +425,156 @@
             function updateBubbleStyle() {
                 const borderWidth = controls.borderWidth.value;
                 const borderRadius = controls.borderRadius.value;
-                previewBubble.style.borderWidth = `${borderWidth}px`;
-                previewBubble.style.borderColor = controls.borderColor.value;
-                previewBubble.style.borderRadius = `${borderRadius}px`;
                 
-                // 【新增】更新文本颜色
-                bubbleTextContent.style.color = controls.textColor.value;
+                // 获取当前编辑的气泡元素
+                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
                 
-                // 【新增】更新字体
-                bubbleTextContent.style.fontFamily = controls.fontFamily.value;
+                currentBubble.style.borderWidth = `${borderWidth}px`;
+                currentBubble.style.borderColor = controls.borderColor.value;
+                currentBubble.style.borderRadius = `${borderRadius}px`;
+                
+                // 更新文本颜色
+                currentTextContent.style.color = controls.textColor.value;
+                
+                // 更新字体
+                currentTextContent.style.fontFamily = controls.fontFamily.value;
 
                 if (currentBgType === 'solid') {
                     const color = controls.bgColor.value;
                     const opacity = controls.bgOpacity.value;
                     const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
-                    previewBubble.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    currentBubble.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
                 } else {
                     const color1 = controls.gradientColor1.value, color2 = controls.gradientColor2.value, angle = controls.gradientAngle.value;
-                    previewBubble.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+                    currentBubble.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
                 }
                 controls.borderWidthValue.textContent = `${borderWidth}px`;
                 controls.borderRadiusValue.textContent = `${borderRadius}px`;
                 controls.bgOpacityValue.textContent = `${Math.round(controls.bgOpacity.value * 100)}%`;
                 controls.gradientAngleValue.textContent = `${controls.gradientAngle.value}deg`;
+            }
+
+            // 获取当前气泡类型
+            function getCurrentBubbleType() {
+                return currentBubbleType || 'self';
+            }
+
+            // 更新所有贴纸的交互状态
+            function updateStickersInteractionState() {
+                // 更新自己气泡中的贴纸状态
+                previewBubbleSelf.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
+                    if (currentBubbleType === 'self') {
+                        wrapper.classList.remove('inactive');
+                    } else {
+                        wrapper.classList.add('inactive');
+                    }
+                });
+
+                // 更新对方气泡中的贴纸状态
+                previewBubbleOthers.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
+                    if (currentBubbleType === 'others') {
+                        wrapper.classList.remove('inactive');
+                    } else {
+                        wrapper.classList.add('inactive');
+                    }
+                });
+            }
+
+            // 切换气泡类型
+            async function switchBubbleType(type) {
+                currentBubbleType = type;
+                
+                // 更新按钮状态
+                if (type === 'self') {
+                    controls.bubbleTypeSelf.classList.add('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeSelf.classList.remove('text-slate-600');
+                    controls.bubbleTypeOthers.classList.remove('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeOthers.classList.add('text-slate-600');
+                } else {
+                    controls.bubbleTypeOthers.classList.add('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeOthers.classList.remove('text-slate-600');
+                    controls.bubbleTypeSelf.classList.remove('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeSelf.classList.add('text-slate-600');
+                }
+                
+                // 加载对应类型的样式设置
+                await loadBubbleTypeSettings(type);
+                
+                // 更新贴纸交互状态
+                updateStickersInteractionState();
+                
+                showToast(`已切换到${type === 'self' ? '我的气泡' : '对方气泡'}编辑模式`);
+            }
+
+            // 加载指定气泡类型的设置
+            async function loadBubbleTypeSettings(type) {
+                const targetBubble = type === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                const targetTextContent = type === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                
+                // 首先尝试从保存的配置中加载
+                const styleKey = type === 'self' ? 'bubbleStyleSelf' : 'bubbleStyle';
+                const savedConfig = await loadBubbleStyleConfig(styleKey);
+                
+                if (savedConfig) {
+                    // 如果有保存的配置，应用到控件
+                    console.log(`加载${type === 'self' ? '我的' : '对方的'}气泡保存配置`);
+                    
+                    // 应用基础样式到控件
+                    controls.borderWidth.value = savedConfig.borderWidth || 1;
+                    controls.borderColor.value = savedConfig.borderColor || '#4f46e5';
+                    controls.borderRadius.value = savedConfig.borderRadius || 12;
+                    controls.textColor.value = savedConfig.textColor || '#333333';
+                    controls.fontFamily.value = savedConfig.fontFamily || 'Inter';
+                    
+                    // 应用背景样式到控件
+                    currentBgType = savedConfig.backgroundType || 'solid';
+                    controls.bgColor.value = savedConfig.backgroundColor || '#ffffff';
+                    controls.bgOpacity.value = savedConfig.backgroundOpacity || 1;
+                    controls.gradientColor1.value = savedConfig.gradientColor1 || '#a5b4fc';
+                    controls.gradientColor2.value = savedConfig.gradientColor2 || '#e0e7ff';
+                    controls.gradientAngle.value = savedConfig.gradientAngle || 145;
+                    
+                    // 切换背景类型UI
+                    if (currentBgType === 'gradient') {
+                        controls.bgTypeGradient.click();
+                    } else {
+                        controls.bgTypeSolid.click();
+                    }
+                    
+                    // 文本内容始终使用默认值，不从配置中加载
+                    const defaultText = type === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                    controls.bubbleText.value = defaultText;
+                    targetTextContent.textContent = defaultText;
+                    
+                } else {
+                    // 如果没有保存的配置，使用默认值
+                    console.log(`使用${type === 'self' ? '我的' : '对方的'}气泡默认配置`);
+                    
+                    // 设置默认值
+                    controls.borderWidth.value = 1;
+                    controls.borderColor.value = '#4f46e5';
+                    controls.borderRadius.value = 12;
+                    controls.textColor.value = type === 'self' ? '#ffffff' : '#333333';
+                    controls.fontFamily.value = 'Inter';
+                    
+                    currentBgType = 'solid';
+                    controls.bgColor.value = type === 'self' ? '#87CEEB' : '#ffffff';
+                    controls.bgOpacity.value = 1;
+                    controls.gradientColor1.value = '#a5b4fc';
+                    controls.gradientColor2.value = '#e0e7ff';
+                    controls.gradientAngle.value = 145;
+                    
+                    controls.bgTypeSolid.click();
+                    
+                    // 文本内容始终使用默认值
+                    const defaultText = type === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                    controls.bubbleText.value = defaultText;
+                    targetTextContent.textContent = defaultText;
+                }
+                
+                // 更新样式显示
+                updateBubbleStyle();
             }
 
             function openProcessor() { 
@@ -545,7 +722,12 @@
                     const deleteBtn = document.createElement('button');
                     deleteBtn.innerHTML = '&times;';
                     deleteBtn.className = 'absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10';
-                    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteSticker(sticker.id); });
+                    deleteBtn.addEventListener('click', async (e) => { 
+                        e.stopPropagation(); 
+                        if (confirm('确定要删除这个贴纸吗？此操作将永久删除文件且无法恢复。')) {
+                            await deleteSticker(sticker.id); 
+                        }
+                    });
                     
                     container.appendChild(img);
                     container.appendChild(deleteBtn);
@@ -553,10 +735,33 @@
                 }
             }
             
-            function deleteSticker(id) {
+            async function deleteSticker(id) {
+                // 首先获取要删除的贴纸信息，以便清理文件存储
+                const stickerToDelete = stickerLibrary.find(s => s.id === id);
+                
+                if (stickerToDelete && stickerToDelete.fileId && fileStorageManager) {
+                    try {
+                        console.log('清理贴纸文件存储，stickerId:', id, 'fileId:', stickerToDelete.fileId);
+                        
+                        // 删除文件引用
+                        await fileStorageManager.deleteFileReference('bubble_sticker_' + id);
+                        console.log('文件引用删除成功');
+                        
+                        // 删除实际文件（FileStorageManager会检查是否还有其他引用）
+                        await fileStorageManager.deleteFile(stickerToDelete.fileId);
+                        console.log('文件存储删除成功');
+                        
+                    } catch (error) {
+                        console.error('清理文件存储失败:', error);
+                        // 即使文件存储清理失败，也继续删除贴纸记录
+                    }
+                }
+                
+                // 从贴纸库中移除
                 stickerLibrary = stickerLibrary.filter(s => s.id != id);
                 saveStickerLibraryToStorage();
                 populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
+                
                 if (currentEditingStickerId == id) {
                     currentEditingStickerId = null;
                     editorPlaceholder.classList.remove('hidden');
@@ -680,9 +885,11 @@
                     wrapper.appendChild(newSticker);
                     wrapper.appendChild(resizeHandle);
                     
-                    previewBubble.appendChild(wrapper);
+                    // 根据当前选择的气泡类型添加贴图
+                    const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                    targetBubble.appendChild(wrapper);
 
-                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    const bubbleRect = targetBubble.getBoundingClientRect();
                     const initialWidth = 120;
                     wrapper.style.width = `${initialWidth}px`;
                     const tempImg = new Image();
@@ -695,6 +902,9 @@
                     };
                     
                     makePlacedStickerInteractive(wrapper);
+                    
+                    // 添加贴纸后更新交互状态
+                    updateStickersInteractionState();
                 });
             }
             
@@ -703,12 +913,28 @@
                 let isDragging = false, isResizing = false;
                 let offsetX, offsetY;
 
+                function getCurrentBubbleContainer() {
+                    // 获取当前选中的气泡容器
+                    const currentType = getCurrentBubbleType();
+                    return currentType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                }
+
+                function isCurrentBubbleSticker() {
+                    // 检查这个贴纸是否属于当前选中的气泡
+                    const currentBubble = getCurrentBubbleContainer();
+                    return currentBubble.contains(wrapper);
+                }
+
                 function onMoveDown(e) {
+                    // 只允许当前选中气泡中的贴纸交互
+                    if (!isCurrentBubbleSticker()) {
+                        return;
+                    }
                     isDragging = true;
                     wrapper.classList.add('dragging');
                     const event = e.touches ? e.touches[0] : e;
                     const rect = wrapper.getBoundingClientRect();
-                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    const bubbleRect = getCurrentBubbleContainer().getBoundingClientRect();
                     offsetX = event.clientX - rect.left;
                     offsetY = event.clientY - rect.top;
                     document.addEventListener('mousemove', onMove);
@@ -720,7 +946,7 @@
                     if (!isDragging) return;
                     e.preventDefault();
                     const event = e.touches ? e.touches[0] : e;
-                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    const bubbleRect = getCurrentBubbleContainer().getBoundingClientRect();
                     wrapper.style.left = `${event.clientX - bubbleRect.left - offsetX}px`;
                     wrapper.style.top = `${event.clientY - bubbleRect.top - offsetY}px`;
                 }
@@ -736,6 +962,10 @@
                 wrapper.addEventListener('touchstart', onMoveDown, { passive: false });
 
                 function onResizeDown(e) {
+                    // 只允许当前选中气泡中的贴纸交互
+                    if (!isCurrentBubbleSticker()) {
+                        return;
+                    }
                     e.stopPropagation();
                     isResizing = true;
                     const event = e.touches ? e.touches[0] : e;
@@ -772,11 +1002,19 @@
                 resizeHandle.addEventListener('touchstart', onResizeDown, { passive: false });
 
                 wrapper.addEventListener('dblclick', () => {
+                    // 只允许当前选中气泡中的贴纸删除
+                    if (!isCurrentBubbleSticker()) {
+                        return;
+                    }
                     wrapper.remove();
                     showToast('贴图已移除');
                 });
 
                 wrapper.addEventListener('click', (e) => {
+                    // 只允许当前选中气泡中的贴纸被选择
+                    if (!isCurrentBubbleSticker()) {
+                        return;
+                    }
                     e.stopPropagation();
                     selectSticker(wrapper);
                 });
@@ -797,7 +1035,7 @@
                 }
             }
             previewContainer.addEventListener('click', (e) => {
-                if (e.target === previewContainer || e.target === previewBubble) {
+                if (e.target === previewContainer || e.target === previewBubbleSelf || e.target === previewBubbleOthers) {
                     selectSticker(null);
                 }
             });
@@ -856,21 +1094,154 @@
 
             // 【修改】将 textColor 和 fontFamily 添加到事件监听循环中
             ['borderWidth', 'borderColor', 'borderRadius', 'bgColor', 'bgOpacity', 'gradientColor1', 'gradientColor2', 'gradientAngle', 'textColor', 'fontFamily'].forEach(id => { if (controls[id]) { controls[id].addEventListener('input', updateBubbleStyle); } });
-            controls.bubbleText.addEventListener('input', () => { bubbleTextContent.textContent = controls.bubbleText.value; });
+            controls.bubbleText.addEventListener('input', () => { 
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                currentTextContent.textContent = controls.bubbleText.value; 
+            });
             controls.bgTypeSolid.addEventListener('click', () => { currentBgType = 'solid'; controls.solidBgControls.classList.remove('hidden'); controls.gradientBgControls.classList.add('hidden'); controls.bgTypeSolid.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.remove('text-slate-600'); controls.bgTypeGradient.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.add('text-slate-600'); updateBubbleStyle(); });
             controls.bgTypeGradient.addEventListener('click', () => { currentBgType = 'gradient'; controls.solidBgControls.classList.add('hidden'); controls.gradientBgControls.classList.remove('hidden'); controls.bgTypeGradient.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.remove('text-slate-600'); controls.bgTypeSolid.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.add('text-slate-600'); updateBubbleStyle(); });
+
+            // 气泡类型切换事件监听器
+            controls.bubbleTypeSelf.addEventListener('click', () => switchBubbleType('self'));
+            controls.bubbleTypeOthers.addEventListener('click', () => switchBubbleType('others'));
             
+            // CSS样式解析辅助函数
+            function extractRgbColor(colorValue) {
+                if (!colorValue) return '#ffffff';
+                // 如果是rgb/rgba格式，提取RGB部分
+                const match = colorValue.match(/rgba?\(([^)]+)\)/);
+                if (match) {
+                    const values = match[1].split(',').map(v => parseInt(v.trim()));
+                    return `#${values.slice(0, 3).map(v => v.toString(16).padStart(2, '0')).join('')}`;
+                }
+                // 如果已经是hex格式，直接返回
+                if (colorValue.startsWith('#')) return colorValue;
+                return '#ffffff';
+            }
+
+            function extractAlpha(colorValue) {
+                if (!colorValue) return 1;
+                const match = colorValue.match(/rgba?\([^,]+,[^,]+,[^,]+,?\s*([^)]*)\)/);
+                if (match && match[1]) {
+                    return parseFloat(match[1]) || 1;
+                }
+                return 1;
+            }
+
+            function extractGradientColors(backgroundValue) {
+                if (!backgroundValue || !backgroundValue.includes('gradient')) {
+                    return ['#ffffff', '#ffffff'];
+                }
+                // 匹配gradient中的颜色
+                const colorMatches = backgroundValue.match(/(#[0-9a-fA-F]{6}|rgb\([^)]+\)|rgba\([^)]+\))/g);
+                if (colorMatches && colorMatches.length >= 2) {
+                    return [extractRgbColor(colorMatches[0]), extractRgbColor(colorMatches[1])];
+                }
+                return ['#ffffff', '#ffffff'];
+            }
+
+            function extractGradientAngle(backgroundValue) {
+                if (!backgroundValue || !backgroundValue.includes('gradient')) {
+                    return 0;
+                }
+                const angleMatch = backgroundValue.match(/(\d+)deg/);
+                return angleMatch ? parseInt(angleMatch[1]) : 0;
+            }
+
+            // 为指定气泡类型生成完整配置
+            function generateBubbleConfig(bubbleType) {
+                const targetBubble = bubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                const targetTextContent = bubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const bubbleStyle = window.getComputedStyle(targetBubble);
+                const textStyle = window.getComputedStyle(targetTextContent);
+                
+                // 生成贴纸HTML
+                let htmlStickers = '';
+                const bubbleWidth = targetBubble.offsetWidth;
+                const bubbleHeight = targetBubble.offsetHeight;
+
+                targetBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
+                    const stickerImg = stickerWrapper.querySelector('.sticker-image');
+                    const stickerId = stickerWrapper.dataset.id;
+                    const stickerData = stickerLibrary.find(s => s.id == stickerId);
+                    const stickerSrc = stickerImg.src;
+
+                    const leftPx = parseFloat(stickerWrapper.style.left) || 0;
+                    const topPx = parseFloat(stickerWrapper.style.top) || 0;
+                    const stickerWidth = stickerWrapper.offsetWidth;
+                    const stickerHeight = stickerWrapper.offsetHeight;
+
+                    const leftPercent = (leftPx + stickerWidth / 2) / bubbleWidth;
+                    const topPercent = (topPx + stickerHeight / 2) / bubbleHeight;
+                    
+                    let positionStyle = '';
+                    if (leftPercent < 0.33 && topPercent < 0.33) {
+                        positionStyle = `left: ${leftPx.toFixed(0)}px; top: ${topPx.toFixed(0)}px;`;
+                    } else if (leftPercent > 0.67 && topPercent < 0.33) {
+                        positionStyle = `right: ${(bubbleWidth - leftPx - stickerWidth).toFixed(0)}px; top: ${topPx.toFixed(0)}px;`;
+                    } else if (leftPercent < 0.33 && topPercent > 0.67) {
+                        positionStyle = `left: ${leftPx.toFixed(0)}px; bottom: ${(bubbleHeight - topPx - stickerHeight).toFixed(0)}px;`;
+                    } else if (leftPercent > 0.67 && topPercent > 0.67) {
+                        positionStyle = `right: ${(bubbleWidth - leftPx - stickerWidth).toFixed(0)}px; bottom: ${(bubbleHeight - topPx - stickerHeight).toFixed(0)}px;`;
+                    } else {
+                        positionStyle = `left: ${((leftPx + stickerWidth / 2) / bubbleWidth * 100).toFixed(1)}%; top: ${((topPx + stickerHeight / 2) / bubbleHeight * 100).toFixed(1)}%; transform: translate(-50%, -50%);`;
+                    }
+                    
+                    htmlStickers += `    <img src="${stickerSrc}" class="sticker-${index}" alt="sticker" style="position: absolute; ${positionStyle} width: ${stickerWidth.toFixed(0)}px; height: ${stickerHeight.toFixed(0)}px; z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;">\\n`;
+                });
+
+                const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.backgroundColor || bubbleStyle.background}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    ${targetTextContent.textContent}\\n${htmlStickers}</div>`;
+
+                return {
+                    borderWidth: parseInt(bubbleStyle.borderWidth) || 0,
+                    borderColor: bubbleStyle.borderColor || '#000000',
+                    borderRadius: parseInt(bubbleStyle.borderRadius) || 0,
+                    bgColor: extractRgbColor(bubbleStyle.backgroundColor || '#ffffff'),
+                    bgOpacity: extractAlpha(bubbleStyle.backgroundColor || 'rgba(255,255,255,1)'),
+                    bgType: bubbleStyle.background.includes('gradient') ? 'gradient' : 'solid',
+                    gradientColor1: extractGradientColors(bubbleStyle.background)[0] || '#ffffff',
+                    gradientColor2: extractGradientColors(bubbleStyle.background)[1] || '#ffffff',
+                    gradientAngle: extractGradientAngle(bubbleStyle.background) || 0,
+                    textColor: textStyle.color || '#000000',
+                    fontFamily: textStyle.fontFamily || 'system-ui',
+                    // bubbleText: 不保存文本内容，每次使用默认值
+                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
+                        id: wrapper.dataset.id,
+                        left: parseFloat(wrapper.style.left) || 0,
+                        top: parseFloat(wrapper.style.top) || 0,
+                        width: wrapper.offsetWidth,
+                        height: wrapper.offsetHeight,
+                        zIndex: wrapper.style.zIndex || 1
+                    })),
+                    html: htmlTemplate,
+                    enabled: true
+                };
+            }
+
             controls.generateCodeBtn.addEventListener('click', async () => {
-                // 1. 像以前一样，生成HTML和CSS代码
-                const bubbleStyle = window.getComputedStyle(previewBubble);
-                const textStyle = window.getComputedStyle(bubbleTextContent);
+                // 调试：检查数据库连接状态
+                console.log('保存按钮点击，数据库状态:', db ? '已连接' : '未连接');
+                if (!db) {
+                    console.error('数据库连接不可用，尝试重新初始化...');
+                    await initStorageSystem();
+                    if (!db) {
+                        alert('数据库连接失败，无法保存配置');
+                        return;
+                    }
+                }
+                
+                // 1. 生成当前选择气泡类型的HTML和CSS代码（用于显示）
+                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const bubbleStyle = window.getComputedStyle(currentBubble);
+                const textStyle = window.getComputedStyle(currentTextContent);
                 
                 // 【替换开始】
                 let htmlStickers = '';
-                const bubbleWidth = previewBubble.offsetWidth;
-                const bubbleHeight = previewBubble.offsetHeight;
+                const bubbleWidth = currentBubble.offsetWidth;
+                const bubbleHeight = currentBubble.offsetHeight;
 
-                previewBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
+                currentBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
                     const stickerImg = stickerWrapper.querySelector('.sticker-image');
                     const stickerId = stickerWrapper.dataset.id;
                     const stickerData = stickerLibrary.find(s => s.id == stickerId);
@@ -935,12 +1306,9 @@
                     gradientColor1: controls.gradientColor1.value,
                     gradientColor2: controls.gradientColor2.value,
                     gradientAngle: controls.gradientAngle.value,
-                    
-                    // 文本内容
-                    bubbleText: controls.bubbleText.value,
-                    
+                                        
                     // 贴图配置
-                    stickers: Array.from(previewBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
+                    stickers: Array.from(currentBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
                         id: wrapper.dataset.id,
                         left: parseFloat(wrapper.style.left) || 0,
                         top: parseFloat(wrapper.style.top) || 0,
@@ -961,17 +1329,27 @@
                 // 4. 确保启用标志为 true（每次保存都自动启用）
                 completeStyleConfig.enabled = true;
                 
-                // 5. 保存完整配置到本地存储
-                await saveBubbleStyleConfig(completeStyleConfig);
+                // 5. 生成并保存双方气泡的完整配置
+                const selfConfig = generateBubbleConfig('self');
+                const othersConfig = generateBubbleConfig('others');
+                
+                // 同时保存双方的配置
+                await saveBubbleStyleConfig(selfConfig, 'bubbleStyleSelf');
+                await saveBubbleStyleConfig(othersConfig, 'bubbleStyle');
 
-                // 6. 使用 postMessage 将完整配置发送给父窗口
+                // 6. 使用 postMessage 发送双方配置给父窗口
                 window.parent.postMessage({
                     type: 'apply-bubble-style',
-                    payload: completeStyleConfig
+                    payload: {
+                        self: selfConfig,
+                        others: othersConfig,
+                        current: completeStyleConfig // 保留当前选中的配置用于显示
+                    },
+                    bubbleType: currentBubbleType
                 }, '*');
 
                 // 7. 给用户一个反馈
-                showToast('样式已应用到聊天界面！');
+                showToast('已保存双方气泡样式并应用到聊天界面！');
                 const originalText = controls.generateCodeBtn.textContent;
                 controls.generateCodeBtn.textContent = '✅ 已应用!';
                 setTimeout(() => {
@@ -997,7 +1375,7 @@
             });
 
             // 保存完整的气泡样式配置
-            async function saveBubbleStyleConfig(styleConfig) {
+            async function saveBubbleStyleConfig(styleConfig, styleKey = 'bubbleStyle') {
                 try {
                     if (!db) {
                         console.warn('数据库连接不可用，跳过保存配置');
@@ -1009,7 +1387,7 @@
                     
                     // 将 enabled 属性添加到 styleConfig 本身
                     const configData = {
-                        type: 'bubbleStyle',
+                        type: styleKey,
                         ...styleConfig, // 展开所有样式配置到顶层
                         enabled: true,
                         lastModified: new Date().toISOString()
@@ -1018,14 +1396,14 @@
                     store.put(configData);
                     
                     transaction.oncomplete = () => {
-                        console.log('气泡样式配置保存成功');
+                        console.log(`${styleKey}配置保存成功`);
                     };
                     
                     transaction.onerror = () => {
-                        console.error('气泡样式配置保存失败:', transaction.error);
+                        console.error(`${styleKey}配置保存失败:`, transaction.error);
                     };
                 } catch (e) {
-                    console.error("无法保存气泡样式配置:", e);
+                    console.error(`无法保存${styleKey}配置:`, e);
                 }
             }
 
@@ -1040,11 +1418,19 @@
                     const transaction = db.transaction(['themeConfig'], 'readwrite');
                     const store = transaction.objectStore('themeConfig');
                     
-                    // 删除自定义气泡样式配置
-                    store.delete('bubbleStyle');
+                    // 删除两种气泡样式配置，但保留贴纸库
+                    store.delete('bubbleStyle');      // 删除对方气泡配置
+                    store.delete('bubbleStyleSelf');  // 删除自己气泡配置
                     
                     transaction.oncomplete = () => {
-                        console.log('自定义气泡样式配置已删除');
+                        console.log('所有自定义气泡样式配置已删除');
+                        
+                        // 清理两个气泡容器上的贴纸
+                        previewBubbleSelf.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
+                        previewBubbleOthers.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
+                        
+                        // 重置所有控件到默认值
+                        resetControlsToDefault();
                     };
                     
                     transaction.onerror = () => {
@@ -1056,15 +1442,50 @@
                         type: 'reset-bubble-style'
                     }, '*');
                     
-                    showToast('已恢复默认气泡样式！');
+                    showToast('已恢复默认气泡样式！贴纸库保持不变。');
                 } catch (e) {
                     console.error("无法恢复默认气泡样式:", e);
                     showToast("恢复默认样式失败");
                 }
             }
 
+            // 重置所有控件到默认值
+            function resetControlsToDefault() {
+                // 重置基础样式控件
+                controls.bgColor.value = '#3b82f6';
+                controls.textColor.value = '#ffffff';
+                controls.borderRadius.value = 18;
+                controls.borderWidth.value = 0;
+                controls.borderColor.value = '#e2e8f0';
+                controls.bgOpacity.value = 1;
+                controls.borderOpacity.value = 1;
+                
+                // 重置渐变相关
+                controls.bgType.value = 'solid';
+                controls.gradientType.value = 'linear';
+                controls.gradientColor1.value = '#3b82f6';
+                controls.gradientColor2.value = '#1d4ed8';
+                controls.gradientAngle.value = 45;
+                
+                // 重置文本内容为当前气泡类型的默认值
+                const defaultText = currentBubbleType === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                controls.bubbleText.value = defaultText;
+                
+                // 同时更新预览显示
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                currentTextContent.textContent = defaultText;
+                
+                // 更新显示值
+                updateValueDisplays();
+                
+                // 重新应用样式到预览气泡
+                updateBubblePreview();
+                
+                console.log('所有控件已重置到默认值');
+            }
+
             // 加载完整的气泡样式配置
-            async function loadBubbleStyleConfig() {
+            async function loadBubbleStyleConfig(styleKey = 'bubbleStyle') {
                 try {
                     if (!db) {
                         console.warn('数据库连接不可用，跳过加载配置');
@@ -1074,28 +1495,28 @@
                     return new Promise((resolve) => {
                         const transaction = db.transaction(['themeConfig'], 'readonly');
                         const store = transaction.objectStore('themeConfig');
-                        const request = store.get('bubbleStyle');
+                        const request = store.get(styleKey);
                         
                         request.onsuccess = () => {
                             const result = request.result;
                             if (result) {
-                                console.log('气泡样式配置加载成功');
+                                console.log(`${styleKey}配置加载成功`);
                                 // 移除 type 和系统字段，返回样式配置
                                 const { type, lastModified, ...styleConfig } = result;
                                 resolve(styleConfig);
                             } else {
-                                console.log('未找到已保存的气泡样式配置');
+                                console.log(`未找到已保存的${styleKey}配置`);
                                 resolve(null);
                             }
                         };
                         
                         request.onerror = () => {
-                            console.error('加载气泡样式配置失败:', request.error);
+                            console.error(`加载${styleKey}配置失败:`, request.error);
                             resolve(null);
                         };
                     });
                 } catch (e) {
-                    console.error("无法加载气泡样式配置:", e);
+                    console.error(`无法加载${styleKey}配置:`, e);
                     return null;
                 }
             }
@@ -1127,14 +1548,16 @@
                         controls.bgTypeSolid.click();
                     }
                     
-                    // 应用文本内容
-                    controls.bubbleText.value = config.bubbleText || '';
-                    bubbleTextContent.textContent = config.bubbleText || '';
+                    // 文本内容始终使用默认值，不从配置中应用
+                    const defaultText = currentBubbleType === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                    controls.bubbleText.value = defaultText;
+                    const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                    currentTextContent.textContent = defaultText;
                     
-                    // 恢复贴图
-                    if (config.stickers && config.stickers.length > 0) {
-                        await restoreStickers(config.stickers);
-                    }
+                    // 恢复贴图（不在这里处理，在初始化函数中处理）
+                    // if (config.stickers && config.stickers.length > 0) {
+                    //     await restoreStickers(config.stickers, currentBubbleType);
+                    // }
                     
                     // 更新样式
                     updateBubbleStyle();
@@ -1146,9 +1569,10 @@
             }
 
             // 恢复贴图
-            async function restoreStickers(stickerConfigs) {
-                // 清除现有贴图
-                previewBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
+            async function restoreStickers(stickerConfigs, targetBubbleType = 'others') {
+                // 清除对应气泡的现有贴图
+                const targetBubble = targetBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                targetBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
                 
                 for (const stickerConfig of stickerConfigs) {
                     const stickerData = stickerLibrary.find(s => s.id === stickerConfig.id);
@@ -1181,10 +1605,13 @@
                     
                     wrapper.appendChild(newSticker);
                     wrapper.appendChild(resizeHandle);
-                    previewBubble.appendChild(wrapper);
+                    targetBubble.appendChild(wrapper);
                     
                     makePlacedStickerInteractive(wrapper);
                 }
+                
+                // 恢复贴纸后更新交互状态
+                updateStickersInteractionState();
             }
 
             // 异步初始化
@@ -1193,11 +1620,37 @@
                 await loadStickerLibraryFromStorage();
                 await renderStickerLibrary();
                 
-                // 加载并应用保存的配置
-                const savedConfig = await loadBubbleStyleConfig();
-                if (savedConfig) {
-                    await applyBubbleStyleConfig(savedConfig);
-                } else {
+                // 加载并应用保存的配置（两种气泡样式）
+                const savedSelfConfig = await loadBubbleStyleConfig('bubbleStyleSelf');
+                const savedOthersConfig = await loadBubbleStyleConfig('bubbleStyle');
+                
+                if (savedSelfConfig) {
+                    // 切换到自己模式并应用配置
+                    currentBubbleType = 'self';
+                    await applyBubbleStyleConfig(savedSelfConfig);
+                    
+                    // 恢复自己的贴图
+                    if (savedSelfConfig.stickers && savedSelfConfig.stickers.length > 0) {
+                        await restoreStickers(savedSelfConfig.stickers, 'self');
+                    }
+                }
+                
+                if (savedOthersConfig) {
+                    // 切换到别人模式并应用配置
+                    currentBubbleType = 'others';
+                    await applyBubbleStyleConfig(savedOthersConfig);
+                    
+                    // 恢复别人的贴图
+                    if (savedOthersConfig.stickers && savedOthersConfig.stickers.length > 0) {
+                        await restoreStickers(savedOthersConfig.stickers, 'others');
+                    }
+                }
+                
+                // 默认切换到自己的气泡编辑模式
+                switchBubbleType('self');
+                
+                // 如果没有保存的配置，应用默认样式
+                if (!savedSelfConfig && !savedOthersConfig) {
                     updateBubbleStyle();
                 }
             }
