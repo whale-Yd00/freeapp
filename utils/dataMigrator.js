@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 12;
+        this.dbVersion = 13;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
@@ -40,6 +40,11 @@ class IndexedDBManager {
         try {
             console.log('正在检查数据库版本...');
             
+            // 首先检查当前真实的数据库版本
+            const currentVersion = await this.getCurrentDatabaseVersion();
+            console.log(`当前数据库版本: ${currentVersion}, 目标版本: ${this.dbVersion}`);
+            
+            
             // 关闭现有连接，确保干净状态
             if (this.db) {
                 this.db.close();
@@ -68,12 +73,13 @@ class IndexedDBManager {
         }
     }
 
+
     /**
      * 获取当前数据库版本（不进行升级）
      */
     async getCurrentDatabaseVersion() {
         return new Promise((resolve, reject) => {
-            // 先尝试打开数据库，不指定版本
+            // 打开数据库，不指定版本（这会打开现有版本，不会触发升级）
             const request = indexedDB.open(this.dbName);
             
             request.onsuccess = () => {
@@ -84,16 +90,14 @@ class IndexedDBManager {
             };
             
             request.onerror = () => {
-                console.log('数据库不存在，将创建新数据库');
                 resolve(0); // 数据库不存在，返回版本0
             };
             
-            request.onupgradeneeded = () => {
-                // 取消升级操作
-                const db = request.result;
-                const version = db.version;
+            request.onupgradeneeded = (event) => {
+                // 这种情况不应该发生，因为我们没有指定版本
+                const db = event.target.result;
                 db.close();
-                resolve(version);
+                resolve(event.oldVersion);
             };
         });
     }
@@ -163,7 +167,7 @@ class IndexedDBManager {
                 try {
                     // 处理废弃存储的删除
                     if (newVersion >= 12) {
-                        // 版本12移除了bubbleDesignerStickers
+                        // 版本12及以上移除了bubbleDesignerStickers
                         if (db.objectStoreNames.contains('bubbleDesignerStickers')) {
                             db.deleteObjectStore('bubbleDesignerStickers');
                             console.log('删除废弃的 bubbleDesignerStickers 存储');
@@ -180,8 +184,6 @@ class IndexedDBManager {
                                 console.error(`创建存储 ${storeName} 失败:`, storeError);
                                 throw storeError;
                             }
-                        } else {
-                            console.log(`存储 ${storeName} 已存在，跳过创建`);
                         }
                     });
                     
@@ -416,6 +418,11 @@ class IndexedDBManager {
             this.migrateFrom11To12(migratedData);
         }
         
+        if (fromVersion <= 12 && toVersion >= 13) {
+            // 版本12到13的迁移：确保themeConfig存在
+            this.migrateFrom12To13(migratedData);
+        }
+        
         console.log('数据迁移完成');
         return migratedData;
     }
@@ -642,6 +649,30 @@ class IndexedDBManager {
         }
         
         console.log('版本11到12迁移完成：已清理废弃存储并确保themeConfig存在');
+    }
+
+    /**
+     * 从版本12迁移到版本13
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom12To13(data) {
+        console.log('执行版本12到13的迁移：确保themeConfig存在');
+        
+        // 版本13：确保themeConfig存在（修复版本12升级时可能缺失的问题）
+        if (!data.themeConfig) {
+            data.themeConfig = [];
+            console.log('确保 themeConfig 存储存在');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            // 确保themeConfig在列表中
+            if (!data._metadata.stores.includes('themeConfig')) {
+                data._metadata.stores.push('themeConfig');
+            }
+        }
+        
+        console.log('版本12到13迁移完成：已确保themeConfig存在');
     }
 
     /**
@@ -1993,52 +2024,46 @@ window.DatabaseManager = {
      */
     async init() {
         try {
-            // 优先执行自动修复检查，解决可能存在的异常状态
-            const repairResult = await this.autoRepairDatabase();
-            if (repairResult.repaired) {
-                console.log('数据库自动修复完成，继续正常初始化流程');
-            }
+            console.log('=== DatabaseManager.init() [全新简化版] ===');
             
-            // 如果已经有现有的db实例，先检查版本
-            if (window.db && window.isIndexedDBReady) {
-                dbManager.db = window.db;
-                
-                // 检查是否需要升级（确保使用正确的目标版本）
-                if (window.db.version < dbManager.dbVersion) {
-                    console.log(`检测到已有数据库版本${window.db.version}较低，需要升级到版本${dbManager.dbVersion}`);
-                    // 重置状态以便进行升级
-                    window.db.close();
-                    window.db = null;
-                    window.isIndexedDBReady = false;
-                    dbManager.db = null;
-                    
-                    // 执行自动升级
-                    const upgradeResult = await dbManager.autoUpgradeDatabase();
-                    
-                    // 更新全局变量
-                    window.db = dbManager.db;
-                    window.isIndexedDBReady = true;
-                    
-                    return { success: true, upgraded: upgradeResult.upgraded, upgradeResult };
-                } else {
-                    // 版本正确，确保dbManager状态同步
-                    dbManager.db = window.db;
-                    dbManager.dbVersion = window.db.version;
-                    
-                    return { success: true, upgraded: false };
-                }
-            } else {
-                // 执行自动升级检查
-                const upgradeResult = await dbManager.autoUpgradeDatabase();
-                
-                // 更新全局变量
-                window.db = dbManager.db;
-                window.isIndexedDBReady = true;
-                
-                return { success: true, upgraded: upgradeResult.upgraded, upgradeResult };
+            // 如果已经有连接，并且版本正确，直接复用
+            if (window.db && window.isIndexedDBReady && window.db.version === dbManager.dbVersion) {
+                console.log('复用现有连接');
+                dbManager.db = window.db; // 确保内部实例同步
+                return { success: true };
             }
+
+            // 如果有任何旧的或无效的连接，先彻底清理
+            if (window.db) {
+                window.db.close();
+                console.log('已关闭现有的数据库连接');
+            }
+            // 重置所有状态，确保一个干净的环境
+            window.db = null;
+            window.isIndexedDBReady = false;
+            dbManager.db = null;
+            console.log('已重置所有数据库状态，准备全新初始化...');
+
+            // 直接调用核心的 initDB 方法，它本身就包含了升级逻辑
+            // 这里的 dbManager 是在文件顶部创建的实例，所以 this 指向绝对正确
+            await dbManager.initDB();
+
+            // 最终检查：升级后，我们期望的表必须存在！
+            if (!dbManager.db || !dbManager.db.objectStoreNames.contains('themeConfig')) {
+                 console.error('数据库升级流程执行完毕，但关键的 themeConfig 表仍然不存在！');
+                 throw new Error('数据库升级后结构不完整！');
+            }
+
+            console.log('数据库初始化/升级成功！所有检查通过。');
+            return { success: true };
+
         } catch (error) {
-            console.error('数据库初始化失败:', error);
+            console.error('数据库初始化/升级过程中发生致命错误:', error);
+            // 这里可以触发紧急备份等操作
+            if (window.DatabaseManager && window.DatabaseManager.forceExportBackup) {
+                console.log('尝试进行紧急备份...');
+                await window.DatabaseManager.forceExportBackup();
+            }
             return { success: false, error: error.message };
         }
     },

@@ -6,7 +6,7 @@
 class FileStorageImporter {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 12;
+        this.dbVersion = 13;
         this.db = null;
         this.fileManager = null;
         
