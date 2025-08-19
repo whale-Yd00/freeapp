@@ -741,99 +741,45 @@ function checkBrowserCompatibility() {
     window.browserSupportsHas = supportsHas;
 }
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').then(registration => {
+      console.log('Service Worker 注册成功: ', registration);
+    }).catch(registrationError => {
+      console.log('Service Worker 注册失败: ', registrationError);
+    });
+  });
+}
 
 // --- 初始化 ---
 async function init() {
     try {
         console.log('开始应用初始化...');
         
-        // 使用 dataMigrator 统一处理数据库初始化和升级
         await executeWithRetry(async () => {
-            // 优先使用 dataMigrator 的自动升级功能
+            // 永远只相信 dataMigrator！
             if (window.DatabaseManager && window.DatabaseManager.init) {
                 const result = await window.DatabaseManager.init();
                 if (result.success) {
                     console.log('数据库通过 dataMigrator 初始化成功');
-                    if (result.upgraded) {
-                        console.log('数据库已自动升级到最新版本');
-                    }
-                    
-                    // 确保全局变量和本地变量都正确设置
-                    db = window.db;
-                    isIndexedDBReady = window.isIndexedDBReady || true;
-                    
-                    // 验证数据库连接是否真正建立
-                    if (!db) {
-                        console.warn('dataMigrator成功但数据库实例为空，尝试修复...');
-                        // 尝试再次从全局变量获取
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                        db = window.db;
-                        
-                        if (!db) {
-                            // 如果仍然为空，尝试手动修复
-                            console.log('尝试手动修复数据库状态...');
-                            if (window.DatabaseManager && window.DatabaseManager.autoRepairDatabase) {
-                                const repairResult = await window.DatabaseManager.autoRepairDatabase();
-                                if (repairResult.success) {
-                                    db = window.db;
-                                    isIndexedDBReady = window.isIndexedDBReady || true;
-                                } else {
-                                    // 修复失败，检查是否有紧急备份
-                                    let errorMessage = `dataMigrator成功但数据库实例为空，修复失败: ${repairResult.error || '未知错误'}`;
-                                    
-                                    if (repairResult.emergencyBackup && repairResult.emergencyBackup.exported) {
-                                        errorMessage += `\n\n✅ 数据已自动备份到: ${repairResult.emergencyBackup.fileName}`;
-                                        errorMessage += `\n📊 备份包含: ${repairResult.emergencyBackup.totalRecords} 条记录`;
-                                        console.log('紧急备份已创建');
-                                    }
-                                    
-                                    throw new Error(errorMessage);
-                                }
-                            } else {
-                                throw new Error('dataMigrator成功但数据库实例为空，且无法访问修复功能');
-                            }
-                        }
-                        
-                        // 最终验证
-                        if (!db) {
-                            throw new Error('dataMigrator成功但数据库实例仍为空，修复失败');
-                        } else {
-                            console.log('数据库实例修复成功');
-                        }
-                    }
+                    db = window.db; // 确保db实例被正确赋值
+                    isIndexedDBReady = window.isIndexedDBReady;
                 } else {
-                    console.warn('dataMigrator 初始化失败，回退到直接初始化:', result.error);
-                    await openDB();
+                    // 如果 dataMigrator 初始化失败，就直接抛出错误，不再尝试用旧方法
+                    throw new Error('DatabaseManager 初始化失败: ' + result.error);
                 }
             } else {
-                console.log('dataMigrator 未加载，使用直接初始化');
-                await openDB();
+                // 如果 DatabaseManager 根本不存在，这也是个严重错误
+                throw new Error('DatabaseManager 未加载，无法初始化数据库');
             }
             
-            // 二次确认数据库连接状态
-            if (!db) {
-                throw new Error('数据库连接未建立：db变量为null');
-            }
-            
-            if (!window.db) {
-                throw new Error('数据库连接未建立：window.db为null');
+            // 二次确认
+            if (!db || !isIndexedDBReady) {
+                throw new Error('数据库连接在初始化后仍未建立');
             }
             console.log('数据库连接建立成功');
+            
         }, '应用初始化 - 数据库连接');
-        
-        // 检查数据库版本并提示用户（安全检查）
-        if (db && db.objectStoreNames && !db.objectStoreNames.contains('emojiImages')) {
-            console.log('检测到数据库需要升级，表情包功能将使用兼容模式。');
-            if (typeof showToast === 'function') {
-                showToast('数据库已更新，表情包功能已优化！如需使用新功能，请点击"🚀数据库优化"按钮');
-            }
-        } else if (!db) {
-            console.error('数据库连接失败，无法检查存储结构');
-            if (typeof showToast === 'function') {
-                showToast('数据库连接失败，请刷新页面重试', 'error');
-            }
-            throw new Error('数据库连接失败');
-        }
         
         // 从IndexedDB加载数据
         await loadDataFromDB();
@@ -1103,35 +1049,16 @@ async function handleConnectionLoss() {
         console.log(`数据库自动重连 - 第 ${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries} 次尝试`);
         
         try {
-            // 关闭现有连接
-            if (db) {
-                db.close();
-                db = null;
-            }
-            isIndexedDBReady = false;
-            
-            // 显示重试对话框
-            showDatabaseErrorDialog(
-                new Error('连接中断，正在自动重连...'), 
-                true
-            );
-            
-            // 尝试重新连接
-            const newDb = await openDB();
-            
-            // 重连成功
-            console.log('数据库自动重连成功');
-            showToast('数据库连接已自动恢复', 'success');
-            startConnectionMonitoring();
-            
-            // 隐藏错误对话框
-            const dialog = document.getElementById('db-error-dialog');
-            if (dialog) {
-                dialog.style.display = 'none';
-            }
-            
-            return newDb;
-            
+            const result = await window.DatabaseManager.init();
+            if (!result.success) {
+            // 如果标准的初始化流程都失败了，那重连也就失败了
+            throw new Error(result.error || 'DatabaseManager 重新初始化失败');
+        }
+
+        console.log('数据库自动重连成功');
+        showToast('数据库连接已自动恢复', 'success');
+        startConnectionMonitoring();
+
         } catch (error) {
             console.error(`数据库重连第 ${dbConnectionAttempts} 次失败:`, error);
             
@@ -1153,232 +1080,6 @@ async function handleConnectionLoss() {
     attemptReconnection();
 }
 
-function openDB() {
-    return new Promise((resolve, reject) => {
-        console.log('开始尝试打开数据库...');
-        const request = indexedDB.open('WhaleLLTDB', 11);
-
-        request.onupgradeneeded = event => {
-            const db = event.target.result;
-            const oldVersion = event.oldVersion;
-            const newVersion = event.newVersion;
-            
-            console.log(`数据库升级: 从版本 ${oldVersion} 到版本 ${newVersion}`);
-            
-            try {
-                // 音乐播放器相关的ObjectStore
-                if (!db.objectStoreNames.contains('songs')) {
-                    db.createObjectStore('songs', { keyPath: 'id', autoIncrement: true });
-                    console.log('创建 songs 存储成功');
-                }
-                // 聊天助手相关的ObjectStore
-                if (!db.objectStoreNames.contains('contacts')) {
-                    db.createObjectStore('contacts', { keyPath: 'id' });
-                    console.log('创建 contacts 存储成功');
-                }
-                if (!db.objectStoreNames.contains('apiSettings')) {
-                    db.createObjectStore('apiSettings', { keyPath: 'id' });
-                    console.log('创建 apiSettings 存储成功');
-                }
-                if (!db.objectStoreNames.contains('emojis')) {
-                    db.createObjectStore('emojis', { keyPath: 'id' });
-                    console.log('创建 emojis 存储成功');
-                }
-                // 版本5新增：表情图片分离存储
-                if (!db.objectStoreNames.contains('emojiImages')) {
-                    db.createObjectStore('emojiImages', { keyPath: 'tag' });
-                    console.log('创建 emojiImages 存储成功');
-                }
-                if (!db.objectStoreNames.contains('backgrounds')) {
-                    db.createObjectStore('backgrounds', { keyPath: 'id' });
-                    console.log('创建 backgrounds 存储成功');
-                }
-                if (!db.objectStoreNames.contains('userProfile')) {
-                    db.createObjectStore('userProfile', { keyPath: 'id' });
-                    console.log('创建 userProfile 存储成功');
-                }
-                if (!db.objectStoreNames.contains('moments')) {
-                    db.createObjectStore('moments', { keyPath: 'id' });
-                    console.log('创建 moments 存储成功');
-                }
-                if (!db.objectStoreNames.contains('weiboPosts')) {
-                    db.createObjectStore('weiboPosts', { keyPath: 'id', autoIncrement: true });
-                    console.log('创建 weiboPosts 存储成功');
-                }
-                if (!db.objectStoreNames.contains('hashtagCache')) {
-                    db.createObjectStore('hashtagCache', { keyPath: 'id' });
-                    console.log('创建 hashtagCache 存储成功');
-                }
-                // 角色记忆相关的ObjectStore
-                if (!db.objectStoreNames.contains('characterMemories')) {
-                    db.createObjectStore('characterMemories', { keyPath: 'contactId' });
-                    console.log('创建 characterMemories 存储成功');
-                }
-                if (!db.objectStoreNames.contains('conversationCounters')) {
-                    db.createObjectStore('conversationCounters', { keyPath: 'id' });
-                    console.log('创建 conversationCounters 存储成功');
-                }
-                if (!db.objectStoreNames.contains('globalMemory')) {
-                    db.createObjectStore('globalMemory', { keyPath: 'id' });
-                    console.log('创建 globalMemory 存储成功');
-                }
-                if (!db.objectStoreNames.contains('memoryProcessedIndex')) {
-                    db.createObjectStore('memoryProcessedIndex', { keyPath: 'contactId' });
-                    console.log('创建 memoryProcessedIndex 存储成功');
-                }
-                
-                // 版本8新增：文件存储系统
-                if (!db.objectStoreNames.contains('fileStorage')) {
-                    const fileStore = db.createObjectStore('fileStorage', { keyPath: 'fileId' });
-                    fileStore.createIndex('type', 'type', { unique: false });
-                    fileStore.createIndex('createdAt', 'createdAt', { unique: false });
-                    console.log('创建 fileStorage 存储成功');
-                }
-                
-                if (!db.objectStoreNames.contains('fileReferences')) {
-                    const refStore = db.createObjectStore('fileReferences', { keyPath: 'referenceId' });
-                    refStore.createIndex('fileId', 'fileId', { unique: false });
-                    refStore.createIndex('category', 'category', { unique: false });
-                    console.log('创建 fileReferences 存储成功');
-                }
-                
-                // 版本10新增：主题配置系统
-                if (!db.objectStoreNames.contains('themeConfig')) {
-                    db.createObjectStore('themeConfig', { keyPath: 'type' });
-                    console.log('创建 themeConfig 存储成功');
-                }
-                
-                // 标记需要进行数据优化（针对版本4、5用户）
-                if (oldVersion <= 5 && newVersion >= 9) {
-                    window._needsEmojiOptimization = true;
-                    console.log('标记需要进行表情数据优化');
-                }
-                
-                // 标记需要进行文件存储迁移（版本8→9用户）
-                if (oldVersion <= 8 && newVersion >= 9) {
-                    window._needsFileStorageMigration = true;
-                    console.log('标记需要进行文件存储迁移');
-                }
-                
-                console.log('数据库升级操作完成');
-            } catch (upgradeError) {
-                console.error('数据库升级过程中发生错误:', upgradeError);
-                throw upgradeError;
-            }
-        };
-
-        request.onsuccess = event => {
-            try {
-                db = event.target.result;
-                isIndexedDBReady = true;
-                
-                // 确保暴露到全局对象
-                window.db = db;
-                window.isIndexedDBReady = isIndexedDBReady;
-                
-                console.log('数据库连接成功，开始后续初始化...');
-                
-                // 设置数据库连接断开监听
-                db.onversionchange = () => {
-                    console.warn('检测到数据库版本变更，关闭当前连接');
-                    db.close();
-                    isIndexedDBReady = false;
-                    handleConnectionLoss();
-                };
-                
-                // 检查是否需要进行表情数据优化
-                if (window._needsEmojiOptimization) {
-                    console.log('检测到需要进行表情数据优化，准备执行...');
-                    setTimeout(() => {
-                        performEmojiOptimization();
-                    }, 1000);
-                    window._needsEmojiOptimization = false;
-                }
-                
-                // 检查是否需要进行文件存储迁移（版本8→9自动升级）
-                if (window._needsFileStorageMigration) {
-                    console.log('检测到需要进行文件存储迁移，准备自动执行...');
-                    setTimeout(() => {
-                        performFileStorageMigration();
-                    }, 2000);
-                    window._needsFileStorageMigration = false;
-                }
-                
-                // 数据库准备好后，初始化记忆管理器数据
-                if (window.characterMemoryManager && !window.characterMemoryManager.isInitialized) {
-                    setTimeout(async () => {
-                        try {
-                            await window.characterMemoryManager.loadConversationCounters();
-                            await window.characterMemoryManager.loadLastProcessedMessageIndex();
-                            await window.characterMemoryManager.getGlobalMemory();
-                            window.characterMemoryManager.isInitialized = true;
-                            console.log('记忆管理器初始化完成');
-                            
-                            // 等待一段时间确保所有脚本加载完成
-                            setTimeout(async () => {
-                                // 自动检查并执行localStorage记忆迁移
-                                try {
-                                    // 确保函数存在
-                                    if (!window.characterMemoryManager || typeof window.characterMemoryManager.migrateLocalStorageMemories !== 'function') {
-                                        return;
-                                    }
-                                
-                                    const migrationResult = await window.characterMemoryManager.migrateLocalStorageMemories();
-                                if (migrationResult.migrated) {
-                                    const characterMsg = migrationResult.migratedCount > 0 ? `${migrationResult.migratedCount}个角色` : '';
-                                    const globalMsg = migrationResult.globalMigrated ? '全局记忆' : '';
-                                    const combinedMsg = [characterMsg, globalMsg].filter(Boolean).join('和');
-                                    
-                                    if (typeof showToast === 'function') {
-                                        showToast(`记忆数据已自动迁移：${combinedMsg}`);
-                                    }
-                                }
-                                
-                                if (migrationResult.errors && migrationResult.errors.length > 0) {
-                                    console.warn('记忆迁移过程中出现警告:', migrationResult.errors);
-                                }
-                                } catch (migrationError) {
-                                    console.error('记忆数据迁移失败:', migrationError);
-                                }
-                            }, 200); // 内层setTimeout结束
-                            
-                        } catch (memoryError) {
-                            console.error('记忆管理器初始化失败:', memoryError);
-                        }
-                    }, 100); // 外层setTimeout结束
-                }
-                
-                // 开始连接监控
-                startConnectionMonitoring();
-                
-                console.log('数据库及相关服务初始化完成');
-                resolve(db);
-                
-            } catch (successError) {
-                console.error('数据库成功回调中发生错误:', successError);
-                reject(successError);
-            }
-        };
-
-        request.onerror = event => {
-            const error = event.target.error || new Error(`IndexedDB 打开失败: ${event.target.errorCode}`);
-            console.error('IndexedDB 打开失败详情:', {
-                errorCode: event.target.errorCode,
-                errorName: error.name,
-                errorMessage: error.message,
-                timestamp: new Date().toISOString()
-            });
-            
-            showToast('数据存储初始化失败: ' + error.message, 'error');
-            reject(error);
-        };
-
-        request.onblocked = event => {
-            console.warn('IndexedDB 打开被阻塞，可能有其他标签页正在使用数据库');
-            showToast('数据库被其他页面占用，请关闭其他相关页面', 'warning');
-        };
-    });
-}
 
 // 表情数据结构优化函数（版本4、5用户升级到7时自动执行）
 async function performEmojiOptimization() {
@@ -6711,6 +6412,8 @@ document.addEventListener('click', (e) => {
 document.addEventListener('DOMContentLoaded', async () => {
     // 兼容性检测：检测浏览器是否支持 :has() 选择器
     checkBrowserCompatibility();
+
+    setupServiceWorkerUpdater();
     
     // 检查URL中是否有导入ID
     const urlParams = new URLSearchParams(window.location.search);
@@ -11202,4 +10905,61 @@ async function resetBubbleStyleToDefault() {
         console.error('恢复默认气泡样式失败:', error);
         throw error;
     }
+}
+
+function setupServiceWorkerUpdater() {
+    if ('serviceWorker' in navigator) {
+        let newWorker;
+
+        navigator.serviceWorker.ready.then(reg => {
+            // 浏览器在后台发现新版本的 service-worker.js 文件时会触发 updatefound 事件
+            reg.addEventListener('updatefound', () => {
+                newWorker = reg.installing;
+                
+                newWorker.addEventListener('statechange', () => {
+                    // newWorker.state 变为 installed，表示新 Service Worker 已安装完毕
+                    if (newWorker.state === 'installed') {
+                        // 检查当前是否有 Service Worker 在控制页面
+                        if (navigator.serviceWorker.controller) {
+                            // 这意味着页面被旧的 Service Worker 控制着，需要更新
+                            showUpdateNotification();
+                        }
+                    }
+                });
+            });
+        });
+    }
+}
+
+// 显示更新提示的UI函数
+function showUpdateNotification() {
+    let notification = document.getElementById('sw-update-notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'sw-update-notification';
+        // 一些简单的样式
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        `;
+        document.body.appendChild(notification);
+    }
+
+    notification.innerHTML = `
+        <span>应用有新版本啦！</span>
+        <button onclick="window.location.reload()" style="background: #07c160; color: white; border: none; padding: 6px 12px; border-radius: 15px; cursor: pointer;">立即刷新</button>
+    `;
+    notification.style.display = 'flex';
 }

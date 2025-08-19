@@ -6,7 +6,7 @@
 class FileStorageManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 11; // 与主应用保持一致的版本号
+        this.dbVersion = 13; // 与主应用保持一致的版本号
         this.db = null;
         this.urlCache = new Map(); // 缓存已创建的Object URLs
         
@@ -95,6 +95,12 @@ class FileStorageManager {
                     const refStore = db.createObjectStore('fileReferences', { keyPath: 'referenceId' });
                     refStore.createIndex('fileId', 'fileId', { unique: false });
                     refStore.createIndex('category', 'category', { unique: false });
+                }
+
+                // 创建主题配置表（版本13新增）
+                if (!db.objectStoreNames.contains('themeConfig')) {
+                    db.createObjectStore('themeConfig', { keyPath: 'type' });
+                    console.log('FileStorageManager: 创建 themeConfig 存储成功');
                 }
             };
         });

@@ -7,7 +7,7 @@
 class FileStorageExporter {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 11;
+        this.dbVersion = 13;
         this.db = null;
         this.fileManager = null;
         
