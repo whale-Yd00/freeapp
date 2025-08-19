@@ -764,7 +764,42 @@ async function init() {
                     
                     // 验证数据库连接是否真正建立
                     if (!db) {
-                        throw new Error('dataMigrator成功但数据库实例为空');
+                        console.warn('dataMigrator成功但数据库实例为空，尝试修复...');
+                        // 尝试再次从全局变量获取
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        db = window.db;
+                        
+                        if (!db) {
+                            // 如果仍然为空，尝试手动修复
+                            console.log('尝试手动修复数据库状态...');
+                            if (window.DatabaseManager && window.DatabaseManager.autoRepairDatabase) {
+                                const repairResult = await window.DatabaseManager.autoRepairDatabase();
+                                if (repairResult.success) {
+                                    db = window.db;
+                                    isIndexedDBReady = window.isIndexedDBReady || true;
+                                } else {
+                                    // 修复失败，检查是否有紧急备份
+                                    let errorMessage = `dataMigrator成功但数据库实例为空，修复失败: ${repairResult.error || '未知错误'}`;
+                                    
+                                    if (repairResult.emergencyBackup && repairResult.emergencyBackup.exported) {
+                                        errorMessage += `\n\n✅ 数据已自动备份到: ${repairResult.emergencyBackup.fileName}`;
+                                        errorMessage += `\n📊 备份包含: ${repairResult.emergencyBackup.totalRecords} 条记录`;
+                                        console.log('紧急备份已创建');
+                                    }
+                                    
+                                    throw new Error(errorMessage);
+                                }
+                            } else {
+                                throw new Error('dataMigrator成功但数据库实例为空，且无法访问修复功能');
+                            }
+                        }
+                        
+                        // 最终验证
+                        if (!db) {
+                            throw new Error('dataMigrator成功但数据库实例仍为空，修复失败');
+                        } else {
+                            console.log('数据库实例修复成功');
+                        }
                     }
                 } else {
                     console.warn('dataMigrator 初始化失败，回退到直接初始化:', result.error);
@@ -1603,6 +1638,11 @@ async function loadDataFromDB() {
             if (repaired) {
                 console.log('初始化时修复了数据不一致性');
             }
+        }
+        
+        // 数据库健康检查和修复提示
+        if (window.DatabaseManager && window.DatabaseManager.checkAndOfferRepair) {
+            window.DatabaseManager.checkAndOfferRepair();
         }
 
         console.log('所有数据加载完成');

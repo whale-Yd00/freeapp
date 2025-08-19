@@ -302,7 +302,9 @@ class IndexedDBManager {
                         if (sanitized.geminiKey) {
                             delete sanitized.geminiKey;
                         }
-                        // 保留URL和其他设置
+                        if (sanitized.minimaxApiKey) {
+                            delete sanitized.minimaxApiKey;
+                        }
                         return sanitized;
                     });
                 }
@@ -1377,10 +1379,621 @@ window.exportToClipboard = async function() {
 window.DatabaseManager = {
     
     /**
+     * 自动诊断和修复数据库异常状态
+     */
+    async autoRepairDatabase() {
+        const REPAIR_LOG_KEY = 'freeapp_db_repair_log';
+        const MAX_REPAIR_ATTEMPTS = 3;
+        
+        try {
+            // 1. 检查修复历史记录
+            const repairLog = JSON.parse(localStorage.getItem(REPAIR_LOG_KEY) || '{}');
+            const today = new Date().toDateString();
+            const todayAttempts = repairLog[today] || 0;
+            
+            if (todayAttempts >= MAX_REPAIR_ATTEMPTS) {
+                console.warn('今日数据库修复次数已达上限，跳过自动修复');
+                return { success: false, reason: '达到修复次数上限', attempts: todayAttempts };
+            }
+            
+            // 2. 诊断数据库状态
+            const diagnosis = await this.diagnoseDatabaseState();
+            
+            if (!diagnosis.needsRepair) {
+                console.log('数据库状态正常，无需修复');
+                return { success: true, diagnosis, repaired: false };
+            }
+            
+            console.log('检测到数据库异常状态，开始自动修复...', diagnosis);
+            
+            // 3. 记录修复尝试
+            repairLog[today] = (repairLog[today] || 0) + 1;
+            localStorage.setItem(REPAIR_LOG_KEY, JSON.stringify(repairLog));
+            
+            // 4. 执行修复步骤
+            const repairResult = await this.performDatabaseRepair(diagnosis);
+            
+            if (repairResult.success) {
+                console.log('数据库自动修复成功');
+                // 显示用户友好的提示
+                if (typeof showToast === 'function') {
+                    showToast('检测到数据库异常，已自动修复完成', 'success');
+                }
+            }
+            
+            return { 
+                success: repairResult.success, 
+                diagnosis, 
+                repaired: true, 
+                attempts: repairLog[today],
+                details: repairResult
+            };
+            
+        } catch (error) {
+            console.error('自动修复过程中发生错误:', error);
+            return { 
+                success: false, 
+                error: error.message, 
+                attempts: (JSON.parse(localStorage.getItem(REPAIR_LOG_KEY) || '{}')[new Date().toDateString()] || 0)
+            };
+        }
+    },
+    
+    /**
+     * 诊断数据库状态
+     */
+    async diagnoseDatabaseState() {
+        const issues = [];
+        let needsRepair = false;
+        
+        try {
+            // 检查1：window.db是否存在且有效
+            if (!window.db) {
+                issues.push('window.db为空');
+                needsRepair = true;
+            } else if (window.db.readyState === 'done') {
+                issues.push('数据库连接已关闭');
+                needsRepair = true;
+            }
+            
+            // 检查2：isIndexedDBReady状态
+            if (!window.isIndexedDBReady) {
+                issues.push('isIndexedDBReady为false');
+                needsRepair = true;
+            }
+            
+            // 检查3：dbManager状态
+            if (!dbManager.db && window.db) {
+                issues.push('dbManager.db与window.db不同步');
+                // 注意：这个问题通常可以通过简单的同步解决，不一定需要复杂修复
+                // needsRepair = true; // 暂时注释，只在确实有功能性问题时才修复
+            }
+            
+            // 检查4：尝试简单的数据库操作
+            if (window.db && window.db.readyState !== 'done') {
+                try {
+                    // 使用数据库中实际存在的第一个存储进行测试
+                    const storeNames = Array.from(window.db.objectStoreNames);
+                    if (storeNames.length > 0) {
+                        const testStoreName = storeNames[0]; // 使用第一个存储
+                        const transaction = window.db.transaction([testStoreName], 'readonly');
+                        const store = transaction.objectStore(testStoreName);
+                        await new Promise((resolve, reject) => {
+                            const request = store.count();
+                            request.onsuccess = () => resolve(request.result);
+                            request.onerror = () => reject(request.error);
+                        });
+                    } else {
+                        issues.push('数据库中没有对象存储');
+                        needsRepair = true;
+                    }
+                } catch (dbError) {
+                    issues.push(`数据库操作测试失败: ${dbError.message}`);
+                    needsRepair = true;
+                }
+            }
+            
+            // 检查5：数据库版本一致性
+            if (window.db && window.db.version !== dbManager.dbVersion) {
+                issues.push(`数据库版本不匹配: 实际=${window.db.version}, 期望=${dbManager.dbVersion}`);
+                needsRepair = true;
+            }
+            
+            return {
+                needsRepair,
+                issues,
+                currentState: {
+                    hasWindowDb: !!window.db,
+                    windowDbState: window.db ? window.db.readyState : 'null',
+                    isIndexedDBReady: window.isIndexedDBReady,
+                    hasManagerDb: !!dbManager.db,
+                    dbVersion: window.db ? window.db.version : 'unknown'
+                }
+            };
+            
+        } catch (error) {
+            return {
+                needsRepair: true,
+                issues: [`诊断过程异常: ${error.message}`],
+                currentState: { error: error.message }
+            };
+        }
+    },
+    
+    /**
+     * 执行数据库修复
+     */
+    async performDatabaseRepair(diagnosis) {
+        const repairSteps = [];
+        
+        try {
+            // 修复步骤0：尝试简单同步（针对状态不同步问题）
+            if (window.db && window.db.readyState !== 'done' && !dbManager.db) {
+                console.log('修复步骤0：同步dbManager状态');
+                dbManager.db = window.db;
+                dbManager.dbVersion = window.db.version;
+                repairSteps.push('同步dbManager状态');
+                
+                // 再次验证，可能只是状态同步问题
+                const quickTest = await this.diagnoseDatabaseState();
+                if (!quickTest.needsRepair) {
+                    console.log('简单同步已解决问题，无需进一步修复');
+                    return {
+                        success: true,
+                        repairSteps,
+                        finalState: {
+                            hasWindowDb: !!window.db,
+                            windowDbState: window.db ? window.db.readyState : 'null',
+                            isIndexedDBReady: window.isIndexedDBReady,
+                            dbVersion: window.db ? window.db.version : 'unknown'
+                        }
+                    };
+                }
+            }
+            
+            // 修复步骤1：清理异常状态
+            if (window.db && window.db.readyState === 'done') {
+                console.log('修复步骤1：清理已关闭的数据库连接');
+                window.db = null;
+                window.isIndexedDBReady = false;
+                dbManager.db = null;
+                repairSteps.push('清理异常连接状态');
+            }
+            
+            // 修复步骤2：重新初始化数据库
+            console.log('修复步骤2：重新初始化数据库');
+            try {
+                await dbManager.initDB();
+                repairSteps.push('重新初始化数据库');
+            } catch (initError) {
+                console.warn('标准初始化失败，尝试强制重建:', initError);
+                
+                // 修复步骤3：强制重建数据库
+                console.log('修复步骤3：强制重建数据库');
+                if (window.db) {
+                    window.db.close();
+                }
+                
+                await dbManager.deleteDatabase();
+                await new Promise(resolve => setTimeout(resolve, 500)); // 等待删除完成
+                
+                await dbManager.initDB();
+                repairSteps.push('强制重建数据库');
+            }
+            
+            // 修复步骤4：验证修复结果
+            console.log('修复步骤4：验证修复结果');
+            await new Promise(resolve => setTimeout(resolve, 200)); // 等待连接稳定
+            
+            if (!window.db || window.db.readyState === 'done') {
+                throw new Error('修复后数据库状态仍然异常');
+            }
+            
+            // 测试基本操作
+            const storeNames = Array.from(window.db.objectStoreNames);
+            if (storeNames.length === 0) {
+                throw new Error('修复后数据库中没有对象存储');
+            }
+            
+            const testStoreName = storeNames[0]; // 使用第一个存储进行测试
+            const transaction = window.db.transaction([testStoreName], 'readonly');
+            const store = transaction.objectStore(testStoreName);
+            await new Promise((resolve, reject) => {
+                const request = store.count();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            
+            repairSteps.push('验证数据库功能正常');
+            
+            return {
+                success: true,
+                repairSteps,
+                finalState: {
+                    hasWindowDb: !!window.db,
+                    windowDbState: window.db ? window.db.readyState : 'null',
+                    isIndexedDBReady: window.isIndexedDBReady,
+                    dbVersion: window.db ? window.db.version : 'unknown'
+                }
+            };
+            
+        } catch (error) {
+            console.error('数据库修复失败:', error);
+            
+            // 修复失败时，尝试强制导出备份
+            console.log('所有修复方法都失败了，尝试强制导出数据备份...');
+            try {
+                const backupResult = await this.forceExportBackup();
+                if (backupResult.success) {
+                    console.log(`紧急备份已导出: ${backupResult.fileName}`);
+                    console.log(`备份包含 ${backupResult.totalRecords} 条记录，${backupResult.exportedStores} 个存储`);
+                    
+                    return {
+                        success: false,
+                        error: error.message,
+                        repairSteps,
+                        attemptedSteps: repairSteps.length,
+                        emergencyBackup: {
+                            exported: true,
+                            fileName: backupResult.fileName,
+                            totalRecords: backupResult.totalRecords,
+                            exportedStores: backupResult.exportedStores
+                        }
+                    };
+                } else {
+                    console.error('紧急备份导出也失败了:', backupResult.error);
+                    return {
+                        success: false,
+                        error: error.message,
+                        repairSteps,
+                        attemptedSteps: repairSteps.length,
+                        emergencyBackup: {
+                            exported: false,
+                            error: backupResult.error
+                        }
+                    };
+                }
+            } catch (backupError) {
+                console.error('执行紧急备份时出错:', backupError);
+                return {
+                    success: false,
+                    error: error.message,
+                    repairSteps,
+                    attemptedSteps: repairSteps.length,
+                    emergencyBackup: {
+                        exported: false,
+                        error: backupError.message
+                    }
+                };
+            }
+        }
+    },
+    
+    /**
+     * 强制导出数据库备份（即使数据库状态异常）
+     * 用于修复失败时的最后备份手段
+     */
+    async forceExportBackup() {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupFileName = `WhaleLLTDB-emergency-backup-${timestamp}.json`;
+        
+        try {
+            console.log('开始强制导出数据库备份...');
+            
+            // 尝试多种方式获取数据库连接
+            let dbConnection = null;
+            
+            // 方法1：使用现有连接
+            if (window.db && window.db.readyState !== 'done') {
+                dbConnection = window.db;
+                console.log('使用现有window.db连接');
+            }
+            // 方法2：使用dbManager连接
+            else if (this.db && this.db.readyState !== 'done') {
+                dbConnection = this.db;
+                console.log('使用dbManager.db连接');
+            }
+            // 方法3：尝试重新打开数据库（只读）
+            else {
+                console.log('尝试重新打开数据库进行备份...');
+                try {
+                    dbConnection = await new Promise((resolve, reject) => {
+                        // 不指定版本，让浏览器使用现有版本
+                        const request = indexedDB.open(this.dbName);
+                        
+                        request.onsuccess = () => {
+                            resolve(request.result);
+                        };
+                        
+                        request.onerror = () => {
+                            reject(new Error(`无法打开数据库进行备份: ${request.error}`));
+                        };
+                        
+                        request.onupgradeneeded = () => {
+                            // 如果触发升级，立即关闭，避免影响数据库结构
+                            request.result.close();
+                            reject(new Error('数据库需要升级，无法进行只读备份'));
+                        };
+                    });
+                } catch (openError) {
+                    console.error('重新打开数据库失败:', openError);
+                    throw new Error(`无法获取数据库连接进行备份: ${openError.message}`);
+                }
+            }
+            
+            if (!dbConnection || dbConnection.readyState === 'done') {
+                throw new Error('无法获取有效的数据库连接');
+            }
+            
+            // 开始导出数据
+            const backupData = {
+                _metadata: {
+                    name: dbConnection.name,
+                    version: dbConnection.version,
+                    exportTime: new Date().toISOString(),
+                    exportType: 'emergency_backup',
+                    stores: Array.from(dbConnection.objectStoreNames),
+                    reason: '自动修复失败后的紧急备份',
+                    privacyProtection: '已移除API密钥等敏感信息'
+                },
+                _exportInfo: {
+                    totalStores: dbConnection.objectStoreNames.length,
+                    timestamp: timestamp
+                }
+            };
+            
+            console.log(`发现 ${dbConnection.objectStoreNames.length} 个数据存储，开始导出...`);
+            
+            // 导出每个对象存储的数据
+            for (const storeName of dbConnection.objectStoreNames) {
+                try {
+                    console.log(`正在导出存储: ${storeName}`);
+                    
+                    const storeData = await new Promise((resolve, reject) => {
+                        const transaction = dbConnection.transaction([storeName], 'readonly');
+                        const store = transaction.objectStore(storeName);
+                        const request = store.getAll();
+                        
+                        request.onsuccess = () => {
+                            let result = request.result;
+                            
+                            if (storeName === 'apiSettings') {
+                                result = result.map(item => {
+                                    const sanitized = { ...item };
+                                    // 移除Key
+                                    if (sanitized.key) {
+                                        delete sanitized.key;
+                                    }
+                                    if (sanitized.elevenLabsApiKey) {
+                                        delete sanitized.elevenLabsApiKey;
+                                    }
+                                    if (sanitized.geminiKey) {
+                                        delete sanitized.geminiKey;
+                                    }
+                                    if (sanitized.minimaxApiKey) {
+                                        delete sanitized.minimaxApiKey;
+                                    }
+                                    return sanitized;
+                                });
+                            }
+                            
+                            resolve(result);
+                        };
+                        
+                        request.onerror = () => {
+                            console.warn(`导出存储 ${storeName} 失败:`, request.error);
+                            resolve([]); // 失败时返回空数组，继续导出其他存储
+                        };
+                        
+                        transaction.onerror = () => {
+                            console.warn(`存储 ${storeName} 事务失败:`, transaction.error);
+                            resolve([]);
+                        };
+                    });
+                    
+                    backupData[storeName] = storeData;
+                    console.log(`存储 ${storeName} 导出完成，共 ${storeData.length} 条记录`);
+                    
+                } catch (storeError) {
+                    console.warn(`导出存储 ${storeName} 时出错:`, storeError);
+                    backupData[storeName] = [];
+                    backupData._metadata.errors = backupData._metadata.errors || [];
+                    backupData._metadata.errors.push(`${storeName}: ${storeError.message}`);
+                }
+            }
+            
+            // 计算备份统计信息
+            let totalRecords = 0;
+            for (const storeName of dbConnection.objectStoreNames) {
+                if (backupData[storeName]) {
+                    totalRecords += backupData[storeName].length;
+                }
+            }
+            
+            backupData._exportInfo.totalRecords = totalRecords;
+            backupData._exportInfo.exportedStores = Object.keys(backupData).filter(key => !key.startsWith('_')).length;
+            
+            // 如果使用临时连接，需要关闭
+            if (dbConnection !== window.db && dbConnection !== this.db) {
+                dbConnection.close();
+            }
+            
+            // 创建并下载备份文件
+            const dataStr = JSON.stringify(backupData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            const downloadLink = document.createElement('a');
+            downloadLink.href = URL.createObjectURL(dataBlob);
+            downloadLink.download = backupFileName;
+            downloadLink.style.display = 'none';
+            
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            URL.revokeObjectURL(downloadLink.href);
+            
+            console.log(`紧急备份导出成功: ${backupFileName}`);
+            console.log(`备份统计: ${totalRecords} 条记录，${backupData._exportInfo.exportedStores} 个存储`);
+            
+            return {
+                success: true,
+                fileName: backupFileName,
+                totalRecords: totalRecords,
+                exportedStores: backupData._exportInfo.exportedStores,
+                metadata: backupData._metadata
+            };
+            
+        } catch (error) {
+            console.error('强制导出备份失败:', error);
+            
+            // 即使导出失败，也尝试保存一个最小备份（只包含元数据）
+            try {
+                const minimalBackup = {
+                    _metadata: {
+                        name: this.dbName,
+                        exportTime: new Date().toISOString(),
+                        exportType: 'minimal_emergency_backup',
+                        error: error.message,
+                        reason: '强制备份失败，仅保存元数据'
+                    },
+                    _error: {
+                        message: error.message,
+                        stack: error.stack,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                
+                const errorBackupName = `WhaleLLTDB-error-log-${timestamp}.json`;
+                const dataStr = JSON.stringify(minimalBackup, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(dataBlob);
+                downloadLink.download = errorBackupName;
+                downloadLink.style.display = 'none';
+                
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+                
+                URL.revokeObjectURL(downloadLink.href);
+                
+                console.log(`错误日志已保存: ${errorBackupName}`);
+            } catch (logError) {
+                console.error('连错误日志都无法保存:', logError);
+            }
+            
+            return {
+                success: false,
+                error: error.message,
+                fileName: null
+            };
+        }
+    },
+    
+    /**
+     * 提供用户友好的修复选项
+     */
+    async offerUserRepairOptions() {
+        const MANUAL_REPAIR_KEY = 'freeapp_manual_repair_offered';
+        const lastOffered = localStorage.getItem(MANUAL_REPAIR_KEY);
+        const today = new Date().toDateString();
+        
+        // 每天最多提示一次
+        if (lastOffered === today) {
+            return { offered: false, reason: '今日已提示过' };
+        }
+        
+        try {
+            const diagnosis = await this.diagnoseDatabaseState();
+            
+            if (!diagnosis.needsRepair) {
+                return { offered: false, reason: '数据库状态正常' };
+            }
+            
+            // 记录已提示
+            localStorage.setItem(MANUAL_REPAIR_KEY, today);
+            
+            const message = `检测到数据库可能存在以下问题：\n${diagnosis.issues.join('\n')}\n\n是否要自动修复？这不会丢失您的数据。`;
+            
+            if (confirm(message)) {
+                const repairResult = await this.autoRepairDatabase();
+                
+                if (repairResult.success) {
+                    alert('数据库修复成功！页面将自动刷新以确保所有功能正常。');
+                    setTimeout(() => window.location.reload(), 1500);
+                    return { offered: true, accepted: true, success: true };
+                } else {
+                    let errorMsg = `自动修复失败：${repairResult.error || '未知错误'}\n\n`;
+                    
+                    // 如果有紧急备份信息，添加到错误消息中
+                    if (repairResult.details && repairResult.details.emergencyBackup) {
+                        const backup = repairResult.details.emergencyBackup;
+                        if (backup.exported) {
+                            errorMsg += `✅ 好消息：您的数据已自动备份到文件：${backup.fileName}\n`;
+                            errorMsg += `📊 备份包含：${backup.totalRecords} 条记录，${backup.exportedStores} 个数据存储\n`;
+                            errorMsg += `💾 备份文件已下载到您的下载文件夹，请妥善保管\n\n`;
+                            errorMsg += `建议您：\n1. 保存好备份文件\n2. 刷新页面重试\n3. 如仍有问题，可用备份文件手动恢复数据\n4. 联系技术支持并提供备份文件`;
+                        } else {
+                            errorMsg += `⚠️ 数据备份也失败了：${backup.error}\n\n`;
+                            errorMsg += `建议您：\n1. 立即尝试手动导出数据\n2. 刷新页面重试\n3. 清除浏览器缓存\n4. 如果问题持续，请联系技术支持`;
+                        }
+                    } else {
+                        errorMsg += `建议您：\n1. 刷新页面重试\n2. 清除浏览器缓存\n3. 如果问题持续，请联系技术支持`;
+                    }
+                    
+                    alert(errorMsg);
+                    return { 
+                        offered: true, 
+                        accepted: true, 
+                        success: false, 
+                        error: repairResult.error,
+                        emergencyBackup: repairResult.details?.emergencyBackup
+                    };
+                }
+            } else {
+                // 用户拒绝修复，提供其他选项
+                const alternatives = `如果您继续遇到问题，可以尝试：\n1. 刷新页面\n2. 清除浏览器缓存\n3. 重新启动浏览器\n\n注意：如果问题持续存在，建议接受自动修复。`;
+                alert(alternatives);
+                return { offered: true, accepted: false };
+            }
+            
+        } catch (error) {
+            console.error('提供修复选项时出错:', error);
+            return { offered: false, error: error.message };
+        }
+    },
+    
+    /**
+     * 检查是否需要主动提供修复选项
+     */
+    async checkAndOfferRepair() {
+        // 延迟检查，避免影响正常初始化
+        setTimeout(async () => {
+            try {
+                const diagnosis = await this.diagnoseDatabaseState();
+                if (diagnosis.needsRepair) {
+                    console.log('检测到数据库异常，准备提供修复选项...');
+                    await this.offerUserRepairOptions();
+                }
+            } catch (error) {
+                console.error('检查修复需求时出错:', error);
+            }
+        }, 2000); // 延迟2秒执行
+    },
+    
+    /**
      * 初始化数据库 - 使用现有的db实例并检查版本升级
      */
     async init() {
         try {
+            // 优先执行自动修复检查，解决可能存在的异常状态
+            const repairResult = await this.autoRepairDatabase();
+            if (repairResult.repaired) {
+                console.log('数据库自动修复完成，继续正常初始化流程');
+            }
+            
             // 如果已经有现有的db实例，先检查版本
             if (window.db && window.isIndexedDBReady) {
                 dbManager.db = window.db;
