@@ -214,6 +214,7 @@ class IndexedDBManager {
                 Object.entries(this.stores).forEach(([storeName, config]) => {
                     if (!db.objectStoreNames.contains(storeName)) {
                         const store = db.createObjectStore(storeName, config);
+                        console.log(`创建 ${storeName} 存储成功`);
                     }
                 });
             };

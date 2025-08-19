@@ -10077,6 +10077,12 @@ class ThemeConfigManager {
         try {
             await this.init();
             
+            // 检查存储是否存在
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn('themeConfig存储不存在，无法保存配置');
+                throw new Error('themeConfig存储不存在');
+            }
+            
             return new Promise((resolve, reject) => {
                 const transaction = this.db.transaction([this.storeName], 'readwrite');
                 const store = transaction.objectStore(this.storeName);
@@ -10109,6 +10115,12 @@ class ThemeConfigManager {
         try {
             await this.init();
             
+            // 检查存储是否存在
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn('themeConfig存储不存在，返回null');
+                return null;
+            }
+            
             return new Promise((resolve, reject) => {
                 const transaction = this.db.transaction([this.storeName], 'readonly');
                 const store = transaction.objectStore(this.storeName);
@@ -10133,6 +10145,12 @@ class ThemeConfigManager {
     async getAllThemeConfigs() {
         try {
             await this.init();
+            
+            // 检查存储是否存在
+            if (!this.db.objectStoreNames.contains(this.storeName)) {
+                console.warn('themeConfig存储不存在，返回空配置');
+                return {};
+            }
             
             return new Promise((resolve, reject) => {
                 const transaction = this.db.transaction([this.storeName], 'readonly');
@@ -10246,6 +10264,24 @@ class ThemeConfigManager {
 
 // 创建全局主题配置管理器实例
 const themeConfigManager = new ThemeConfigManager();
+
+// 通用的数据库存储安全检查函数
+function safeCreateTransaction(db, storeNames, mode = 'readonly') {
+    if (!db) {
+        throw new Error('数据库连接不可用');
+    }
+    
+    // 检查所有存储是否存在
+    const missingStores = storeNames.filter(storeName => 
+        !db.objectStoreNames.contains(storeName)
+    );
+    
+    if (missingStores.length > 0) {
+        throw new Error(`存储不存在: ${missingStores.join(', ')}`);
+    }
+    
+    return db.transaction(storeNames, mode);
+}
 
 
 
