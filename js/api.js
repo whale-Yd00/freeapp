@@ -94,10 +94,14 @@ class APIService {
                     }
                 }
                 
-                // 尝试解析JSON响应
+                // 先获取原始响应文本
+                const responseText = await response.text();
+                console.log('API原始响应:', responseText);
+                
+                // 尝试解析为JSON
                 try {
-                    const data = await response.json();
-                    console.log('API完整返回:', JSON.stringify(data, null, 2));
+                    const data = JSON.parse(responseText);
+                    console.log('API解析为JSON成功:', JSON.stringify(data, null, 2));
                     
                     // 检查completion_tokens是否为0
                     if (data.usage && data.usage.completion_tokens === 0) {
@@ -106,7 +110,30 @@ class APIService {
                     
                     return data;
                 } catch (parseError) {
-                    throw new Error(`响应格式错误: 无法解析API返回的JSON数据`);
+                    // JSON解析失败，说明返回的是纯文本或混合内容，包装成标准格式
+                    console.log('JSON解析失败，作为纯文本处理:', parseError.message);
+                    
+                    if (!responseText || responseText.trim() === '') {
+                        throw new Error('API返回空响应');
+                    }
+                    
+                    // 将原始文本包装成标准OpenAI格式，上层应用可以：
+                    // 1. 直接使用content（普通聊天）
+                    // 2. 调用extractJSON从content中提取JSON（需要JSON的功能）
+                    return {
+                        choices: [{
+                            message: {
+                                content: responseText.trim(),
+                                role: 'assistant'
+                            },
+                            finish_reason: 'stop'
+                        }],
+                        usage: {
+                            completion_tokens: responseText.length,
+                            prompt_tokens: 0,
+                            total_tokens: responseText.length
+                        }
+                    };
                 }
 
             } catch (error) {
