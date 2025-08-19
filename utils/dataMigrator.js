@@ -1619,23 +1619,12 @@ window.DatabaseManager = {
                 await dbManager.initDB();
                 repairSteps.push('重新初始化数据库');
             } catch (initError) {
-                console.warn('标准初始化失败，尝试强制重建:', initError);
-                
-                // 修复步骤3：强制重建数据库
-                console.log('修复步骤3：强制重建数据库');
-                if (window.db) {
-                    window.db.close();
-                }
-                
-                await dbManager.deleteDatabase();
-                await new Promise(resolve => setTimeout(resolve, 500)); // 等待删除完成
-                
-                await dbManager.initDB();
-                repairSteps.push('强制重建数据库');
+                console.warn('标准初始化失败，无法修复数据库:', initError);
+                throw new Error(`数据库初始化失败: ${initError.message}`);
             }
             
-            // 修复步骤4：验证修复结果
-            console.log('修复步骤4：验证修复结果');
+            // 修复步骤3：验证修复结果
+            console.log('修复步骤3：验证修复结果');
             await new Promise(resolve => setTimeout(resolve, 200)); // 等待连接稳定
             
             if (!window.db || window.db.readyState === 'done') {
