@@ -5,7 +5,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 11;
+        this.dbVersion = 12;
         this.db = null;
         
         // 定义不参与手动导入导出的存储（图片等大数据）
@@ -29,8 +29,7 @@ class IndexedDBManager {
             memoryProcessedIndex: { keyPath: 'contactId' },
             fileStorage: { keyPath: 'fileId' }, // 新增：存储原始文件Blob数据
             fileReferences: { keyPath: 'referenceId' }, // 新增：存储文件引用关系
-            themeConfig: { keyPath: 'type' }, // 新增：存储主题配置（颜色、渐变等）
-            bubbleDesignerStickers: { keyPath: 'id' } // 新增：气泡设计器贴图库
+            themeConfig: { keyPath: 'type' } // 新增：存储主题配置（颜色、渐变等）
         };
     }
 
@@ -209,6 +208,18 @@ class IndexedDBManager {
             
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                const oldVersion = event.oldVersion;
+                const newVersion = event.newVersion;
+                
+                console.log(`数据库升级: 版本${oldVersion} -> 版本${newVersion}`);
+                
+                // 版本11到12的特殊处理：删除废弃的bubbleDesignerStickers
+                if (oldVersion === 11 && newVersion === 12) {
+                    if (db.objectStoreNames.contains('bubbleDesignerStickers')) {
+                        db.deleteObjectStore('bubbleDesignerStickers');
+                        console.log('删除废弃的 bubbleDesignerStickers 存储');
+                    }
+                }
                 
                 // 创建所有对象存储（如果不存在）
                 Object.entries(this.stores).forEach(([storeName, config]) => {
@@ -437,6 +448,11 @@ class IndexedDBManager {
             this.migrateFrom10To11(migratedData);
         }
         
+        if (fromVersion <= 11 && toVersion >= 12) {
+            // 版本11到12的迁移：修复可能缺失的存储表
+            this.migrateFrom11To12(migratedData);
+        }
+        
         console.log('数据迁移完成');
         return migratedData;
     }
@@ -626,6 +642,43 @@ class IndexedDBManager {
         }
         
         console.log('版本10到11迁移完成：气泡设计器贴图库已添加');
+    }
+    
+    /**
+     * 从版本11迁移到版本12
+     * @param {Object} data - 数据对象
+     */
+    migrateFrom11To12(data) {
+        console.log('执行版本11到12的迁移：清理废弃存储并确保themeConfig存在');
+        
+        // 版本12：确保themeConfig存在
+        if (!data.themeConfig) {
+            data.themeConfig = [];
+            console.log('确保 themeConfig 存储存在');
+        }
+        
+        // 删除废弃的bubbleDesignerStickers存储
+        if (data.bubbleDesignerStickers) {
+            delete data.bubbleDesignerStickers;
+            console.log('删除废弃的 bubbleDesignerStickers 存储');
+        }
+        
+        // 更新元数据中的存储列表
+        if (data._metadata && data._metadata.stores) {
+            // 确保themeConfig在列表中
+            if (!data._metadata.stores.includes('themeConfig')) {
+                data._metadata.stores.push('themeConfig');
+            }
+            
+            // 从元数据中移除bubbleDesignerStickers
+            const index = data._metadata.stores.indexOf('bubbleDesignerStickers');
+            if (index > -1) {
+                data._metadata.stores.splice(index, 1);
+                console.log('从元数据中移除 bubbleDesignerStickers');
+            }
+        }
+        
+        console.log('版本11到12迁移完成：已清理废弃存储并确保themeConfig存在');
     }
 
     /**
