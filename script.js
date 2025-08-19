@@ -10222,12 +10222,9 @@ class ThemeConfigManager {
             
             // 检查themeConfig存储是否存在
             if (!this.db.objectStoreNames.contains(this.storeName)) {
-                console.log('themeConfig存储不存在，数据库将自动升级到版本10');
-                // 直接返回，让用户刷新页面触发自然升级
-                if (typeof showToast === 'function') {
-                    showToast('检测到数据库需要升级，请刷新页面');
-                }
-                return;
+                console.log('themeConfig存储不存在，需要数据库升级');
+                // 返回false表示存储不存在，让调用者决定如何处理
+                return { success: false, reason: 'storage_not_exists' };
             }
             
             const configs = await this.getAllThemeConfigs();
@@ -10828,11 +10825,54 @@ function openBubbleDesigner() {
 
 // 在页面加载完成后初始化主题色
 document.addEventListener('DOMContentLoaded', async function() {
-    // 加载保存的主题配置
-    await loadThemeConfig();
+    // 等待数据库完全初始化后再加载主题配置
+    const waitForDatabase = async () => {
+        let attempts = 0;
+        while ((!window.db || !window.isIndexedDBReady) && attempts < 30) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            attempts++;
+        }
+        
+        if (!window.db || !window.isIndexedDBReady) {
+            console.warn('数据库初始化超时，使用默认主题配置');
+            return false;
+        }
+        
+        // 再次检查themeConfig表是否存在
+        if (!window.db.objectStoreNames.contains('themeConfig')) {
+            console.warn('themeConfig存储不存在，等待数据库升级');
+            // 触发数据库升级
+            if (window.dbManager && window.dbManager.autoUpgradeDatabase) {
+                try {
+                    await window.dbManager.autoUpgradeDatabase();
+                    // 重新检查
+                    if (window.db && window.db.objectStoreNames.contains('themeConfig')) {
+                        console.log('数据库升级完成，themeConfig表已创建');
+                        return true;
+                    }
+                } catch (error) {
+                    console.error('数据库升级失败:', error);
+                }
+            }
+            return false;
+        }
+        
+        return true;
+    };
     
-    // 加载自定义气泡样式
-    await loadCustomBubbleStyle();
+    const databaseReady = await waitForDatabase();
+    
+    if (databaseReady) {
+        // 加载保存的主题配置
+        await loadThemeConfig();
+        
+        // 加载自定义气泡样式
+        await loadCustomBubbleStyle();
+    } else {
+        // 如果数据库未就绪，应用默认主题
+        console.log('数据库未就绪，应用默认主题');
+        applyThemeColor('#07c160');
+    }
     
     // 当切换到外观管理页面时初始化
     const originalShowPageAsync = showPageAsync;
