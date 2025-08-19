@@ -29,7 +29,8 @@ class IndexedDBManager {
             memoryProcessedIndex: { keyPath: 'contactId' },
             fileStorage: { keyPath: 'fileId' }, // 新增：存储原始文件Blob数据
             fileReferences: { keyPath: 'referenceId' }, // 新增：存储文件引用关系
-            themeConfig: { keyPath: 'type' } // 新增：存储主题配置（颜色、渐变等）
+            themeConfig: { keyPath: 'type' }, // 新增：存储主题配置（颜色、渐变等）
+            bubbleDesignerStickers: { keyPath: 'id' } // 新增：气泡设计器贴图库
         };
     }
 
@@ -612,43 +613,6 @@ class IndexedDBManager {
         }
         
         console.log('版本10到11迁移完成：气泡设计器贴图库已添加');
-    }
-    
-    /**
-     * 从版本11迁移到版本12
-     * @param {Object} data - 数据对象
-     */
-    migrateFrom11To12(data) {
-        console.log('执行版本11到12的迁移：清理废弃存储并确保themeConfig存在');
-        
-        // 版本12：确保themeConfig存在
-        if (!data.themeConfig) {
-            data.themeConfig = [];
-            console.log('确保 themeConfig 存储存在');
-        }
-        
-        // 删除废弃的bubbleDesignerStickers存储
-        if (data.bubbleDesignerStickers) {
-            delete data.bubbleDesignerStickers;
-            console.log('删除废弃的 bubbleDesignerStickers 存储');
-        }
-        
-        // 更新元数据中的存储列表
-        if (data._metadata && data._metadata.stores) {
-            // 确保themeConfig在列表中
-            if (!data._metadata.stores.includes('themeConfig')) {
-                data._metadata.stores.push('themeConfig');
-            }
-            
-            // 从元数据中移除bubbleDesignerStickers
-            const index = data._metadata.stores.indexOf('bubbleDesignerStickers');
-            if (index > -1) {
-                data._metadata.stores.splice(index, 1);
-                console.log('从元数据中移除 bubbleDesignerStickers');
-            }
-        }
-        
-        console.log('版本11到12迁移完成：已清理废弃存储并确保themeConfig存在');
     }
 
     /**
@@ -1613,12 +1577,23 @@ window.DatabaseManager = {
                 await dbManager.initDB();
                 repairSteps.push('重新初始化数据库');
             } catch (initError) {
-                console.warn('标准初始化失败，无法修复数据库:', initError);
-                throw new Error(`数据库初始化失败: ${initError.message}`);
+                console.warn('标准初始化失败，尝试强制重建:', initError);
+                
+                // 修复步骤3：强制重建数据库
+                console.log('修复步骤3：强制重建数据库');
+                if (window.db) {
+                    window.db.close();
+                }
+                
+                await dbManager.deleteDatabase();
+                await new Promise(resolve => setTimeout(resolve, 500)); // 等待删除完成
+                
+                await dbManager.initDB();
+                repairSteps.push('强制重建数据库');
             }
             
-            // 修复步骤3：验证修复结果
-            console.log('修复步骤3：验证修复结果');
+            // 修复步骤4：验证修复结果
+            console.log('修复步骤4：验证修复结果');
             await new Promise(resolve => setTimeout(resolve, 200)); // 等待连接稳定
             
             if (!window.db || window.db.readyState === 'done') {
