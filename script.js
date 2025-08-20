@@ -337,14 +337,14 @@ async function handleAvatarUpload(inputId, entityType, entityId, statusElementId
         const fileId = await window.ImageStorageAPI.storeAvatar(file, entityType, entityId);
         
         if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('头像已保存');
+        showToast('头像已保存', 'success');
         
         // 返回文件ID用于后续处理
         return fileId;
     } catch (error) {
         console.error('头像上传失败:', error);
         if (statusElement) statusElement.textContent = '上传失败';
-        showToast(`上传失败: ${error.message}`);
+        showUploadError(error);
         throw error;
     }
 }
@@ -377,14 +377,14 @@ async function handleBackgroundUpload(inputId, contactId, statusElementId) {
         const fileId = await window.ImageStorageAPI.storeBackground(file, contactId);
         
         if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('背景图片已保存');
+        showToast('背景图片已保存', 'success');
         
         // 返回文件ID用于后续处理
         return fileId;
     } catch (error) {
         console.error('背景图片上传失败:', error);
         if (statusElement) statusElement.textContent = '上传失败';
-        showToast(`上传失败: ${error.message}`);
+        showUploadError(error);
         throw error;
     }
 }
@@ -417,14 +417,14 @@ async function handleEmojiUpload(inputId, emojiTag, statusElementId) {
         const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
         
         if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('表情包已保存');
+        showToast('表情包已保存', 'success');
         
         // 返回文件ID用于后续处理
         return fileId;
     } catch (error) {
         console.error('表情包上传失败:', error);
         if (statusElement) statusElement.textContent = '上传失败';
-        showToast(`上传失败: ${error.message}`);
+        showUploadError(error);
         throw error;
     }
 }
@@ -3175,7 +3175,7 @@ async function handleMomentImagesUpload(event) {
                 });
             } catch (error) {
                 console.error('图片上传失败:', error);
-                showToast('图片上传失败');
+                showToast(`图片上传失败: ${error.message || '未知错误'}`, 'error');
             }
         }
     }
@@ -4229,11 +4229,68 @@ function updateContextValue(value) {
     document.getElementById('contextValue').textContent = value + '条';
 }
 
-function showToast(message, duration = 2000) {
+function showToast(message, type = 'info', duration = 3000) {
     const toast = document.getElementById('toast');
+    if (!toast) {
+        console.warn('Toast元素不存在');
+        return;
+    }
+    
     toast.textContent = message;
+    
+    // 移除之前的类型类
+    toast.classList.remove('toast-error', 'toast-success', 'toast-warning', 'toast-info');
+    
+    // 添加新的类型类
+    switch(type) {
+        case 'error':
+            toast.classList.add('toast-error');
+            duration = Math.max(duration, 4000); // 错误消息显示时间稍长
+            break;
+        case 'success':
+            toast.classList.add('toast-success');
+            break;
+        case 'warning':
+            toast.classList.add('toast-warning');
+            break;
+        default:
+            toast.classList.add('toast-info');
+            break;
+    }
+    
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), duration);
+}
+
+// 专门用于显示上传错误的函数
+function showUploadError(error) {
+    if (error && error.name === 'DetailedError') {
+        // 根据错误代码显示不同类型的toast
+        switch(error.code) {
+            case 'FILE_MISSING':
+            case 'PARAM_MISSING':
+                showToast(error.message, 'warning');
+                break;
+            case 'FILE_TOO_LARGE':
+            case 'INVALID_FILE_TYPE':
+                showToast(error.message, 'error');
+                break;
+            case 'STORAGE_FULL':
+                showToast(error.message, 'error', 5000); // 存储满显示更久
+                break;
+            case 'DATABASE_ERROR':
+                showToast(error.message, 'error');
+                break;
+            case 'SYSTEM_ERROR':
+                showToast(error.message, 'warning');
+                break;
+            default:
+                showToast(error.message, 'error');
+                break;
+        }
+    } else {
+        showToast(`上传失败: ${error.message || '未知错误'}`, 'error');
+    }
 }
 
 // 处理API错误的专用函数，自动检测空回复并设置合适的显示时长

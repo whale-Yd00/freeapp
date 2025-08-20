@@ -1,4 +1,15 @@
 /**
+ * 详细错误类 - 提供错误类型和用户友好的错误消息
+ */
+class DetailedError extends Error {
+    constructor(code, message) {
+        super(message);
+        this.name = 'DetailedError';
+        this.code = code;
+    }
+}
+
+/**
  * 图片存储API - 高级接口
  * 提供简单易用的图片存储和获取接口，封装底层的文件存储管理器
  */
@@ -56,6 +67,26 @@ class ImageStorageAPI {
         await this.init();
 
         try {
+            // 验证输入参数
+            if (!imageData) {
+                throw new DetailedError('FILE_MISSING', '没有选择文件');
+            }
+            
+            if (!entityType || !entityId) {
+                throw new DetailedError('PARAM_MISSING', '缺少必要的参数');
+            }
+
+            // 检查文件大小（如果是File或Blob对象）
+            if (imageData instanceof File || imageData instanceof Blob) {
+                const maxSize = 10 * 1024 * 1024; // 10MB
+                if (imageData.size > maxSize) {
+                    throw new DetailedError('FILE_TOO_LARGE', '文件大小超过10MB限制');
+                }
+                if (!imageData.type.startsWith('image/')) {
+                    throw new DetailedError('INVALID_FILE_TYPE', '请选择图片文件');
+                }
+            }
+
             // 存储文件
             const result = await this.fileManager.storeFile(imageData, {
                 type: 'avatar',
@@ -79,7 +110,27 @@ class ImageStorageAPI {
 
         } catch (error) {
             console.error(`存储${entityType}头像失败:`, error);
-            throw error;
+            
+            // 如果是我们自定义的DetailedError，直接抛出
+            if (error instanceof DetailedError) {
+                throw error;
+            }
+            
+            // 处理其他类型的错误
+            if (error.name === 'QuotaExceededError') {
+                throw new DetailedError('STORAGE_FULL', '存储空间不足，请清理数据后重试');
+            }
+            
+            if (error.name === 'InvalidStateError' || error.message && error.message.includes('database')) {
+                throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
+            }
+            
+            if (error.message && error.message.includes('FileStorageManager未加载')) {
+                throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
+            }
+            
+            // 默认错误
+            throw new DetailedError('UNKNOWN_ERROR', `头像上传失败: ${error.message || '未知错误'}`);
         }
     }
 
@@ -115,6 +166,26 @@ class ImageStorageAPI {
         await this.init();
 
         try {
+            // 验证输入参数
+            if (!imageData) {
+                throw new DetailedError('FILE_MISSING', '没有选择背景图片');
+            }
+            
+            if (!backgroundId) {
+                throw new DetailedError('PARAM_MISSING', '背景ID不能为空');
+            }
+
+            // 检查文件大小和类型
+            if (imageData instanceof File || imageData instanceof Blob) {
+                const maxSize = 15 * 1024 * 1024; // 15MB（背景图片可以稍大）
+                if (imageData.size > maxSize) {
+                    throw new DetailedError('FILE_TOO_LARGE', '背景图片大小超过15MB限制');
+                }
+                if (!imageData.type.startsWith('image/')) {
+                    throw new DetailedError('INVALID_FILE_TYPE', '请选择图片文件作为背景');
+                }
+            }
+
             const result = await this.fileManager.storeFile(imageData, {
                 type: 'background',
                 backgroundId: backgroundId
@@ -134,7 +205,27 @@ class ImageStorageAPI {
 
         } catch (error) {
             console.error('存储背景图片失败:', error);
-            throw error;
+            
+            // 如果是我们自定义的DetailedError，直接抛出
+            if (error instanceof DetailedError) {
+                throw error;
+            }
+            
+            // 处理其他类型的错误
+            if (error.name === 'QuotaExceededError') {
+                throw new DetailedError('STORAGE_FULL', '存储空间不足，请清理数据后重试');
+            }
+            
+            if (error.name === 'InvalidStateError' || error.message && error.message.includes('database')) {
+                throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
+            }
+            
+            if (error.message && error.message.includes('FileStorageManager未加载')) {
+                throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
+            }
+            
+            // 默认错误
+            throw new DetailedError('UNKNOWN_ERROR', `背景图片上传失败: ${error.message || '未知错误'}`);
         }
     }
 
@@ -169,6 +260,26 @@ class ImageStorageAPI {
         await this.init();
 
         try {
+            // 验证输入参数
+            if (!imageData) {
+                throw new DetailedError('FILE_MISSING', '没有选择表情包图片');
+            }
+            
+            if (!emojiTag) {
+                throw new DetailedError('PARAM_MISSING', '表情包标签不能为空');
+            }
+
+            // 检查文件大小和类型
+            if (imageData instanceof File || imageData instanceof Blob) {
+                const maxSize = 5 * 1024 * 1024; // 5MB（表情包通常较小）
+                if (imageData.size > maxSize) {
+                    throw new DetailedError('FILE_TOO_LARGE', '表情包大小超过5MB限制');
+                }
+                if (!imageData.type.startsWith('image/')) {
+                    throw new DetailedError('INVALID_FILE_TYPE', '请选择图片文件作为表情包');
+                }
+            }
+
             const result = await this.fileManager.storeFile(imageData, {
                 type: 'emoji',
                 tag: emojiTag
@@ -188,7 +299,27 @@ class ImageStorageAPI {
 
         } catch (error) {
             console.error('存储表情包失败:', error);
-            throw error;
+            
+            // 如果是我们自定义的DetailedError，直接抛出
+            if (error instanceof DetailedError) {
+                throw error;
+            }
+            
+            // 处理其他类型的错误
+            if (error.name === 'QuotaExceededError') {
+                throw new DetailedError('STORAGE_FULL', '存储空间不足，请清理数据后重试');
+            }
+            
+            if (error.name === 'InvalidStateError' || error.message && error.message.includes('database')) {
+                throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
+            }
+            
+            if (error.message && error.message.includes('FileStorageManager未加载')) {
+                throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
+            }
+            
+            // 默认错误
+            throw new DetailedError('UNKNOWN_ERROR', `表情包上传失败: ${error.message || '未知错误'}`);
         }
     }
 

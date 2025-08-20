@@ -1535,15 +1535,39 @@ body.no-has-support.chat-active .bottom-nav {
     background-color: rgba(0,0,0,0.8);
     color: white;
     padding: 12px 24px;
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 14px;
     z-index: 3000;
     display: none;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .toast.show {
     display: block;
     animation: fadeInOut 2s ease;
+}
+
+/* Toast类型样式 */
+.toast.toast-error {
+    background-color: #dc3545;
+    color: white;
+}
+
+.toast.toast-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.toast.toast-warning {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.toast.toast-info {
+    background-color: #17a2b8;
+    color: white;
 }
 
 @keyframes fadeInOut {
