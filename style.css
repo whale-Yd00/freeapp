@@ -3449,6 +3449,10 @@ body.no-has-support.chat-active .bottom-nav {
     margin-top: 8px;
 }
 
+.moment-comment-item {
+    align-items: flex-start;
+}
+
 .moment-comment {
     margin-bottom: 8px;
     padding: 8px;
@@ -3466,14 +3470,17 @@ body.no-has-support.chat-active .bottom-nav {
     color: #576b95;
     font-weight: bold;
     cursor: pointer;
+    line-height: 16px;
+    margin: 0;
 }
 
-.moment-comment-content {
+.moment-comment-text {
     color: #333;
     word-wrap: break-word;
     word-break: break-word;
     overflow-wrap: break-word;
-    white-space: pre-wrap;
+    line-height: 16px;
+    margin: 0;
 }
 
 .moment-comment-reply-btn {

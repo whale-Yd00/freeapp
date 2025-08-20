@@ -9499,10 +9499,8 @@ async function createUserProfileMomentElement(moment) {
                     <div class="moment-comment-item" data-comment-index="${index}" style="display: flex; margin-bottom: 12px;">
                         <div style="margin-right: 10px;">${commentAvatarContent}</div>
                         <div style="flex: 1;">
-                            <div class="moment-comment-content">
-                                <span class="moment-comment-author" onclick="handleCommentAuthorClick('${comment.author}')" style="font-weight: 600; color: #576b95; cursor: pointer;">${comment.author}:</span>
-                                <span class="moment-comment-text" style="color: #333; margin-left: 4px;">${safeContent}</span>
-                            </div>
+                            <div class="moment-comment-author" onclick="handleCommentAuthorClick('${comment.author}')" style="font-weight: 600; color: #576b95; cursor: pointer; line-height: 16px;">${comment.author}</div>
+                            <div class="moment-comment-text" style="color: #333; line-height: 16px;">${safeContent}</div>
                             <div class="moment-comment-actions" style="margin-top: 4px; font-size: 12px; color: #999;">
                                 <span class="moment-comment-time">${formatContactListTime(commentTimeStr)}</span>
                             </div>
