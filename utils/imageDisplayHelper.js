@@ -33,13 +33,15 @@ class ImageDisplayHelper {
             
             // 检查是否有新的文件引用
             if (entity.avatarFileId && this.imageAPI) {
-                const cacheKey = `avatar_${entityType}_${entity.id}`;
+                // 为用户类型使用固定的id，因为用户对象通常没有id字段
+                const entityId = entityType === 'user' ? 'profile' : entity.id;
+                const cacheKey = `avatar_${entityType}_${entityId}`;
                 
                 if (this.urlCache.has(cacheKey)) {
                     return this.urlCache.get(cacheKey);
                 }
                 
-                const url = await this.imageAPI.getAvatarURL(entityType, entity.id);
+                const url = await this.imageAPI.getAvatarURL(entityType, entityId);
                 this.urlCache.set(cacheKey, url);
                 return url;
             }
