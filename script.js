@@ -3659,17 +3659,45 @@ async function renderMomentsList() {
             const momentDiv = document.createElement('div');
             momentDiv.className = 'moment-item';
             
-            // 处理作者头像 - 使用内联样式避免CSS冲突
+            // 处理作者头像 - 支持新的文件系统格式
             let avatarContent = '';
             const author = window.contacts ? window.contacts.find(c => c.name === moment.authorName) : null;
-            if (author && author.avatar) {
-                avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
-            } else if (moment.authorName === userProfile.name && userProfile.avatar) {
-                // 如果是当前用户的动态
-                avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
-            } else {
-                // 使用文字头像
-                avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+            
+            try {
+                if (author) {
+                    // 使用getAvatarHTML获取联系人头像
+                    const avatarHTML = await getAvatarHTML(author, 'contact', '');
+                    if (avatarHTML.includes('<img')) {
+                        const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                        if (srcMatch) {
+                            avatarContent = `<img src="${srcMatch[1]}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                        }
+                    }
+                } else if (moment.authorName === userProfile.name) {
+                    // 如果是当前用户的动态，使用getAvatarHTML获取用户头像
+                    const avatarHTML = await getAvatarHTML(userProfile, 'user', '');
+                    if (avatarHTML.includes('<img')) {
+                        const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                        if (srcMatch) {
+                            avatarContent = `<img src="${srcMatch[1]}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                        }
+                    }
+                }
+                
+                // 如果没有头像或头像获取失败，使用文字头像
+                if (!avatarContent) {
+                    avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+                }
+            } catch (error) {
+                console.warn('获取朋友圈头像失败，使用回退逻辑:', error);
+                // 回退到旧的逻辑
+                if (author && author.avatar) {
+                    avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                } else if (moment.authorName === userProfile.name && userProfile.avatar) {
+                    avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                } else {
+                    avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+                }
             }
             
             // 处理图片内容 - 支持多图片和文件系统
@@ -8676,13 +8704,34 @@ async function loadUserProfileData() {
             // 显示联系人的主页
             const contact = currentUserProfileContact;
             
-            // 设置头像
-            if (contact.avatar) {
-                userProfileAvatar.style.backgroundImage = `url(${contact.avatar})`;
-                userProfileAvatar.textContent = '';
-            } else {
-                userProfileAvatar.style.backgroundImage = '';
-                userProfileAvatar.textContent = contact.name?.charAt(0) || '?';
+            // 设置头像 - 使用getAvatarHTML获取头像内容
+            try {
+                const avatarHTML = await getAvatarHTML(contact, 'contact', 'user-profile-avatar-inner');
+                if (avatarHTML.includes('<img')) {
+                    // 如果是图片，提取src并设置为背景图片
+                    const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                    if (srcMatch) {
+                        userProfileAvatar.style.backgroundImage = `url(${srcMatch[1]})`;
+                        userProfileAvatar.textContent = '';
+                    } else {
+                        // 回退到旧逻辑
+                        userProfileAvatar.style.backgroundImage = '';
+                        userProfileAvatar.textContent = contact.name?.charAt(0) || '?';
+                    }
+                } else {
+                    // 如果是文字头像
+                    userProfileAvatar.style.backgroundImage = '';
+                    userProfileAvatar.textContent = contact.name?.charAt(0) || '?';
+                }
+            } catch (error) {
+                console.warn('获取联系人头像失败，使用回退逻辑:', error);
+                if (contact.avatar) {
+                    userProfileAvatar.style.backgroundImage = `url(${contact.avatar})`;
+                    userProfileAvatar.textContent = '';
+                } else {
+                    userProfileAvatar.style.backgroundImage = '';
+                    userProfileAvatar.textContent = contact.name?.charAt(0) || '?';
+                }
             }
             
             // 设置用户名，如果是临时联系人则显示特殊样式
@@ -8704,24 +8753,43 @@ async function loadUserProfileData() {
             
         } else {
             // 显示自己的主页
-            console.log('显示自己的主页');
             const userProfile = await getUserProfile();
-            console.log('获取到的用户配置:', userProfile);
             
-            // 设置头像
-            if (userProfile.avatar) {
-                userProfileAvatar.style.backgroundImage = `url(${userProfile.avatar})`;
-                userProfileAvatar.textContent = '';
-                console.log('设置头像图片:', userProfile.avatar);
-            } else {
-                userProfileAvatar.style.backgroundImage = '';
-                userProfileAvatar.textContent = userProfile.name?.charAt(0) || '我';
-                console.log('设置头像文字:', userProfile.name?.charAt(0) || '我');
+            // 设置头像 - 使用getAvatarHTML获取头像内容，支持新的文件系统
+            try {
+                const avatarHTML = await getAvatarHTML(userProfile, 'user', 'user-profile-avatar-inner');
+                if (avatarHTML.includes('<img')) {
+                    // 如果是图片，提取src并设置为背景图片
+                    const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                    if (srcMatch) {
+                        userProfileAvatar.style.backgroundImage = `url(${srcMatch[1]})`;
+                        userProfileAvatar.textContent = '';
+                    } else {
+                        // 回退到旧逻辑
+                        userProfileAvatar.style.backgroundImage = '';
+                        userProfileAvatar.textContent = userProfile.name?.charAt(0) || '我';
+                        console.log('设置头像文字（解析失败）:', userProfile.name?.charAt(0) || '我');
+                    }
+                } else {
+                    // 如果是文字头像
+                    userProfileAvatar.style.backgroundImage = '';
+                    userProfileAvatar.textContent = userProfile.name?.charAt(0) || '我';
+                }
+            } catch (error) {
+                console.warn('获取用户头像失败，使用回退逻辑:', error);
+                if (userProfile.avatar) {
+                    userProfileAvatar.style.backgroundImage = `url(${userProfile.avatar})`;
+                    userProfileAvatar.textContent = '';
+                    console.log('设置头像图片（回退）:', userProfile.avatar);
+                } else {
+                    userProfileAvatar.style.backgroundImage = '';
+                    userProfileAvatar.textContent = userProfile.name?.charAt(0) || '我';
+                    console.log('设置头像文字（回退）:', userProfile.name?.charAt(0) || '我');
+                }
             }
             
             // 设置用户名
             userProfileName.textContent = userProfile.name || '我的昵称';
-            console.log('设置用户名:', userProfile.name || '我的昵称');
             
             // 设置banner背景
             userProfileBanner.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
@@ -9457,17 +9525,45 @@ async function createUserProfileMomentElement(moment) {
         </div>
     `;
     
-    // 处理作者头像 - 和发现页面逻辑一致
+    // 处理作者头像 - 支持新的文件系统格式
     let avatarContent = '';
     const author = window.contacts ? window.contacts.find(c => c.name === moment.authorName) : null;
-    if (author && author.avatar) {
-        avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
-    } else if (moment.authorName === userProfile.name && userProfile.avatar) {
-        // 如果是当前用户的动态
-        avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
-    } else {
-        // 使用文字头像
-        avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+    
+    try {
+        if (author) {
+            // 使用getAvatarHTML获取联系人头像
+            const avatarHTML = await getAvatarHTML(author, 'contact', '');
+            if (avatarHTML.includes('<img')) {
+                const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                if (srcMatch) {
+                    avatarContent = `<img src="${srcMatch[1]}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                }
+            }
+        } else if (moment.authorName === userProfile.name) {
+            // 如果是当前用户的动态，使用getAvatarHTML获取用户头像
+            const avatarHTML = await getAvatarHTML(userProfile, 'user', '');
+            if (avatarHTML.includes('<img')) {
+                const srcMatch = avatarHTML.match(/src="([^"]+)"/);
+                if (srcMatch) {
+                    avatarContent = `<img src="${srcMatch[1]}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+                }
+            }
+        }
+        
+        // 如果没有头像或头像获取失败，使用文字头像
+        if (!avatarContent) {
+            avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+        }
+    } catch (error) {
+        console.warn('获取个人主页朋友圈头像失败，使用回退逻辑:', error);
+        // 回退到旧的逻辑
+        if (author && author.avatar) {
+            avatarContent = `<img src="${author.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+        } else if (moment.authorName === userProfile.name && userProfile.avatar) {
+            avatarContent = `<img src="${userProfile.avatar}" alt="头像" style="width: 40px; height: 40px; border-radius: 6px; object-fit: cover;">`;
+        } else {
+            avatarContent = `<div style="width: 40px; height: 40px; border-radius: 6px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #333;">${moment.authorName.charAt(0)}</div>`;
+        }
     }
     
     momentDiv.innerHTML = `
