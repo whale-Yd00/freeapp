@@ -85,6 +85,7 @@ class PromptBuilder {
             // 输出格式要求
             systemPrompt += `--- [输出格式] ---\n`;
             systemPrompt += `请严格按照以下JSON格式输出，不要包含任何其他文字：\n`;
+            systemPrompt += `【重要】speaker字段必须使用上面列出的确切角色名字！\n`;
             systemPrompt += `{\n`;
             systemPrompt += `  "messages": [\n`;
             systemPrompt += `    {"speaker": "角色名", "content": "发言内容"},\n`;

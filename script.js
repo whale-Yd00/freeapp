@@ -5363,17 +5363,19 @@ async function sendGroupMessage() {
             const firstReply = replies[0];
             let responseText = removeThinkingChain(firstReply.content);
             
-            // 尝试解析JSON格式的回复
+            // 尝试解析JSON格式的回复（支持纯JSON、Markdown代码块等格式）
             if (responseText.includes('{') && responseText.includes('}')) {
                 try {
                     // 使用统一的JSON提取函数清理markdown语法
                     const cleanedJson = window.apiService.extractJSON(responseText);
                     const parsedResponse = JSON.parse(cleanedJson);
+                    
                     if (parsedResponse.messages && Array.isArray(parsedResponse.messages)) {
                         groupMessages = parsedResponse.messages;
                     }
                 } catch (jsonError) {
                     console.error('群聊JSON提取失败:', jsonError);
+                    
                     // 继续使用原有逻辑作为备用
                     const jsonStart = responseText.indexOf('{');
                     const jsonEnd = responseText.lastIndexOf('}') + 1;
@@ -5387,8 +5389,13 @@ async function sendGroupMessage() {
             }
         } catch (error) {
             console.error('解析群聊JSON回复失败:', error);
-            // 如果JSON解析失败，回退到原有逻辑的简化版本
-            showTopNotification('群聊回复格式解析失败');
+            console.error('错误详情:', {
+                error: error.message,
+                firstReply: replies[0],
+                repliesLength: replies.length
+            });
+            // 显示具体的错误信息而不是泛泛的"无法解析API回复"
+            showTopNotification(`无法解析API回复: ${error.message}`);
             return;
         }
         
@@ -5532,7 +5539,8 @@ async function addSingleMessage(message, isNewMessage = false) {
     let avatarContent = '';
     if (message.role === 'assistant') {
         if (currentContact.type === 'group') {
-            const member = currentContact.members.find(m => m.id === message.senderId);
+            // 修复：从contacts数组中查找成员，而不是从members数组（members只存储ID）
+            const member = contacts.find(c => c.id === message.senderId);
             avatarContent = member ? (await getAvatarHTML(member, 'contact') || member.name[0]) : '🤖';
         } else {
             avatarContent = await getAvatarHTML(currentContact, 'contact') || currentContact.name[0];
@@ -5544,7 +5552,8 @@ async function addSingleMessage(message, isNewMessage = false) {
     // 先移除复杂的语音处理逻辑，专注于修复基础消息样式
 
     if (currentContact.type === 'group' && message.role === 'assistant') {
-        const member = currentContact.members.find(m => m.id === message.senderId);
+        // 修复：从contacts数组中查找成员
+        const member = contacts.find(c => c.id === message.senderId);
         const memberName = member ? member.name : '未知成员';
         msgDiv.innerHTML = `
             <div class="message-avatar">${avatarContent}</div>
@@ -5659,19 +5668,24 @@ async function callAPI(contact, turnContext = []) {
         
         let chatRepliesText = fullResponseText;
 
-        // 处理回复分割
-        if (!chatRepliesText.includes('|||')) {
-            const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
-            let tempReplies = [];
-            for (let i = 0; i < sentences.length; i += 2) {
-                let sentence = sentences[i];
-                let punctuation = sentences[i+1] || '';
-                tempReplies.push(sentence + punctuation);
+        // 群聊模式：如果是群聊，直接返回完整内容，不进行分割
+        let replies;
+        if (currentContact && currentContact.type === 'group') {
+            replies = [chatRepliesText.trim()];
+        } else {
+            // 处理回复分割（仅用于私聊）
+            if (!chatRepliesText.includes('|||')) {
+                const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
+                let tempReplies = [];
+                for (let i = 0; i < sentences.length; i += 2) {
+                    let sentence = sentences[i];
+                    let punctuation = sentences[i+1] || '';
+                    tempReplies.push(sentence + punctuation);
+                }
+                chatRepliesText = tempReplies.join('|||');
             }
-            chatRepliesText = tempReplies.join('|||');
+            replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
         }
-        
-        const replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
         const processedReplies = [];
         
         // 处理特殊消息类型（表情、红包等）
