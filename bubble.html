@@ -1595,14 +1595,19 @@
                     textColor: controls.textColor.value || '#333333',
                     fontFamily: controls.fontFamily.value || 'Inter',
                     // bubbleText: 不保存文本内容，每次使用默认值
-                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
-                        id: wrapper.dataset.id,
-                        left: parseFloat(wrapper.style.left) || 0,
-                        top: parseFloat(wrapper.style.top) || 0,
-                        width: wrapper.offsetWidth,
-                        height: wrapper.offsetHeight,
-                        zIndex: wrapper.style.zIndex || 1
-                    })),
+                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => {
+                        const stickerId = wrapper.dataset.id;
+                        const stickerInfo = stickerLibrary.find(s => s.id === stickerId);
+                        return {
+                            id: stickerId,
+                            fileId: stickerInfo?.fileId || '',
+                            left: parseFloat(wrapper.style.left) || 0,
+                            top: parseFloat(wrapper.style.top) || 0,
+                            width: wrapper.offsetWidth,
+                            height: wrapper.offsetHeight,
+                            zIndex: wrapper.style.zIndex || 1
+                        };
+                    }),
                     html: htmlTemplate,
                     enabled: true
                 };
@@ -1647,11 +1652,11 @@
                         }
                     }
                     
-                    // 生成贴纸HTML
+                    // 生成贴纸HTML - 使用fileId格式供主应用解析
                     let stickersHtml = '';
                     if (config.stickers && config.stickers.length > 0) {
                         stickersHtml = config.stickers.map(sticker => 
-                            `<img src="${sticker.src || ''}" class="sticker" style="position: absolute; left: ${sticker.left || 0}px; top: ${sticker.top || 0}px; width: ${sticker.width || 50}px; height: ${sticker.height || 50}px; z-index: ${sticker.zIndex || 1}; user-select: none; pointer-events: none;">`
+                            `<img src="file:${sticker.fileId || ''}" class="sticker" data-file-id="${sticker.fileId || ''}" style="position: absolute; left: ${sticker.left || 0}px; top: ${sticker.top || 0}px; width: ${sticker.width || 50}px; height: ${sticker.height || 50}px; z-index: ${sticker.zIndex || 1}; user-select: none; pointer-events: none;">`
                         ).join('');
                     }
                     
@@ -2113,6 +2118,8 @@
             
             // 从UI控件读取当前状态
             function captureCurrentUIState() {
+                const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                
                 return {
                     borderWidth: controls.borderWidth.value,
                     borderColor: controls.borderColor.value,
@@ -2124,7 +2131,21 @@
                     backgroundType: currentBgType,
                     gradientColor1: controls.gradientColor1.value,
                     gradientColor2: controls.gradientColor2.value,
-                    gradientAngle: controls.gradientAngle.value
+                    gradientAngle: controls.gradientAngle.value,
+                    // 添加贴纸信息收集
+                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => {
+                        const stickerId = wrapper.dataset.id;
+                        const stickerInfo = stickerLibrary.find(s => s.id === stickerId);
+                        return {
+                            id: stickerId,
+                            fileId: stickerInfo?.fileId || '',
+                            left: parseFloat(wrapper.style.left) || 0,
+                            top: parseFloat(wrapper.style.top) || 0,
+                            width: wrapper.offsetWidth,
+                            height: wrapper.offsetHeight,
+                            zIndex: wrapper.style.zIndex || 1
+                        };
+                    })
                 };
             }
             
@@ -2173,7 +2194,55 @@
                 const targetTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 targetTextContent.textContent = defaultText;
                 
-                console.log(`已应用UI状态到${currentBubbleType}: backgroundType=${currentBgType}`);
+                // 恢复贴纸状态
+                if (state.stickers && state.stickers.length > 0) {
+                    const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                    
+                    // 清除当前的所有贴纸
+                    targetBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
+                        wrapper.remove();
+                    });
+                    
+                    // 恢复保存的贴纸
+                    state.stickers.forEach(async (stickerData) => {
+                        if (stickerData.fileId && fileStorageManager) {
+                            try {
+                                const imageUrl = await fileStorageManager.createFileURL(stickerData.fileId);
+                                
+                                const stickerWrapper = document.createElement('div');
+                                stickerWrapper.className = 'sticker-wrapper';
+                                stickerWrapper.dataset.id = stickerData.id;
+                                stickerWrapper.style.position = 'absolute';
+                                stickerWrapper.style.left = `${stickerData.left}px`;
+                                stickerWrapper.style.top = `${stickerData.top}px`;
+                                stickerWrapper.style.width = `${stickerData.width}px`;
+                                stickerWrapper.style.height = `${stickerData.height}px`;
+                                stickerWrapper.style.zIndex = stickerData.zIndex || 1;
+                                stickerWrapper.style.cursor = 'move';
+                                
+                                const img = document.createElement('img');
+                                img.src = imageUrl;
+                                img.className = 'sticker-image';
+                                img.style.width = '100%';
+                                img.style.height = '100%';
+                                img.style.objectFit = 'contain';
+                                img.style.userSelect = 'none';
+                                img.style.pointerEvents = 'none';
+                                
+                                stickerWrapper.appendChild(img);
+                                targetBubble.appendChild(stickerWrapper);
+                                
+                                // 使贴纸可拖拽
+                                makeStickerDraggable(stickerWrapper);
+                                
+                            } catch (error) {
+                                console.warn('恢复贴纸失败:', error, stickerData);
+                            }
+                        }
+                    });
+                }
+                
+                console.log(`已应用UI状态到${currentBubbleType}: backgroundType=${currentBgType}, stickers=${state.stickers?.length || 0}`);
             }
             let availableThemes = ['default'];
 
