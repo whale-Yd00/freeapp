@@ -154,6 +154,25 @@ class FileStorageManager {
     }
 
     /**
+     * 从Blob URL获取Blob对象
+     */
+    async blobUrlToBlob(blobUrl) {
+        try {
+            const response = await fetch(blobUrl);
+            const blob = await response.blob();
+            console.log('成功从Blob URL获取Blob对象:', {
+                url: blobUrl.substring(0, 50) + '...',
+                blobType: blob.type,
+                blobSize: blob.size
+            });
+            return blob;
+        } catch (error) {
+            console.error('从Blob URL获取Blob失败:', error);
+            throw new Error(`无法从Blob URL获取数据: ${error.message}`);
+        }
+    }
+
+    /**
      * 存储文件到IndexedDB
      */
     async storeFile(fileData, metadata = {}) {
@@ -161,23 +180,41 @@ class FileStorageManager {
             await this.init();
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             const transaction = this.db.transaction(['fileStorage'], 'readwrite');
             const store = transaction.objectStore('fileStorage');
             
             let blob;
-            if (typeof fileData === 'string' && fileData.startsWith('data:')) {
-                // base64字符串
-                blob = this.base64ToBlob(fileData);
-                if (!blob) {
-                    reject(new Error('无法转换base64数据'));
+            try {
+                if (typeof fileData === 'string' && fileData.startsWith('data:')) {
+                    // base64字符串
+                    blob = this.base64ToBlob(fileData);
+                    if (!blob) {
+                        reject(new Error('无法转换base64数据'));
+                        return;
+                    }
+                } else if (typeof fileData === 'string' && fileData.startsWith('blob:')) {
+                    // Blob URL - 需要先获取实际的Blob对象
+                    try {
+                        blob = await this.blobUrlToBlob(fileData);
+                    } catch (error) {
+                        reject(error);
+                        return;
+                    }
+                } else if (fileData instanceof File || fileData instanceof Blob) {
+                    // File或Blob对象
+                    blob = this.fileToBlob(fileData);
+                } else {
+                    console.error('不支持的文件数据类型:', {
+                        type: typeof fileData,
+                        isString: typeof fileData === 'string',
+                        preview: typeof fileData === 'string' ? fileData.substring(0, 50) + '...' : 'non-string'
+                    });
+                    reject(new Error(`不支持的文件数据类型: ${typeof fileData}`));
                     return;
                 }
-            } else if (fileData instanceof File || fileData instanceof Blob) {
-                // File或Blob对象
-                blob = this.fileToBlob(fileData);
-            } else {
-                reject(new Error('不支持的文件数据类型'));
+            } catch (error) {
+                reject(error);
                 return;
             }
 
@@ -194,7 +231,7 @@ class FileStorageManager {
             const request = store.put(fileRecord);
 
             request.onsuccess = () => {
-                // 文件存储成功
+                console.log('文件存储成功，文件ID:', fileId);
                 resolve({
                     fileId: fileId,
                     type: blob.type,
@@ -203,8 +240,54 @@ class FileStorageManager {
             };
 
             request.onerror = () => {
-                console.error('文件存储失败:', request.error);
-                reject(request.error);
+                console.error('文件存储失败，详细错误信息:', {
+                    error: request.error,
+                    errorName: request.error?.name,
+                    errorMessage: request.error?.message,
+                    fileId: fileId,
+                    blobSize: blob.size,
+                    blobType: blob.type
+                });
+                
+                // 创建详细的错误信息
+                const errorDetail = {
+                    name: 'DetailedError',
+                    code: 'STORAGE_ERROR',
+                    message: `文件存储失败: ${request.error?.message || request.error?.name || '未知错误'}`,
+                    originalError: request.error
+                };
+                reject(errorDetail);
+            };
+
+            // 添加事务级别的错误处理
+            transaction.onerror = () => {
+                console.error('文件存储事务失败:', {
+                    transactionError: transaction.error,
+                    fileId: fileId
+                });
+                if (!request.result) {
+                    const errorDetail = {
+                        name: 'DetailedError',
+                        code: 'TRANSACTION_ERROR',
+                        message: `事务失败: ${transaction.error?.message || '未知事务错误'}`,
+                        originalError: transaction.error
+                    };
+                    reject(errorDetail);
+                }
+            };
+
+            transaction.onabort = () => {
+                console.error('文件存储事务被中止:', {
+                    fileId: fileId,
+                    abortReason: transaction.error
+                });
+                const errorDetail = {
+                    name: 'DetailedError',
+                    code: 'TRANSACTION_ABORTED',
+                    message: '文件存储事务被中止',
+                    originalError: transaction.error
+                };
+                reject(errorDetail);
             };
         });
     }
