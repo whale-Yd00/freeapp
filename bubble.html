@@ -1224,6 +1224,12 @@
             function makeLibraryStickerDraggable(element) {
                 element.addEventListener('mousedown', async (e) => {
                     e.preventDefault();
+                    
+                    if (currentThemeName === 'default') {
+                        showToast('默认主题不支持添加贴纸，请新建主题后使用', 'info');
+                        return;
+                    }
+                    
                     const stickerData = stickerLibrary.find(s => s.id == element.dataset.id);
                     if (!stickerData) return;
                     
@@ -2618,17 +2624,7 @@
                                 console.log('主题kare配置已保存到工作区');
                             }
                             
-                            // 处理贴纸库（如果需要）
-                            if (themeData.stickerLibrary && themeData.stickerLibrary.length > 0) {
-                                const useThemeStickers = confirm(`主题"${themeName}"包含 ${themeData.stickerLibrary.length} 个贴纸，是否同时加载？\n\n点击"确定"加载主题贴纸\n点击"取消"仅加载样式配置`);
                                 
-                                if (useThemeStickers) {
-                                    // 这里可以实现贴纸库的切换逻辑
-                                    // 暂时简化处理
-                                    showToast('贴纸库切换功能待完善', 'info');
-                                }
-                            }
-                            
                             currentThemeName = themeName;
                             
                             // 清空UI缓存，强制重新加载
