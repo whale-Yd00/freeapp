@@ -331,6 +331,20 @@ class FileStorageManager {
             }
 
             const fileRecord = await this.getFile(fileId);
+            
+            // 验证文件记录和blob
+            if (!fileRecord) {
+                throw new Error(`文件记录不存在: ${fileId}`);
+            }
+            
+            if (!fileRecord.blob) {
+                throw new Error(`文件记录中缺少blob数据: ${fileId}`);
+            }
+            
+            if (!(fileRecord.blob instanceof Blob)) {
+                throw new Error(`文件记录中的blob不是有效的Blob对象: ${fileId}, 实际类型: ${typeof fileRecord.blob}`);
+            }
+            
             const url = URL.createObjectURL(fileRecord.blob);
             
             // 缓存URL
