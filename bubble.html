@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>独立的交互式气泡样式设计器</title>
+    <title>气泡自定义可视化页面</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入JSZip库用于导入导出功能 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- 引入FileStorageManager相关脚本 -->
     <script src="utils/fileStorageManager.js"></script>
     <script src="utils/imageStorageAPI.js"></script>
@@ -107,14 +109,43 @@
             position: relative;
         }
     </style>
+    <!-- Analytics -->
+    <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>
 </head>
 <body class="bg-slate-100 text-slate-800">
+    <!-- Toast 提示组件 -->
+    <div id="toast" class="hidden fixed top-4 right-4 z-[9999] px-4 py-2 rounded-lg text-white font-medium shadow-lg transition-all duration-300"></div>
 
     <div class="container mx-auto p-4 md:p-8">
         <header class="text-center mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-slate-900">交互式气泡样式设计器</h1>
             <p class="text-slate-500 mt-2">单击选中贴图可调整图层，双击可删除。</p>
         </header>
+
+        <!-- 主题管理工具栏 -->
+        <div class="bg-white rounded-2xl shadow-lg p-4 mb-6">
+            <div class="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                <div class="flex-1 max-w-md">
+                    <label for="themeSelect" class="text-sm font-medium text-slate-700 mb-1 block">当前主题</label>
+                    <div class="flex gap-2">
+                        <select id="themeSelect" class="flex-1 text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white">
+                            <option value="default">默认主题</option>
+                        </select>
+                        <button id="createNewThemeBtn" class="bg-green-500 text-white text-sm px-3 py-2 rounded hover:bg-green-600 whitespace-nowrap">新建</button>
+                        <button id="renameThemeBtn" class="bg-yellow-500 text-white text-sm px-3 py-2 rounded hover:bg-yellow-600 whitespace-nowrap">重命名</button>
+                        <button id="deleteThemeBtn" class="bg-red-500 text-white text-sm px-3 py-2 rounded hover:bg-red-600 whitespace-nowrap">删除</button>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button id="exportThemeBtn" class="bg-blue-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors text-sm">📤 导出主题</button>
+                    <label for="importThemeFile" class="bg-amber-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-amber-600 transition-colors cursor-pointer text-sm">
+                        📥 导入主题
+                        <input type="file" id="importThemeFile" accept=".zip" class="hidden">
+                    </label>
+                </div>
+            </div>
+        </div>
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6 flex flex-col min-h-[400px] lg:min-h-[600px] overflow-hidden">
@@ -123,7 +154,7 @@
                     <div class="mb-4 text-center">
                         <div class="inline-flex items-center bg-slate-200 rounded-full p-1">
                             <button id="bubbleTypeSelf" class="bubble-type-btn bg-white text-indigo-600 rounded-full px-4 py-2 text-sm font-semibold">我的气泡</button>
-                            <button id="bubbleTypeOthers" class="bubble-type-btn text-slate-600 rounded-full px-4 py-2 text-sm font-semibold">对方气泡</button>
+                            <button id="bubbleTypeKare" class="bubble-type-btn text-slate-600 rounded-full px-4 py-2 text-sm font-semibold">对方气泡</button>
                         </div>
                     </div>
                     
@@ -141,11 +172,11 @@
                         
                         <!-- 对方气泡 -->
                         <div class="flex justify-start">
-                            <div id="previewBubbleOthers" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(255, 255, 255); border-radius: 12px;">
-                                <span id="bubbleTextContentOthers" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
+                            <div id="previewBubbleKare" class="max-w-[70%] w-auto min-w-[80px] text-left text-lg leading-relaxed transition-all duration-200 relative" style="padding: 12px 18px; border: 1px solid rgba(0,0,0,0.05); background-color: rgb(255, 255, 255); border-radius: 12px;">
+                                <span id="bubbleTextContentKare" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
                                     这是对方发的消息
                                 </span>
-                                <div id="stickerLibraryOthers" class="sticker-container"></div>
+                                <div id="stickerLibraryKare" class="sticker-container"></div>
                             </div>
                         </div>
                         
@@ -155,8 +186,23 @@
             </div>
 
             <div class="lg:col-span-1 bg-white rounded-2xl shadow-lg p-6 space-y-6 overflow-y-auto max-h-[calc(100vh-100px)]">
+
+                <!-- 默认主题锁定提示 -->
+                <div id="defaultThemeNotice" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-yellow-800">主题被锁定</h3>
+                            <p class="mt-1 text-sm text-yellow-700">默认主题不可修改。点击"新建"以创建可修改的主题。</p>
+                        </div>
+                    </div>
+                </div>
                 <div>
-                    <h3 class="font-semibold text-lg mb-3">贴图装饰 (Stickers)</h3>
+                    <h3 class="font-semibold text-lg mb-3">贴纸贴图</h3>
                     <button id="manageStickersBtn" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">管理贴图库</button>
                 </div>
                 <div id="layerControlPanel">
@@ -171,9 +217,7 @@
                     <div class="space-y-4">
                         <div><label for="borderWidth" class="flex justify-between text-sm font-medium text-slate-700">边框宽度 <span id="borderWidthValue">1px</span></label><input type="range" id="borderWidth" min="0" max="50" value="1" class="mt-1"></div>
                         <div><label for="borderColor" class="flex justify-between items-center text-sm font-medium text-slate-700">边框颜色 <input type="color" id="borderColor" value="#4f46e5"></label></div>
-                        <!-- 【新增】文本颜色控制器 -->
                         <div><label for="textColor" class="flex justify-between items-center text-sm font-medium text-slate-700">文本颜色 <input type="color" id="textColor" value="#333333"></label></div>
-                        <!-- 【新增】字体选择器 -->
                         <div>
                             <label for="fontFamily" class="text-sm font-medium text-slate-700">字体选择</label>
                             <select id="fontFamily" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
@@ -202,12 +246,15 @@
                     </div>
                 </div>
                 <div>
-                    <h3 class="font-semibold text-lg mb-3">内容与代码</h3>
+                    <h3 class="font-semibold text-lg mb-3">预览内容</h3>
                     <div class="space-y-4">
-                        <div><label for="bubbleText" class="text-sm font-medium text-slate-700">气泡文本</label><textarea id="bubbleText" rows="3" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">这里是你的气泡预览区域。点击"管理贴图库"开始创作！</textarea></div>
-                        <button id="generateCodeBtn" class="w-full bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-emerald-600 transition-colors">应用此样式到聊天</button>
-                        <button id="resetToDefaultBtn" class="w-full bg-slate-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors">恢复默认气泡</button>
-                    </div>
+                        <div><label for="bubbleText" class="text-sm font-medium text-slate-700">预览文本</label><textarea id="bubbleText" rows="3" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">这里是你的气泡预览区域。点击"管理贴图库"开始创作！</textarea></div>
+                        
+                        <div class="flex gap-2" id="actionButtons">
+                            <button id="saveOnlyBtn" class="flex-1 bg-blue-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors">保存</button>
+                            <button id="generateCodeBtn" class="flex-1 bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-emerald-600 transition-colors">保存并应用</button>
+                        </div>
+                      </div>
                 </div>
             </div>
         </main>
@@ -265,15 +312,14 @@
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const previewContainer = document.getElementById('previewContainer');
             const previewBubbleSelf = document.getElementById('previewBubbleSelf');
-            const previewBubbleOthers = document.getElementById('previewBubbleOthers');
+            const previewBubbleKare = document.getElementById('previewBubbleKare');
             const bubbleTextContentSelf = document.getElementById('bubbleTextContentSelf');
-            const bubbleTextContentOthers = document.getElementById('bubbleTextContentOthers');
+            const bubbleTextContentKare = document.getElementById('bubbleTextContentKare');
             const stickerLibraryContainer = document.getElementById('stickerLibrary');
             const imageProcessorModal = document.getElementById('imageProcessorModal');
             const stickerGallery = document.getElementById('stickerGallery');
@@ -317,14 +363,22 @@
                 gradientAngle: document.getElementById('gradientAngle'),
                 gradientAngleValue: document.getElementById('gradientAngleValue'),
                 bubbleText: document.getElementById('bubbleText'),
+                defaultThemeNotice: document.getElementById('defaultThemeNotice'),
+                actionButtons: document.getElementById('actionButtons'),
+                saveOnlyBtn: document.getElementById('saveOnlyBtn'),
                 generateCodeBtn: document.getElementById('generateCodeBtn'),
-                resetToDefaultBtn: document.getElementById('resetToDefaultBtn'),
+                exportThemeBtn: document.getElementById('exportThemeBtn'),
+                importThemeFile: document.getElementById('importThemeFile'),
+                themeSelect: document.getElementById('themeSelect'),
+                createNewThemeBtn: document.getElementById('createNewThemeBtn'),
+                renameThemeBtn: document.getElementById('renameThemeBtn'),
+                deleteThemeBtn: document.getElementById('deleteThemeBtn'),
                 bubbleTypeSelf: document.getElementById('bubbleTypeSelf'),
-                bubbleTypeOthers: document.getElementById('bubbleTypeOthers'),
+                bubbleTypeKare: document.getElementById('bubbleTypeKare'),
             };
 
             const DB_NAME = 'WhaleLLTDB';
-            const DB_VERSION = 11;
+            const DB_VERSION = 12;
             let db = null;
             let fileStorageManager = null;
             let stickerLibrary = [];
@@ -333,14 +387,8 @@
             let currentBgType = 'solid';
             let selectedStickerWrapper = null;
             let zIndexCounter = 11;
-            let currentBubbleType = 'self'; // 'self' 或 'others'
+            let currentBubbleType = 'self'; // 'self' 或 'kare'
 
-            function showToast(message) {
-                const toast = document.getElementById('toast');
-                toast.textContent = message;
-                toast.classList.add('show');
-                setTimeout(() => toast.classList.remove('show'), 2000);
-            }
 
             async function initStorageSystem() {
                 try {
@@ -447,8 +495,14 @@
                 const borderRadius = controls.borderRadius.value;
                 
                 // 获取当前编辑的气泡元素
-                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
-                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
+                
+                console.log(`updateBubbleStyle: currentBgType=${currentBgType}, bubbleType=${currentBubbleType}`);
+                
+                // 清理之前的背景样式，避免样式冲突
+                currentBubble.style.background = '';
+                currentBubble.style.backgroundColor = '';
                 
                 currentBubble.style.borderWidth = `${borderWidth}px`;
                 currentBubble.style.borderColor = controls.borderColor.value;
@@ -465,9 +519,11 @@
                     const opacity = controls.bgOpacity.value;
                     const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
                     currentBubble.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    console.log(`应用纯色背景: rgba(${r}, ${g}, ${b}, ${opacity})`);
                 } else {
                     const color1 = controls.gradientColor1.value, color2 = controls.gradientColor2.value, angle = controls.gradientAngle.value;
                     currentBubble.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+                    console.log(`应用渐变背景: linear-gradient(${angle}deg, ${color1}, ${color2})`);
                 }
                 controls.borderWidthValue.textContent = `${borderWidth}px`;
                 controls.borderRadiusValue.textContent = `${borderRadius}px`;
@@ -492,8 +548,8 @@
                 });
 
                 // 更新对方气泡中的贴纸状态
-                previewBubbleOthers.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
-                    if (currentBubbleType === 'others') {
+                previewBubbleKare.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
+                    if (currentBubbleType === 'kare') {
                         wrapper.classList.remove('inactive');
                     } else {
                         wrapper.classList.add('inactive');
@@ -503,23 +559,50 @@
 
             // 切换气泡类型
             async function switchBubbleType(type) {
+                const oldType = currentBubbleType;
+                
+                // 保存当前UI状态到缓存（在切换之前）
+                // 但如果当前是默认主题，不保存状态到缓存，因为默认主题是只读的
+                if (oldType && currentThemeName !== 'default') {
+                    uiStateCache[oldType] = captureCurrentUIState();
+                    console.log(`已保存${oldType}的UI状态到缓存`);
+                } else if (oldType && currentThemeName === 'default') {
+                    console.log(`跳过保存默认主题的UI状态到缓存（默认主题是只读的）`);
+                }
+                
                 currentBubbleType = type;
                 
                 // 更新按钮状态
                 if (type === 'self') {
                     controls.bubbleTypeSelf.classList.add('bg-white', 'text-indigo-600');
                     controls.bubbleTypeSelf.classList.remove('text-slate-600');
-                    controls.bubbleTypeOthers.classList.remove('bg-white', 'text-indigo-600');
-                    controls.bubbleTypeOthers.classList.add('text-slate-600');
+                    controls.bubbleTypeKare.classList.remove('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeKare.classList.add('text-slate-600');
                 } else {
-                    controls.bubbleTypeOthers.classList.add('bg-white', 'text-indigo-600');
-                    controls.bubbleTypeOthers.classList.remove('text-slate-600');
+                    controls.bubbleTypeKare.classList.add('bg-white', 'text-indigo-600');
+                    controls.bubbleTypeKare.classList.remove('text-slate-600');
                     controls.bubbleTypeSelf.classList.remove('bg-white', 'text-indigo-600');
                     controls.bubbleTypeSelf.classList.add('text-slate-600');
                 }
                 
-                // 加载对应类型的样式设置
-                await loadBubbleTypeSettings(type);
+                // 根据当前主题加载UI状态
+                if (currentThemeName === 'default') {
+                    // 默认主题：始终使用固定的默认配置
+                    const defaultConfig = DEFAULT_THEME_CONFIG[type];
+                    console.log(`加载默认主题的${type}配置`);
+                    await applyConfigToUI(type, defaultConfig);
+                } else if (uiStateCache[type]) {
+                    console.log(`从缓存加载${type}的UI状态`);
+                    applyUIState(uiStateCache[type]);
+                } else {
+                    console.log(`缓存中没有${type}的状态，从数据库加载`);
+                    await loadBubbleTypeSettings(type);
+                    // 加载后立即缓存
+                    uiStateCache[type] = captureCurrentUIState();
+                }
+                
+                // 更新预览样式
+                updateBubbleStyle();
                 
                 // 更新贴纸交互状态
                 updateStickersInteractionState();
@@ -529,8 +612,8 @@
 
             // 加载指定气泡类型的设置
             async function loadBubbleTypeSettings(type) {
-                const targetBubble = type === 'self' ? previewBubbleSelf : previewBubbleOthers;
-                const targetTextContent = type === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const targetBubble = type === 'self' ? previewBubbleSelf : previewBubbleKare;
+                const targetTextContent = type === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 
                 // 首先尝试从保存的配置中加载
                 const styleKey = type === 'self' ? 'bubbleStyleSelf' : 'bubbleStyle';
@@ -542,30 +625,56 @@
                     
                     // 应用基础样式到控件
                     controls.borderWidth.value = savedConfig.borderWidth || 1;
-                    controls.borderColor.value = savedConfig.borderColor || '#4f46e5';
+                    controls.borderColor.value = extractRgbColor(savedConfig.borderColor) || '#4f46e5';
                     controls.borderRadius.value = savedConfig.borderRadius || 12;
-                    controls.textColor.value = savedConfig.textColor || '#333333';
+                    controls.textColor.value = extractRgbColor(savedConfig.textColor) || '#333333';
                     controls.fontFamily.value = savedConfig.fontFamily || 'Inter';
                     
                     // 应用背景样式到控件
                     currentBgType = savedConfig.backgroundType || 'solid';
-                    controls.bgColor.value = savedConfig.backgroundColor || '#ffffff';
+                    controls.bgColor.value = extractRgbColor(savedConfig.backgroundColor) || '#ffffff';
                     controls.bgOpacity.value = savedConfig.backgroundOpacity || 1;
-                    controls.gradientColor1.value = savedConfig.gradientColor1 || '#a5b4fc';
-                    controls.gradientColor2.value = savedConfig.gradientColor2 || '#e0e7ff';
+                    controls.gradientColor1.value = extractRgbColor(savedConfig.gradientColor1) || '#a5b4fc';
+                    controls.gradientColor2.value = extractRgbColor(savedConfig.gradientColor2) || '#e0e7ff';
                     controls.gradientAngle.value = savedConfig.gradientAngle || 145;
                     
                     // 切换背景类型UI
+                    console.log(`加载${type}气泡配置: 背景类型=${currentBgType}, 渐变色1=${controls.gradientColor1.value}, 渐变色2=${controls.gradientColor2.value}`);
+                    
                     if (currentBgType === 'gradient') {
-                        controls.bgTypeGradient.click();
+                        controls.bgTypeGradient.checked = true;
+                        controls.bgTypeSolid.checked = false;
+                        // 使用CSS类控制显示/隐藏，而不是style属性
+                        controls.solidBgControls.classList.add('hidden');
+                        controls.gradientBgControls.classList.remove('hidden');
+                        // 同时更新按钮样式
+                        controls.bgTypeGradient.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                        controls.bgTypeSolid.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
                     } else {
-                        controls.bgTypeSolid.click();
+                        controls.bgTypeSolid.checked = true;
+                        controls.bgTypeGradient.checked = false;
+                        // 使用CSS类控制显示/隐藏
+                        controls.solidBgControls.classList.remove('hidden');
+                        controls.gradientBgControls.classList.add('hidden');
+                        // 同时更新按钮样式
+                        controls.bgTypeSolid.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                        controls.bgTypeGradient.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
                     }
                     
                     // 文本内容始终使用默认值，不从配置中加载
                     const defaultText = type === 'self' ? '这是我发的消息' : '这是对方发的消息';
                     controls.bubbleText.value = defaultText;
                     targetTextContent.textContent = defaultText;
+                    
+                    // 更新值显示标签
+                    controls.borderWidthValue.textContent = `${controls.borderWidth.value}px`;
+                    controls.borderRadiusValue.textContent = `${controls.borderRadius.value}px`;
+                    controls.bgOpacityValue.textContent = `${Math.round(controls.bgOpacity.value * 100)}%`;
+                    controls.gradientAngleValue.textContent = `${controls.gradientAngle.value}deg`;
+                    
+                    // 确保全局变量与UI控件状态同步
+                    currentBgType = savedConfig.backgroundType || 'solid';
+                    console.log(`${type}气泡配置应用完成: currentBgType=${currentBgType}`);
                     
                 } else {
                     // 如果没有保存的配置，使用默认值
@@ -595,6 +704,8 @@
                 
                 // 更新样式显示
                 updateBubbleStyle();
+                
+                console.log(`${type}气泡配置加载完成，UI控件已更新`);
             }
 
             function openProcessor() { 
@@ -689,11 +800,38 @@
                     
                     await saveStickerLibraryToStorage();
                     populateStickerGallery().catch(error => console.error('填充贴图库失败:', error));
-                    showToast(`成功上传 ${files.length} 个贴图`);
+                    showToast(`成功上传 ${files.length} 个贴图`, 'success');
                     
                 } catch (error) {
                     console.error('贴图上传失败:', error);
-                    showToast('上传失败: ' + error.message);
+                    
+                    // 使用详细的错误处理逻辑
+                    if (error && error.name === 'DetailedError') {
+                        switch(error.code) {
+                            case 'FILE_MISSING':
+                            case 'PARAM_MISSING':
+                                showToast(error.message, 'warning');
+                                break;
+                            case 'FILE_TOO_LARGE':
+                            case 'INVALID_FILE_TYPE':
+                                showToast(error.message, 'error');
+                                break;
+                            case 'STORAGE_FULL':
+                                showToast(error.message, 'error');
+                                break;
+                            case 'DATABASE_ERROR':
+                                showToast(error.message, 'error');
+                                break;
+                            case 'SYSTEM_ERROR':
+                                showToast(error.message, 'warning');
+                                break;
+                            default:
+                                showToast(error.message, 'error');
+                                break;
+                        }
+                    } else {
+                        showToast('贴图上传失败: ' + (error.message || '未知错误'), 'error');
+                    }
                 }
                 
                 event.target.value = '';
@@ -1096,6 +1234,12 @@
             function makeLibraryStickerDraggable(element) {
                 element.addEventListener('mousedown', async (e) => {
                     e.preventDefault();
+                    
+                    if (currentThemeName === 'default') {
+                        showToast('默认主题不支持添加贴纸，请新建主题后使用', 'info');
+                        return;
+                    }
+                    
                     const stickerData = stickerLibrary.find(s => s.id == element.dataset.id);
                     if (!stickerData) return;
                     
@@ -1122,7 +1266,7 @@
                     wrapper.appendChild(resizeHandle);
                     
                     // 根据当前选择的气泡类型添加贴图
-                    const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                    const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
                     targetBubble.appendChild(wrapper);
 
                     const bubbleRect = targetBubble.getBoundingClientRect();
@@ -1152,7 +1296,7 @@
                 function getCurrentBubbleContainer() {
                     // 获取当前选中的气泡容器
                     const currentType = getCurrentBubbleType();
-                    return currentType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                    return currentType === 'self' ? previewBubbleSelf : previewBubbleKare;
                 }
 
                 function isCurrentBubbleSticker() {
@@ -1271,7 +1415,7 @@
                 }
             }
             previewContainer.addEventListener('click', (e) => {
-                if (e.target === previewContainer || e.target === previewBubbleSelf || e.target === previewBubbleOthers) {
+                if (e.target === previewContainer || e.target === previewBubbleSelf || e.target === previewBubbleKare) {
                     selectSticker(null);
                 }
             });
@@ -1357,7 +1501,7 @@
             // 【修改】将 textColor 和 fontFamily 添加到事件监听循环中
             ['borderWidth', 'borderColor', 'borderRadius', 'bgColor', 'bgOpacity', 'gradientColor1', 'gradientColor2', 'gradientAngle', 'textColor', 'fontFamily'].forEach(id => { if (controls[id]) { controls[id].addEventListener('input', updateBubbleStyle); } });
             controls.bubbleText.addEventListener('input', () => { 
-                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 currentTextContent.textContent = controls.bubbleText.value; 
             });
             controls.bgTypeSolid.addEventListener('click', () => { currentBgType = 'solid'; controls.solidBgControls.classList.remove('hidden'); controls.gradientBgControls.classList.add('hidden'); controls.bgTypeSolid.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.remove('text-slate-600'); controls.bgTypeGradient.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.add('text-slate-600'); updateBubbleStyle(); });
@@ -1365,7 +1509,7 @@
 
             // 气泡类型切换事件监听器
             controls.bubbleTypeSelf.addEventListener('click', () => switchBubbleType('self'));
-            controls.bubbleTypeOthers.addEventListener('click', () => switchBubbleType('others'));
+            controls.bubbleTypeKare.addEventListener('click', () => switchBubbleType('kare'));
             
             // CSS样式解析辅助函数
             function extractRgbColor(colorValue) {
@@ -1412,8 +1556,8 @@
 
             // 为指定气泡类型生成完整配置
             function generateBubbleConfig(bubbleType) {
-                const targetBubble = bubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
-                const targetTextContent = bubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const targetBubble = bubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                const targetTextContent = bubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 const bubbleStyle = window.getComputedStyle(targetBubble);
                 const textStyle = window.getComputedStyle(targetTextContent);
                 
@@ -1455,160 +1599,289 @@
                 const htmlTemplate = `<div class="chat-bubble" style="background: ${bubbleStyle.background || bubbleStyle.backgroundColor}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; padding: 12px; margin-bottom: 8px; max-width: 80%; word-wrap: break-word; position: relative; color: ${textStyle.color}; font-family: ${textStyle.fontFamily};">\\n    {{BUBBLE_TEXT}}\\n${htmlStickers}</div>`;
 
                 return {
-                    borderWidth: parseInt(bubbleStyle.borderWidth) || 0,
-                    borderColor: bubbleStyle.borderColor || '#000000',
-                    borderRadius: parseInt(bubbleStyle.borderRadius) || 0,
-                    bgColor: extractRgbColor(bubbleStyle.backgroundColor || '#ffffff'),
-                    bgOpacity: extractAlpha(bubbleStyle.backgroundColor || 'rgba(255,255,255,1)'),
-                    bgType: bubbleStyle.background.includes('gradient') ? 'gradient' : 'solid',
-                    gradientColor1: extractGradientColors(bubbleStyle.background)[0] || '#ffffff',
-                    gradientColor2: extractGradientColors(bubbleStyle.background)[1] || '#ffffff',
-                    gradientAngle: extractGradientAngle(bubbleStyle.background) || 0,
-                    textColor: textStyle.color || '#000000',
-                    fontFamily: textStyle.fontFamily || 'system-ui',
+                    borderWidth: parseInt(controls.borderWidth.value) || 1,
+                    borderColor: controls.borderColor.value || '#4f46e5',
+                    borderRadius: parseInt(controls.borderRadius.value) || 12,
+                    backgroundColor: controls.bgColor.value || '#ffffff',
+                    backgroundOpacity: parseFloat(controls.bgOpacity.value) || 1,
+                    backgroundType: currentBgType, // 直接使用当前的背景类型，而不是从样式推断
+                    gradientColor1: controls.gradientColor1.value || '#a5b4fc',
+                    gradientColor2: controls.gradientColor2.value || '#e0e7ff',  
+                    gradientAngle: controls.gradientAngle.value || 145,
+                    textColor: controls.textColor.value || '#333333',
+                    fontFamily: controls.fontFamily.value || 'Inter',
                     // bubbleText: 不保存文本内容，每次使用默认值
-                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
-                        id: wrapper.dataset.id,
-                        left: parseFloat(wrapper.style.left) || 0,
-                        top: parseFloat(wrapper.style.top) || 0,
-                        width: wrapper.offsetWidth,
-                        height: wrapper.offsetHeight,
-                        zIndex: wrapper.style.zIndex || 1
-                    })),
+                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => {
+                        const stickerId = wrapper.dataset.id;
+                        const stickerInfo = stickerLibrary.find(s => s.id === stickerId);
+                        return {
+                            id: stickerId,
+                            fileId: stickerInfo?.fileId || '',
+                            left: parseFloat(wrapper.style.left) || 0,
+                            top: parseFloat(wrapper.style.top) || 0,
+                            width: wrapper.offsetWidth,
+                            height: wrapper.offsetHeight,
+                            zIndex: wrapper.style.zIndex || 1
+                        };
+                    }),
                     html: htmlTemplate,
                     enabled: true
                 };
             }
 
-            controls.generateCodeBtn.addEventListener('click', async () => {
-                // 调试：检查数据库连接状态
-                console.log('保存按钮点击，数据库状态:', db ? '已连接' : '未连接');
-                if (!db) {
-                    console.error('数据库连接不可用，尝试重新初始化...');
-                    await initStorageSystem();
-                    if (!db) {
-                        alert('数据库连接失败，无法保存配置');
-                        return;
-                    }
-                }
+            // 共享的保存配置函数
+            async function saveCurrentConfiguration() {
+                console.log('开始保存当前配置...', `当前气泡类型: ${currentBubbleType}`);
                 
                 // 1. 生成当前选择气泡类型的HTML和CSS代码（用于显示）
-                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
-                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 const bubbleStyle = window.getComputedStyle(currentBubble);
                 const textStyle = window.getComputedStyle(currentTextContent);
                 
-                // 【替换开始】
-                let htmlStickers = '';
-                const bubbleWidth = currentBubble.offsetWidth;
-                const bubbleHeight = currentBubble.offsetHeight;
-
-                currentBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
-                    const stickerImg = stickerWrapper.querySelector('.sticker-image');
-                    const stickerId = stickerWrapper.dataset.id;
-                    const stickerData = stickerLibrary.find(s => s.id == stickerId);
-                    const stickerSrc = stickerImg.src; // 使用当前显示的URL
-
-                    // --- 全新的定位和尺寸逻辑 ---
-                    
-                    // 1. 获取贴图的固定像素尺寸和位置
-                    const leftPx = parseFloat(stickerWrapper.style.left) || 0;
-                    const topPx = parseFloat(stickerWrapper.style.top) || 0;
-                    const stickerWidth = stickerWrapper.offsetWidth;
-                    const stickerHeight = stickerWrapper.offsetHeight;
-
-                    // 2. 判断贴图在气泡的哪个象限，以决定其定位锚点
-                    const leftPercent = (leftPx + stickerWidth / 2) / bubbleWidth;
-                    const topPercent = (topPx + stickerHeight / 2) / bubbleHeight;
-                    
-                    let positionStyle = '';
-
-                    // 如果贴图中心点超过了气泡高度的50%，则使用 bottom 定位
-                    if (topPercent > 0.5) {
-                        const bottomPx = bubbleHeight - (topPx + stickerHeight);
-                        positionStyle += `bottom: ${bottomPx.toFixed(0)}px; `;
-                    } else {
-                        positionStyle += `top: ${topPx.toFixed(0)}px; `;
-                    }
-
-                    // 如果贴图中心点超过了气泡宽度的50%，则使用 right 定位
-                    if (leftPercent > 0.5) {
-                        const rightPx = bubbleWidth - (leftPx + stickerWidth);
-                        positionStyle += `right: ${rightPx.toFixed(0)}px; `;
-                    } else {
-                        positionStyle += `left: ${leftPx.toFixed(0)}px; `;
-                    }
-                    
-                    // 3. 生成代码：位置用计算出的锚点定位，尺寸用固定的像素值
-                    htmlStickers += `    <img src="${stickerSrc}" class="sticker-${index}" alt="sticker" style="position: absolute; ${positionStyle} width: ${stickerWidth.toFixed(0)}px; height: ${stickerHeight.toFixed(0)}px; z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;">\\n`;
-                });
-                // 【替换结束】
-
-                const htmlTemplate = `<div class="custom-bubble-container" style="position: relative; padding: ${bubbleStyle.padding}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; background: ${bubbleStyle.background};">\\n    <span class="bubble-text" style="position: relative; z-index: 10; color: ${textStyle.color}; font-family: &quot;${textStyle.fontFamily.replace(/"/g, '')}&quot;;">{{BUBBLE_TEXT}}</span>\\n${htmlStickers}</div>`;
-                
-                // 我们不再需要生成CSS，因为样式已经内联到HTML中了
-                const cssCode = `/* CSS 已内联，此部分为空 */`;
-
-                // 2. 将按钮文本改为 "应用此样式"
-                controls.generateCodeBtn.textContent = '应用此样式';
-
-                // 3. 收集完整的样式配置
-                const completeStyleConfig = {
-                    // 基础样式
-                    borderWidth: controls.borderWidth.value,
-                    borderColor: controls.borderColor.value,
-                    borderRadius: controls.borderRadius.value,
-                    textColor: controls.textColor.value,
-                    fontFamily: controls.fontFamily.value,
-                    
-                    // 背景样式
+                console.log(`当前${currentBubbleType}气泡的样式:`, {
                     backgroundType: currentBgType,
                     backgroundColor: controls.bgColor.value,
-                    backgroundOpacity: controls.bgOpacity.value,
                     gradientColor1: controls.gradientColor1.value,
-                    gradientColor2: controls.gradientColor2.value,
-                    gradientAngle: controls.gradientAngle.value,
-                                        
-                    // 贴图配置
-                    stickers: Array.from(currentBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => ({
-                        id: wrapper.dataset.id,
-                        left: parseFloat(wrapper.style.left) || 0,
-                        top: parseFloat(wrapper.style.top) || 0,
-                        width: wrapper.offsetWidth,
-                        height: wrapper.offsetHeight,
-                        zIndex: wrapper.style.zIndex || 1
-                    })),
-                    
-                    // 生成的HTML模板
-                    html: htmlTemplate,
-                    css: cssCode,
-                    
-                    // 元数据
-                    createdAt: new Date().toISOString(),
-                    version: '1.0'
-                };
-
-                // 4. 确保启用标志为 true（每次保存都自动启用）
-                completeStyleConfig.enabled = true;
+                    gradientColor2: controls.gradientColor2.value
+                });
                 
-                // 5. 生成并保存双方气泡的完整配置
-                const selfConfig = generateBubbleConfig('self');
-                const othersConfig = generateBubbleConfig('others');
+                // 2. 保存当前UI状态到缓存
+                uiStateCache[currentBubbleType] = captureCurrentUIState();
+                
+                // 3. 确保双方气泡状态都已缓存
+                console.log('当前缓存状态:', {
+                    self: uiStateCache.self ? '已缓存' : '未缓存',
+                    kare: uiStateCache.kare ? '已缓存' : '未缓存'
+                });
+                
+                // 如果self气泡未缓存，临时切换到self以缓存其状态
+                if (!uiStateCache.self && currentBubbleType !== 'self') {
+                    console.log('切换到self以缓存其状态');
+                    const originalType = currentBubbleType;
+                    await switchBubbleType('self');
+                    // 切换回来
+                    await switchBubbleType(originalType);
+                }
+                
+                // 如果kare气泡未缓存，临时切换到kare以缓存其状态
+                if (!uiStateCache.kare && currentBubbleType !== 'kare') {
+                    console.log('切换到kare以缓存其状态');
+                    const originalType = currentBubbleType;
+                    await switchBubbleType('kare');
+                    // 切换回来
+                    await switchBubbleType(originalType);
+                }
+                
+                // 从缓存获取双方配置
+                const selfConfig = uiStateCache.self || { ...DEFAULT_THEME_CONFIG.self, stickers: [] };
+                const kareConfig = uiStateCache.kare || { ...DEFAULT_THEME_CONFIG.kare, stickers: [] };
+                
+                console.log('从缓存获取配置完成:', {
+                    self: {
+                        backgroundType: selfConfig.backgroundType,
+                        backgroundColor: selfConfig.backgroundColor,
+                        textColor: selfConfig.textColor
+                    },
+                    kare: {
+                        backgroundType: kareConfig.backgroundType,
+                        backgroundColor: kareConfig.backgroundColor,
+                        textColor: kareConfig.textColor
+                    }
+                });
+                
+                // 生成HTML模板（主应用要求必须有html字段）
+                const generateHtmlTemplate = (config, bubbleType) => {
+                    // 生成背景样式
+                    let backgroundStyle = '';
+                    if (config.backgroundType === 'gradient') {
+                        backgroundStyle = `linear-gradient(${config.gradientAngle}deg, ${config.gradientColor1}, ${config.gradientColor2})`;
+                    } else {
+                        const bgColor = config.backgroundColor || '#ffffff';
+                        const opacity = config.backgroundOpacity || 1;
+                        // 简化处理，直接使用颜色和透明度
+                        backgroundStyle = `${bgColor}`;
+                        if (opacity < 1) {
+                            // 如果有透明度，转换为rgba格式
+                            const r = parseInt(bgColor.slice(1, 3), 16);
+                            const g = parseInt(bgColor.slice(3, 5), 16);
+                            const b = parseInt(bgColor.slice(5, 7), 16);
+                            backgroundStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                        }
+                    }
+                    
+                    // 生成贴纸HTML - 使用fileId格式供主应用解析
+                    let stickersHtml = '';
+                    if (config.stickers && config.stickers.length > 0) {
+                        stickersHtml = config.stickers.map(sticker => 
+                            `<img src="file:${sticker.fileId || ''}" class="sticker" data-file-id="${sticker.fileId || ''}" style="position: absolute; left: ${sticker.left || 0}px; top: ${sticker.top || 0}px; width: ${sticker.width || 50}px; height: ${sticker.height || 50}px; z-index: ${sticker.zIndex || 1}; user-select: none; pointer-events: none;">`
+                        ).join('');
+                    }
+                    
+                    return `<div class="custom-bubble-container" style="position: relative; padding: 8px 12px; border: ${config.borderWidth}px solid ${config.borderColor}; border-radius: ${config.borderRadius}px; background: ${backgroundStyle};">
+    <span class="bubble-text" style="position: relative; z-index: 10; color: ${config.textColor}; font-family: '${config.fontFamily}';">{{BUBBLE_TEXT}}</span>
+    ${stickersHtml}
+</div>`;
+                };
+                
+                // 格式化配置用于保存（包含HTML模板）
+                const formatConfigForSave = (config, bubbleType) => ({
+                    borderWidth: parseInt(config.borderWidth) || 1,
+                    borderColor: config.borderColor || '#4f46e5',
+                    borderRadius: parseInt(config.borderRadius) || 12,
+                    backgroundColor: config.backgroundColor || '#ffffff',
+                    backgroundOpacity: parseFloat(config.backgroundOpacity) || 1,
+                    backgroundType: config.backgroundType || 'solid',
+                    gradientColor1: config.gradientColor1 || '#a5b4fc',
+                    gradientColor2: config.gradientColor2 || '#e0e7ff',
+                    gradientAngle: parseInt(config.gradientAngle) || 145,
+                    textColor: config.textColor || '#333333',
+                    fontFamily: config.fontFamily || 'Inter',
+                    stickers: config.stickers || [],
+                    html: generateHtmlTemplate(config, bubbleType), // 添加HTML模板，传入气泡类型
+                    css: '/* CSS已内联到HTML中 */', // 添加CSS字段
+                    createdAt: new Date().toISOString(),
+                    enabled: true
+                });
+                
+                const formattedSelfConfig = formatConfigForSave(selfConfig, 'self');
+                const formattedKareConfig = formatConfigForSave(kareConfig, 'kare');
+                
+                // 添加调试日志
+                console.log('保存的配置详情:', {
+                    self: {
+                        backgroundType: formattedSelfConfig.backgroundType,
+                        backgroundColor: formattedSelfConfig.backgroundColor,
+                        textColor: formattedSelfConfig.textColor
+                    },
+                    kare: {
+                        backgroundType: formattedKareConfig.backgroundType,
+                        backgroundColor: formattedKareConfig.backgroundColor,
+                        textColor: formattedKareConfig.textColor
+                    }
+                });
                 
                 // 同时保存双方的配置
-                await saveBubbleStyleConfig(selfConfig, 'bubbleStyleSelf');
-                await saveBubbleStyleConfig(othersConfig, 'bubbleStyle');
-
-                // 6. 使用 postMessage 发送双方配置给父窗口
-                window.parent.postMessage({
-                    type: 'apply-bubble-style',
-                    payload: {
-                        self: selfConfig,
-                        others: othersConfig,
-                        current: completeStyleConfig // 保留当前选中的配置用于显示
-                    },
-                    bubbleType: currentBubbleType
-                }, '*');
+                await saveBubbleStyleConfig(formattedSelfConfig, 'bubbleStyleSelf');
+                await saveBubbleStyleConfig(formattedKareConfig, 'bubbleStyle');
+                
+                // 如果当前处于自定义主题，同时更新主题数据
+                if (currentThemeName !== 'default') {
+                    try {
+                        const themeData = {
+                            type: `theme_${currentThemeName}`,
+                            name: currentThemeName,
+                            updatedAt: new Date().toISOString(),
+                            bubbleStyles: {
+                                self: formattedSelfConfig,
+                                kare: formattedKareConfig
+                            },
+                            stickerLibrary: stickerLibrary || []
+                        };
+                        
+                        const transaction = db.transaction(['themeConfig'], 'readwrite');
+                        const store = transaction.objectStore('themeConfig');
+                        
+                        await new Promise((resolve, reject) => {
+                            const request = store.put(themeData);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                        });
+                        
+                        console.log(`主题"${currentThemeName}"数据已同步更新`);
+                    } catch (error) {
+                        console.error('更新主题数据失败:', error);
+                    }
+                }
+                
+                return { selfConfig: formattedSelfConfig, kareConfig: formattedKareConfig };
+            }
+            
+            // "保存"按钮事件处理器
+            controls.saveOnlyBtn.addEventListener('click', async () => {
+                try {
+                    await saveCurrentConfiguration();
+                    
+                    showToast('配置已保存！', 'success');
+                    const originalText = controls.saveOnlyBtn.textContent;
+                    controls.saveOnlyBtn.textContent = '✅ 已保存!';
+                    setTimeout(() => {
+                        controls.saveOnlyBtn.textContent = originalText;
+                    }, 2000);
+                } catch (error) {
+                    console.error('保存失败:', error);
+                    showToast('保存失败: ' + error.message, 'error');
+                }
+            });
+            
+            // "保存并应用"按钮事件处理器  
+            controls.generateCodeBtn.addEventListener('click', async () => {
+                try {
+                    // 1. 先执行常规保存
+                    const { selfConfig, kareConfig } = await saveCurrentConfiguration();
+                    
+                    // 2. 写入主应用使用的themeConfig位置
+                    console.log('写入主应用使用的配置位置...');
+                    await saveBubbleStyleConfig(selfConfig, 'bubbleStyleSelf');
+                    await saveBubbleStyleConfig(kareConfig, 'bubbleStyle');
+                    
+                    // 3. 确保主应用能读取到最新配置（直接更新themeConfig表）
+                    try {
+                        const transaction = db.transaction(['themeConfig'], 'readwrite');
+                        const store = transaction.objectStore('themeConfig');
+                        
+                        // 保存为主应用直接读取的键名
+                        await new Promise((resolve, reject) => {
+                            const request1 = store.put({ type: 'bubbleStyleSelf', ...selfConfig, updatedAt: new Date().toISOString() });
+                            request1.onsuccess = () => resolve();
+                            request1.onerror = () => reject(request1.error);
+                        });
+                        
+                        await new Promise((resolve, reject) => {
+                            const request2 = store.put({ type: 'bubbleStyle', ...kareConfig, updatedAt: new Date().toISOString() });
+                            request2.onsuccess = () => resolve();
+                            request2.onerror = () => reject(request2.error);
+                        });
+                        
+                        console.log('主应用配置已更新');
+                    } catch (error) {
+                        console.warn('更新主应用配置失败，但不影响基本保存功能:', error);
+                    }
+                    
+                    // 4. 发送配置给主应用（postMessage）- 发送两个独立的消息
+                    console.log('发送气泡样式给主应用...');
+                    
+                    // 发送"我的"气泡样式
+                    window.parent.postMessage({
+                        type: 'apply-bubble-style',
+                        payload: selfConfig,
+                        bubbleType: 'self'
+                    }, '*');
+                    
+                    // 发送"对方"气泡样式  
+                    window.parent.postMessage({
+                        type: 'apply-bubble-style',
+                        payload: kareConfig,
+                        bubbleType: 'kare'
+                    }, '*');
+                    
+                    console.log('已发送双方气泡样式配置给主应用');
+                    
+                    showToast('已保存双方气泡样式并应用到聊天界面！', 'success');
+                    const originalText = controls.generateCodeBtn.textContent;
+                    controls.generateCodeBtn.textContent = '✅ 已应用!';
+                    setTimeout(() => {
+                        controls.generateCodeBtn.textContent = originalText;
+                    }, 2000);
+                
+                } catch (error) {
+                    console.error('保存并应用失败:', error);
+                    showToast('保存并应用失败: ' + error.message, 'error');
+                }
+            });
+            
+            // 保存气泡样式配置到IndexedDB
+            async function saveBubbleStyleConfig(styleConfig, styleKey = 'bubbleStyle') {
 
                 // 7. 给用户一个反馈
                 showToast('已保存双方气泡样式并应用到聊天界面！');
@@ -1617,24 +1890,8 @@
                 setTimeout(() => {
                     controls.generateCodeBtn.textContent = originalText;
                 }, 2000);
-            });
+            };
 
-            // 恢复默认气泡样式按钮事件
-            controls.resetToDefaultBtn.addEventListener('click', async () => {
-                // 显示确认对话框
-                if (confirm('确定要恢复默认气泡样式吗？这将删除所有自定义设置。')) {
-                    controls.resetToDefaultBtn.textContent = '正在恢复...';
-                    controls.resetToDefaultBtn.disabled = true;
-                    
-                    await resetToDefaultBubbleStyle();
-                    
-                    // 恢复按钮状态
-                    setTimeout(() => {
-                        controls.resetToDefaultBtn.textContent = '恢复默认气泡';
-                        controls.resetToDefaultBtn.disabled = false;
-                    }, 1500);
-                }
-            });
 
             // 保存完整的气泡样式配置
             async function saveBubbleStyleConfig(styleConfig, styleKey = 'bubbleStyle') {
@@ -1669,48 +1926,7 @@
                 }
             }
 
-            // 恢复默认气泡样式
-            async function resetToDefaultBubbleStyle() {
-                try {
-                    if (!db) {
-                        console.warn('数据库连接不可用，跳过禁用配置');
-                        return;
-                    }
-                    
-                    const transaction = db.transaction(['themeConfig'], 'readwrite');
-                    const store = transaction.objectStore('themeConfig');
-                    
-                    // 删除两种气泡样式配置，但保留贴纸库
-                    store.delete('bubbleStyle');      // 删除对方气泡配置
-                    store.delete('bubbleStyleSelf');  // 删除自己气泡配置
-                    
-                    transaction.oncomplete = () => {
-                        console.log('所有自定义气泡样式配置已删除');
-                        
-                        // 清理两个气泡容器上的贴纸
-                        previewBubbleSelf.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
-                        previewBubbleOthers.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
-                        
-                        // 重置所有控件到默认值
-                        resetControlsToDefault();
-                    };
-                    
-                    transaction.onerror = () => {
-                        console.error('删除气泡样式配置失败:', transaction.error);
-                    };
-                    
-                    // 使用 postMessage 通知父窗口恢复默认样式
-                    window.parent.postMessage({
-                        type: 'reset-bubble-style'
-                    }, '*');
-                    
-                    showToast('已恢复默认气泡样式！贴纸库保持不变。');
-                } catch (e) {
-                    console.error("无法恢复默认气泡样式:", e);
-                    showToast("恢复默认样式失败");
-                }
-            }
-
+  
             // 重置所有控件到默认值
             function resetControlsToDefault() {
                 // 重置基础样式控件
@@ -1734,7 +1950,7 @@
                 controls.bubbleText.value = defaultText;
                 
                 // 同时更新预览显示
-                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 currentTextContent.textContent = defaultText;
                 
                 // 更新显示值
@@ -1813,7 +2029,7 @@
                     // 文本内容始终使用默认值，不从配置中应用
                     const defaultText = currentBubbleType === 'self' ? '这是我发的消息' : '这是对方发的消息';
                     controls.bubbleText.value = defaultText;
-                    const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentOthers;
+                    const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                     currentTextContent.textContent = defaultText;
                     
                     // 恢复贴图（不在这里处理，在初始化函数中处理）
@@ -1831,9 +2047,9 @@
             }
 
             // 恢复贴图
-            async function restoreStickers(stickerConfigs, targetBubbleType = 'others') {
+            async function restoreStickers(stickerConfigs, targetBubbleType = 'kare') {
                 // 清除对应气泡的现有贴图
-                const targetBubble = targetBubbleType === 'self' ? previewBubbleSelf : previewBubbleOthers;
+                const targetBubble = targetBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
                 targetBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => wrapper.remove());
                 
                 for (const stickerConfig of stickerConfigs) {
@@ -1878,44 +2094,1069 @@
 
             // 异步初始化
             async function initializeApp() {
+                console.log('=== 开始应用初始化 ===');
+                
                 await initStorageSystem();
                 await loadStickerLibraryFromStorage();
                 await renderStickerLibrary();
                 
-                // 加载并应用保存的配置（两种气泡样式）
-                const savedSelfConfig = await loadBubbleStyleConfig('bubbleStyleSelf');
-                const savedOthersConfig = await loadBubbleStyleConfig('bubbleStyle');
+                // 初始化主题管理
+                await loadAvailableThemes();
                 
-                if (savedSelfConfig) {
-                    // 切换到自己模式并应用配置
-                    currentBubbleType = 'self';
-                    await applyBubbleStyleConfig(savedSelfConfig);
-                    
-                    // 恢复自己的贴图
-                    if (savedSelfConfig.stickers && savedSelfConfig.stickers.length > 0) {
-                        await restoreStickers(savedSelfConfig.stickers, 'self');
-                    }
-                }
+                // 检测用户当前使用的主题并自动切换
+                const activeTheme = await detectCurrentActiveTheme();
+                console.log(`检测到用户当前使用的主题: ${activeTheme}`);
                 
-                if (savedOthersConfig) {
-                    // 切换到别人模式并应用配置
-                    currentBubbleType = 'others';
-                    await applyBubbleStyleConfig(savedOthersConfig);
-                    
-                    // 恢复别人的贴图
-                    if (savedOthersConfig.stickers && savedOthersConfig.stickers.length > 0) {
-                        await restoreStickers(savedOthersConfig.stickers, 'others');
-                    }
-                }
+                // 自动切换到检测到的主题
+                await loadTheme(activeTheme);
+                updateThemeSelector();
+                
+                console.log('=== 应用初始化完成 ===');
                 
                 // 默认切换到自己的气泡编辑模式
-                switchBubbleType('self');
+                await switchBubbleType('self');
+            }
+            // ==================== 多主题管理功能 ====================
+            
+            let currentThemeName = 'default';
+            
+            // 固定的默认主题配置
+            const DEFAULT_THEME_CONFIG = {
+                self: {
+                    borderWidth: 0,
+                    borderColor: '#ffffff',
+                    borderRadius: 12,
+                    backgroundColor: '#33f28c',
+                    backgroundOpacity: 1,
+                    backgroundType: 'solid',
+                    gradientColor1: '#33f28c',
+                    gradientColor2: '#33f28c',
+                    gradientAngle: 145,
+                    textColor: '#000000',
+                    fontFamily: 'Inter',
+                    stickers: [],
+                    enabled: true
+                },
+                kare: {
+                    borderWidth: 0,
+                    borderColor: '#ffffff',
+                    borderRadius: 12,
+                    backgroundColor: '#ffffff',
+                    backgroundOpacity: 1,
+                    backgroundType: 'solid',
+                    gradientColor1: '#ffffff',
+                    gradientColor2: '#ffffff',
+                    gradientAngle: 145,
+                    textColor: '#000000',
+                    fontFamily: 'Inter',
+                    stickers: [],
+                    enabled: true
+                }
+            };
+            
+            // UI状态缓存 - 保存双方气泡的当前编辑状态
+            let uiStateCache = {
+                self: null,
+                kare: null
+            };
+            
+            // 从UI控件读取指定气泡类型的状态
+            function captureCurrentUIState(bubbleType = currentBubbleType) {
+                const targetBubble = bubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
                 
-                // 如果没有保存的配置，应用默认样式
-                if (!savedSelfConfig && !savedOthersConfig) {
-                    updateBubbleStyle();
+                return {
+                    borderWidth: controls.borderWidth.value,
+                    borderColor: controls.borderColor.value,
+                    borderRadius: controls.borderRadius.value,
+                    textColor: controls.textColor.value,
+                    fontFamily: controls.fontFamily.value,
+                    backgroundColor: controls.bgColor.value,
+                    backgroundOpacity: controls.bgOpacity.value,
+                    backgroundType: currentBgType,
+                    gradientColor1: controls.gradientColor1.value,
+                    gradientColor2: controls.gradientColor2.value,
+                    gradientAngle: controls.gradientAngle.value,
+                    // 添加贴纸信息收集
+                    stickers: Array.from(targetBubble.querySelectorAll('.sticker-wrapper')).map(wrapper => {
+                        const stickerId = wrapper.dataset.id;
+                        const stickerInfo = stickerLibrary.find(s => s.id === stickerId);
+                        return {
+                            id: stickerId,
+                            fileId: stickerInfo?.fileId || '',
+                            left: parseFloat(wrapper.style.left) || 0,
+                            top: parseFloat(wrapper.style.top) || 0,
+                            width: wrapper.offsetWidth,
+                            height: wrapper.offsetHeight,
+                            zIndex: wrapper.style.zIndex || 1
+                        };
+                    })
+                };
+            }
+            
+            // 将状态应用到UI控件
+            function applyUIState(state) {
+                if (!state) return;
+                
+                controls.borderWidth.value = state.borderWidth || 1;
+                controls.borderColor.value = state.borderColor || '#4f46e5';
+                controls.borderRadius.value = state.borderRadius || 12;
+                controls.textColor.value = state.textColor || '#333333';
+                controls.fontFamily.value = state.fontFamily || 'Inter';
+                controls.bgColor.value = state.backgroundColor || '#ffffff';
+                controls.bgOpacity.value = state.backgroundOpacity || 1;
+                controls.gradientColor1.value = state.gradientColor1 || '#a5b4fc';
+                controls.gradientColor2.value = state.gradientColor2 || '#e0e7ff';
+                controls.gradientAngle.value = state.gradientAngle || 145;
+                
+                // 更新背景类型
+                currentBgType = state.backgroundType || 'solid';
+                if (currentBgType === 'gradient') {
+                    controls.bgTypeGradient.checked = true;
+                    controls.bgTypeSolid.checked = false;
+                    controls.solidBgControls.classList.add('hidden');
+                    controls.gradientBgControls.classList.remove('hidden');
+                    controls.bgTypeGradient.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                    controls.bgTypeSolid.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
+                } else {
+                    controls.bgTypeSolid.checked = true;
+                    controls.bgTypeGradient.checked = false;
+                    controls.solidBgControls.classList.remove('hidden');
+                    controls.gradientBgControls.classList.add('hidden');
+                    controls.bgTypeSolid.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                    controls.bgTypeGradient.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
+                }
+                
+                // 更新值显示标签
+                controls.borderWidthValue.textContent = `${controls.borderWidth.value}px`;
+                controls.borderRadiusValue.textContent = `${controls.borderRadius.value}px`;
+                controls.bgOpacityValue.textContent = `${Math.round(controls.bgOpacity.value * 100)}%`;
+                controls.gradientAngleValue.textContent = `${controls.gradientAngle.value}deg`;
+                
+                // 更新文本内容
+                const defaultText = currentBubbleType === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                controls.bubbleText.value = defaultText;
+                const targetTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
+                targetTextContent.textContent = defaultText;
+                
+                // 恢复贴纸状态
+                if (state.stickers && state.stickers.length > 0) {
+                    const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+                    
+                    // 清除当前的所有贴纸
+                    targetBubble.querySelectorAll('.sticker-wrapper').forEach(wrapper => {
+                        wrapper.remove();
+                    });
+                    
+                    // 恢复保存的贴纸
+                    state.stickers.forEach(async (stickerData) => {
+                        if (stickerData.fileId && fileStorageManager) {
+                            try {
+                                const imageUrl = await fileStorageManager.createFileURL(stickerData.fileId);
+                                
+                                const stickerWrapper = document.createElement('div');
+                                stickerWrapper.className = 'sticker-wrapper';
+                                stickerWrapper.dataset.id = stickerData.id;
+                                stickerWrapper.style.position = 'absolute';
+                                stickerWrapper.style.left = `${stickerData.left}px`;
+                                stickerWrapper.style.top = `${stickerData.top}px`;
+                                stickerWrapper.style.width = `${stickerData.width}px`;
+                                stickerWrapper.style.height = `${stickerData.height}px`;
+                                stickerWrapper.style.zIndex = stickerData.zIndex || 1;
+                                stickerWrapper.style.cursor = 'move';
+                                
+                                const img = document.createElement('img');
+                                img.src = imageUrl;
+                                img.className = 'sticker-image';
+                                img.style.width = '100%';
+                                img.style.height = '100%';
+                                img.style.objectFit = 'contain';
+                                img.style.userSelect = 'none';
+                                img.style.pointerEvents = 'none';
+                                
+                                stickerWrapper.appendChild(img);
+                                targetBubble.appendChild(stickerWrapper);
+                                
+                                // 使贴纸可拖拽
+                                makeStickerDraggable(stickerWrapper);
+                                
+                            } catch (error) {
+                                console.warn('恢复贴纸失败:', error, stickerData);
+                            }
+                        }
+                    });
+                }
+                
+                console.log(`已应用UI状态到${currentBubbleType}: backgroundType=${currentBgType}, stickers=${state.stickers?.length || 0}`);
+            }
+            let availableThemes = ['default'];
+
+            // 加载所有可用主题
+            async function loadAvailableThemes() {
+                try {
+                    if (!db) return;
+                    
+                    const transaction = db.transaction(['themeConfig'], 'readonly');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    return new Promise((resolve) => {
+                        const themes = ['default']; // 默认主题始终存在
+                        const request = store.openCursor();
+                        
+                        request.onsuccess = (event) => {
+                            const cursor = event.target.result;
+                            if (cursor) {
+                                const key = cursor.key;
+                                // 查找自定义主题（以theme_开头的键）
+                                if (typeof key === 'string' && key.startsWith('theme_')) {
+                                    const themeName = key.substring(6); // 移除'theme_'前缀
+                                    themes.push(themeName);
+                                }
+                                cursor.continue();
+                            } else {
+                                availableThemes = themes;
+                                resolve(themes);
+                            }
+                        };
+                        
+                        request.onerror = () => {
+                            resolve(['default']);
+                        };
+                    });
+                } catch (e) {
+                    console.error('加载主题列表失败:', e);
+                    return ['default'];
                 }
             }
+
+            // 更新主题选择下拉菜单
+            function updateThemeSelector() {
+                controls.themeSelect.innerHTML = '';
+                
+                availableThemes.forEach(themeName => {
+                    const option = document.createElement('option');
+                    option.value = themeName;
+                    option.textContent = themeName === 'default' ? '默认主题' : themeName;
+                    if (themeName === currentThemeName) {
+                        option.selected = true;
+                    }
+                    controls.themeSelect.appendChild(option);
+                });
+                
+                // 更新删除按钮状态
+                controls.deleteThemeBtn.disabled = currentThemeName === 'default';
+                controls.deleteThemeBtn.style.opacity = currentThemeName === 'default' ? '0.3' : '1';
+                
+                controls.renameThemeBtn.disabled = currentThemeName === 'default';
+                controls.renameThemeBtn.style.opacity = currentThemeName === 'default' ? '0.3' : '1';
+            }
+
+            // 基于默认主题创建新主题
+            async function createNewTheme() {
+                const themeName = prompt('请输入新主题的名称:');
+                if (!themeName || themeName.trim() === '') {
+                    return;
+                }
+                
+                const cleanThemeName = themeName.trim();
+                if (cleanThemeName === 'default') {
+                    showToast('不能使用"default"作为主题名称', 'error');
+                    return;
+                }
+                
+                if (availableThemes.includes(cleanThemeName)) {
+                    if (!confirm(`主题"${cleanThemeName}"已存在，是否覆盖？`)) {
+                        return;
+                    }
+                }
+                
+                try {
+                    // 基于默认主题配置创建新主题
+                    const themeData = {
+                        type: `theme_${cleanThemeName}`,
+                        name: cleanThemeName,
+                        createdAt: new Date().toISOString(),
+                        bubbleStyles: {
+                            self: { ...DEFAULT_THEME_CONFIG.self },
+                            kare: { ...DEFAULT_THEME_CONFIG.kare }
+                        },
+                        stickerLibrary: []  // 新主题不包含贴纸
+                    };
+                    
+                    // 保存到数据库
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    await new Promise((resolve, reject) => {
+                        const request = store.put(themeData);
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    // 更新主题列表和当前主题
+                    if (!availableThemes.includes(cleanThemeName)) {
+                        availableThemes.push(cleanThemeName);
+                    }
+                    currentThemeName = cleanThemeName;
+                    updateThemeSelector();
+                    
+                    // 自动切换到新创建的主题
+                    await loadTheme(cleanThemeName);
+                    
+                    showToast(`已基于默认主题创建"${cleanThemeName}"！`, 'success');
+                    
+                } catch (e) {
+                    console.error('创建主题失败:', e);
+                    showToast('创建主题失败: ' + e.message, 'error');
+                }
+            }
+
+            
+            // 检测用户当前应用的主题
+            async function detectCurrentActiveTheme() {
+                try {
+                    // 从themeConfig读取当前生效的配置
+                    const currentSelfConfig = await loadBubbleStyleConfig('bubbleStyleSelf');
+                    const currentKareConfig = await loadBubbleStyleConfig('bubbleStyle');
+                    
+                    if (!currentSelfConfig && !currentKareConfig) {
+                        // 如果没有配置，返回默认主题
+                        return 'default';
+                    }
+                    
+                    // 检查是否匹配默认主题
+                    if (configMatches(currentSelfConfig, DEFAULT_THEME_CONFIG.self) && 
+                        configMatches(currentKareConfig, DEFAULT_THEME_CONFIG.kare)) {
+                        return 'default';
+                    }
+                    
+                    // 检查是否匹配某个自定义主题
+                    for (const themeName of availableThemes) {
+                        if (themeName === 'default') continue;
+                        
+                        const themeData = await loadThemeData(themeName);
+                        if (themeData && themeData.bubbleStyles) {
+                            if (configMatches(currentSelfConfig, themeData.bubbleStyles.self) && 
+                                configMatches(currentKareConfig, themeData.bubbleStyles.kare)) {
+                                return themeName;
+                            }
+                        }
+                    }
+                    
+                    // 如果没有匹配的主题，返回默认主题
+                    return 'default';
+                } catch (error) {
+                    console.warn('检测当前主题失败，使用默认主题:', error);
+                    return 'default';
+                }
+            }
+            
+            // 配置匹配检查（简化比较主要字段）
+            function configMatches(config1, config2) {
+                if (!config1 || !config2) return false;
+                
+                const keyFields = ['borderWidth', 'borderColor', 'backgroundColor', 'backgroundType', 'textColor'];
+                return keyFields.every(field => config1[field] === config2[field]);
+            }
+            
+            // 加载主题数据
+            async function loadThemeData(themeName) {
+                try {
+                    const transaction = db.transaction(['themeConfig'], 'readonly');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    return await new Promise((resolve, reject) => {
+                        const request = store.get(`theme_${themeName}`);
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                } catch (error) {
+                    console.error(`加载主题数据失败: ${themeName}`, error);
+                    return null;
+                }
+            }
+            
+            // 直接应用配置到UI控件（用于默认主题显示）
+            async function applyConfigToUI(bubbleType, config) {
+                const originalBubbleType = currentBubbleType;
+                
+                // 临时切换到指定气泡类型
+                currentBubbleType = bubbleType;
+                
+                // 应用配置到UI控件
+                if (config) {
+                    controls.borderWidth.value = config.borderWidth || 1;
+                    controls.borderColor.value = config.borderColor || '#4f46e5';
+                    controls.borderRadius.value = config.borderRadius || 12;
+                    controls.textColor.value = config.textColor || '#333333';
+                    controls.fontFamily.value = config.fontFamily || 'Inter';
+                    
+                    controls.bgColor.value = config.backgroundColor || '#ffffff';
+                    controls.bgOpacity.value = config.backgroundOpacity || 1;
+                    controls.gradientColor1.value = config.gradientColor1 || '#a5b4fc';
+                    controls.gradientColor2.value = config.gradientColor2 || '#e0e7ff';
+                    controls.gradientAngle.value = config.gradientAngle || 145;
+                    
+                    // 设置背景类型
+                    currentBgType = config.backgroundType || 'solid';
+                    if (currentBgType === 'gradient') {
+                        controls.bgTypeGradient.checked = true;
+                        controls.bgTypeSolid.checked = false;
+                        controls.solidBgControls.classList.add('hidden');
+                        controls.gradientBgControls.classList.remove('hidden');
+                        // 更新按钮样式
+                        controls.bgTypeGradient.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                        controls.bgTypeSolid.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
+                    } else {
+                        controls.bgTypeSolid.checked = true;
+                        controls.bgTypeGradient.checked = false;
+                        controls.solidBgControls.classList.remove('hidden');
+                        controls.gradientBgControls.classList.add('hidden');
+                        // 更新按钮样式
+                        controls.bgTypeSolid.className = 'bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold';
+                        controls.bgTypeGradient.className = 'bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold';
+                    }
+                    
+                    // 更新值显示标签
+                    controls.borderWidthValue.textContent = `${config.borderWidth || 1}px`;
+                    controls.borderRadiusValue.textContent = `${config.borderRadius || 12}px`;
+                    controls.bgOpacityValue.textContent = `${Math.round((config.backgroundOpacity || 1) * 100)}%`;
+                    controls.gradientAngleValue.textContent = `${config.gradientAngle || 145}deg`;
+                    
+                    // 设置文本内容
+                    const defaultText = bubbleType === 'self' ? '这是我发的消息' : '这是对方发的消息';
+                    controls.bubbleText.value = defaultText;
+                    
+                    // 更新气泡样式
+                    updateBubbleStyle();
+                }
+                
+                // 恢复原始气泡类型
+                currentBubbleType = originalBubbleType;
+            }
+            
+            // 更新主题UI状态
+            function updateThemeUIState() {
+                const isDefaultTheme = currentThemeName === 'default';
+                
+                if (isDefaultTheme) {
+                    // 显示默认主题提示
+                    controls.defaultThemeNotice.classList.remove('hidden');
+                    
+                    // 禁用所有编辑控件
+                    const editControls = [
+                        controls.borderWidth, controls.borderColor, controls.borderRadius,
+                        controls.textColor, controls.fontFamily, controls.bgColor, controls.bgOpacity,
+                        controls.gradientColor1, controls.gradientColor2, controls.gradientAngle,
+                        controls.bgTypeSolid, controls.bgTypeGradient, controls.bubbleText
+                    ];
+                    
+                    editControls.forEach(control => {
+                        if (control) {
+                            control.disabled = true;
+                            control.style.opacity = '0.5';
+                        }
+                    });
+                    
+                    // 禁用保存按钮，但保持应用按钮可用
+                    controls.saveOnlyBtn.disabled = true;
+                    controls.saveOnlyBtn.style.opacity = '0.5';
+                    // generateCodeBtn (保存并应用) 保持可用，因为用户可以应用默认主题
+                    controls.generateCodeBtn.disabled = false;
+                    controls.generateCodeBtn.style.opacity = '1';
+                } else {
+                    // 隐藏默认主题提示
+                    controls.defaultThemeNotice.classList.add('hidden');
+                    
+                    // 启用所有编辑控件
+                    const editControls = [
+                        controls.borderWidth, controls.borderColor, controls.borderRadius,
+                        controls.textColor, controls.fontFamily, controls.bgColor, controls.bgOpacity,
+                        controls.gradientColor1, controls.gradientColor2, controls.gradientAngle,
+                        controls.bgTypeSolid, controls.bgTypeGradient, controls.bubbleText
+                    ];
+                    
+                    editControls.forEach(control => {
+                        if (control) {
+                            control.disabled = false;
+                            control.style.opacity = '1';
+                        }
+                    });
+                    
+                    // 启用保存按钮
+                    controls.saveOnlyBtn.disabled = false;
+                    controls.generateCodeBtn.disabled = false;
+                    controls.saveOnlyBtn.style.opacity = '1';
+                    controls.generateCodeBtn.style.opacity = '1';
+                }
+                
+                console.log(`主题UI状态已更新: ${currentThemeName} (锁定: ${isDefaultTheme})`);
+            }
+            // 加载指定主题
+            async function loadTheme(themeName) {
+                try {
+                    console.log(`开始加载主题: ${themeName}`);
+                    
+                    if (themeName === 'default') {
+                        // 加载固定的默认主题配置
+                        currentThemeName = 'default';
+                        
+                        // 使用固定的默认配置（不从数据库读取）
+                        const defaultSelfConfig = DEFAULT_THEME_CONFIG.self;
+                        const defaultKareConfig = DEFAULT_THEME_CONFIG.kare;
+                        
+                        // 清空UI缓存
+                        uiStateCache = { self: null, kare: null };
+                        
+                        // 临时保存当前气泡类型
+                        const originalBubbleType = currentBubbleType;
+                        
+                        // 先应用self配置到UI并更新预览
+                        currentBubbleType = 'self';
+                        await applyConfigToUI('self', defaultSelfConfig);
+                        updateBubbleStyle();
+                        
+                        // 再应用kare配置到UI并更新预览
+                        currentBubbleType = 'kare';
+                        await applyConfigToUI('kare', defaultKareConfig);
+                        updateBubbleStyle();
+                        
+                        // 恢复原来的气泡类型
+                        currentBubbleType = originalBubbleType;
+                        
+                        showToast('已切换到默认主题（只读模式）', 'info');
+                    } else {
+                        // 加载自定义主题
+                        const transaction = db.transaction(['themeConfig'], 'readonly');
+                        const store = transaction.objectStore('themeConfig');
+                        
+                        const themeData = await new Promise((resolve, reject) => {
+                            const request = store.get(`theme_${themeName}`);
+                            request.onsuccess = () => resolve(request.result);
+                            request.onerror = () => reject(request.error);
+                        });
+                        
+                        console.log('主题数据:', JSON.stringify({
+                            name: themeName,
+                            hasBubbleStyles: !!themeData?.bubbleStyles,
+                            selfStyle: themeData?.bubbleStyles?.self ? {
+                                backgroundType: themeData.bubbleStyles.self.backgroundType,
+                                gradientColor1: themeData.bubbleStyles.self.gradientColor1,
+                                gradientColor2: themeData.bubbleStyles.self.gradientColor2
+                            } : null,
+                            kareStyle: themeData?.bubbleStyles?.kare ? {
+                                backgroundType: themeData.bubbleStyles.kare.backgroundType,
+                                gradientColor1: themeData.bubbleStyles.kare.gradientColor1,
+                                gradientColor2: themeData.bubbleStyles.kare.gradientColor2
+                            } : null
+                        }, null, 2));
+                        
+                        if (themeData && themeData.bubbleStyles && 
+                            (themeData.bubbleStyles.self || themeData.bubbleStyles.kare)) {
+                            
+                            // 临时保存主题数据到工作位置（只保存有效配置）
+                            if (themeData.bubbleStyles.self && Object.keys(themeData.bubbleStyles.self).length > 0) {
+                                await saveBubbleStyleConfig(themeData.bubbleStyles.self, 'bubbleStyleSelf');
+                                console.log('主题self配置已保存到工作区');
+                            }
+                            if (themeData.bubbleStyles.kare && Object.keys(themeData.bubbleStyles.kare).length > 0) {
+                                await saveBubbleStyleConfig(themeData.bubbleStyles.kare, 'bubbleStyle');
+                                console.log('主题kare配置已保存到工作区');
+                            }
+                            
+                                
+                            currentThemeName = themeName;
+                            
+                            // 清空UI缓存，强制重新加载
+                            uiStateCache = { self: null, kare: null };
+                            
+                            // 同时初始化双方的UI状态缓存
+                            const tempBubbleType = currentBubbleType;
+                            
+                            // 加载self配置到缓存
+                            currentBubbleType = 'self';
+                            await loadBubbleTypeSettings('self');
+                            uiStateCache.self = captureCurrentUIState();
+                            console.log(`主题"${themeName}"的self配置已缓存`);
+                            
+                            // 加载kare配置到缓存
+                            currentBubbleType = 'kare';
+                            await loadBubbleTypeSettings('kare');
+                            uiStateCache.kare = captureCurrentUIState();
+                            console.log(`主题"${themeName}"的kare配置已缓存`);
+                            
+                            // 恢复到原来的角色并应用状态
+                            currentBubbleType = tempBubbleType;
+                            applyUIState(uiStateCache[currentBubbleType]);
+                            updateBubbleStyle();
+                            
+                            console.log(`主题"${themeName}"加载完成，双方配置已缓存`);
+                            
+                            showToast(`主题"${themeName}"已加载`, 'success');
+                        } else {
+                            throw new Error('主题数据不存在或损坏');
+                        }
+                    }
+                    
+                    // 更新主题UI状态（锁定/解锁控件）
+                    updateThemeUIState();
+                    updateThemeSelector();
+                    
+                } catch (e) {
+                    console.error('加载主题失败:', e);
+                    showToast('加载主题失败: ' + e.message, 'error');
+                }
+            }
+
+            // 删除主题
+            async function deleteTheme(themeName) {
+                if (themeName === 'default') {
+                    showToast('不能删除默认主题', 'error');
+                    return;
+                }
+                
+                if (!confirm(`确定要删除主题"${themeName}"吗？此操作不可恢复。`)) {
+                    return;
+                }
+                
+                try {
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    await new Promise((resolve, reject) => {
+                        const request = store.delete(`theme_${themeName}`);
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    // 更新主题列表
+                    availableThemes = availableThemes.filter(t => t !== themeName);
+                    
+                    // 如果删除的是当前主题，切换到默认主题
+                    if (currentThemeName === themeName) {
+                        currentThemeName = 'default';
+                        await loadTheme('default');
+                    }
+                    
+                    updateThemeSelector();
+                    showToast(`主题"${themeName}"删除成功！`, 'success');
+                    
+                } catch (e) {
+                    console.error('删除主题失败:', e);
+                    showToast('删除主题失败: ' + e.message, 'error');
+                }
+            }
+
+            // 重命名主题
+            async function renameTheme(oldThemeName) {
+                if (oldThemeName === 'default') {
+                    showToast('不能重命名默认主题', 'error');
+                    return;
+                }
+                
+                const newName = prompt('请输入新的主题名称:', oldThemeName);
+                if (!newName || newName.trim() === '') {
+                    return;
+                }
+                
+                const cleanNewName = newName.trim();
+                if (cleanNewName === oldThemeName) {
+                    return;
+                }
+                
+                if (cleanNewName === 'default') {
+                    showToast('不能使用"default"作为主题名称', 'error');
+                    return;
+                }
+                
+                if (availableThemes.includes(cleanNewName)) {
+                    showToast(`主题名称"${cleanNewName}"已存在`, 'error');
+                    return;
+                }
+                
+                try {
+                    const transaction = db.transaction(['themeConfig'], 'readwrite');
+                    const store = transaction.objectStore('themeConfig');
+                    
+                    // 读取旧主题数据
+                    const oldData = await new Promise((resolve, reject) => {
+                        const request = store.get(`theme_${oldThemeName}`);
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    if (!oldData) {
+                        showToast('主题数据不存在', 'error');
+                        return;
+                    }
+                    
+                    // 删除旧主题
+                    await new Promise((resolve, reject) => {
+                        const request = store.delete(`theme_${oldThemeName}`);
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    // 创建新主题数据（保持原有的数据和ID）
+                    const newData = {
+                        ...oldData,
+                        type: `theme_${cleanNewName}`,
+                        name: cleanNewName,
+                        renamedFrom: oldThemeName,
+                        renamedAt: new Date().toISOString()
+                    };
+                    
+                    // 保存新主题
+                    await new Promise((resolve, reject) => {
+                        const request = store.put(newData);
+                        request.onsuccess = () => resolve();
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    // 更新主题列表
+                    const index = availableThemes.indexOf(oldThemeName);
+                    if (index > -1) {
+                        availableThemes[index] = cleanNewName;
+                    }
+                    
+                    // 如果当前主题是被重命名的主题，更新当前主题名称
+                    if (currentThemeName === oldThemeName) {
+                        currentThemeName = cleanNewName;
+                    }
+                    
+                    updateThemeSelector();
+                    showToast(`主题已重命名为"${cleanNewName}"`, 'success');
+                    
+                } catch (e) {
+                    console.error('重命名主题失败:', e);
+                    showToast('重命名失败: ' + e.message, 'error');
+                }
+            }
+
+            // ==================== 主题导入导出功能 ====================
+            
+            // 检查是否有未保存的更改
+            function hasUnsavedChanges() {
+                // 简单实现：检查当前界面配置是否与数据库中保存的配置一致
+                // 这里可以根据需要实现更精确的检查逻辑
+                return false; // 暂时返回false，后续可以完善
+            }
+
+            // 显示提示消息
+            function showToast(message, type = 'info') {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.className = `toast ${type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500'} text-white px-4 py-2 rounded-lg fixed top-4 right-4 z-[9999]`;
+                toast.style.display = 'block';
+                
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                }, 3000);
+            }
+
+            // 导出主题功能
+            async function exportBubbleTheme() {
+                try {
+                    showToast('正在导出主题，请稍候...', 'info');
+                    
+                    // 1. 收集样式配置
+                    const bubbleStyleSelf = await loadBubbleStyleConfig('bubbleStyleSelf');
+                    const bubbleStyleKare = await loadBubbleStyleConfig('bubbleStyle');
+                    
+                    // 2. 收集贴纸库数据
+                    await loadStickerLibraryFromStorage();
+                    
+                    // 3. 创建导出配置
+                    const exportConfig = {
+                        version: "1.0",
+                        exportTime: new Date().toISOString(),
+                        themeName: currentThemeName === 'default' ? 'ExportedTheme' : currentThemeName,
+                        bubbleStyles: {
+                            self: bubbleStyleSelf || null,
+                            kare: bubbleStyleKare || null
+                        },
+                        stickerLibrary: stickerLibrary || []
+                    };
+
+                    // 4. 创建zip文件
+                    const zip = new JSZip();
+                    
+                    // 添加配置文件
+                    zip.file('config.json', JSON.stringify(exportConfig, null, 2));
+                    
+                    // 添加清单文件
+                    const manifest = {
+                        version: "1.0",
+                        createdAt: new Date().toISOString(),
+                        totalStickers: stickerLibrary.length,
+                        hasStyles: {
+                            self: !!bubbleStyleSelf,
+                            kare: !!bubbleStyleKare
+                        }
+                    };
+                    zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+                    
+                    // 5. 添加贴纸文件
+                    const stickerFolder = zip.folder('stickers');
+                    const stickerFileMapping = {};
+                    
+                    for (let i = 0; i < stickerLibrary.length; i++) {
+                        const sticker = stickerLibrary[i];
+                        try {
+                            if (sticker.fileId && fileStorageManager) {
+                                // 获取文件记录
+                                const fileRecord = await fileStorageManager.getFile(sticker.fileId);
+                                if (fileRecord && fileRecord.blob) {
+                                    // 生成文件名：保持原扩展名
+                                    const ext = sticker.originalName ? 
+                                        sticker.originalName.split('.').pop() : 
+                                        (sticker.fileType === 'image/svg+xml' ? 'svg' : 'png');
+                                    const fileName = `${sticker.fileId}.${ext}`;
+                                    
+                                    stickerFolder.file(fileName, fileRecord.blob);
+                                    stickerFileMapping[sticker.id] = fileName;
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`导出贴纸 ${sticker.id} 失败:`, error);
+                        }
+                    }
+                    
+                    // 更新配置中的文件映射
+                    exportConfig.stickerFileMapping = stickerFileMapping;
+                    zip.file('config.json', JSON.stringify(exportConfig, null, 2));
+                    
+                    // 6. 生成并下载zip文件
+                    const zipBlob = await zip.generateAsync({type: 'blob'});
+                    const url = URL.createObjectURL(zipBlob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `bubble-theme-${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    showToast('主题导出成功！', 'success');
+                    
+                } catch (error) {
+                    console.error('导出主题失败:', error);
+                    showToast('导出失败: ' + error.message, 'error');
+                }
+            }
+
+            // 导入主题功能
+            async function importBubbleTheme(zipFile) {
+                try {
+                    showToast('正在导入主题，请稍候...', 'info');
+                    
+                    // 1. 解析zip文件
+                    const zip = await JSZip.loadAsync(zipFile);
+                    
+                    // 2. 读取和验证配置文件
+                    const configFile = zip.file('config.json');
+                    if (!configFile) {
+                        throw new Error('主题包缺少配置文件');
+                    }
+                    
+                    const configText = await configFile.async('text');
+                    const config = JSON.parse(configText);
+                    
+                    if (!config.version) {
+                        throw new Error('无效的主题包格式');
+                    }
+                    
+                    // 3. 询问用户是否要应用配置
+                    const stickerCount = config.stickerLibrary?.length || 0;
+                    const hasStyles = config.bubbleStyles?.self || config.bubbleStyles?.kare;
+                    
+                    let message = `即将导入包含 ${stickerCount} 个贴纸`;
+                    if (hasStyles) {
+                        message += ' 和气泡样式配置';
+                    }
+                    message += ' 的主题包。\n\n';
+                    
+                    if (stickerLibrary.length > 0) {
+                        message += '检测到现有贴纸库，如发现重名文件将询问您的处理方式。\n\n';
+                    }
+                    
+                    message += '是否继续导入？';
+                    
+                    if (!confirm(message)) {
+                        return;
+                    }
+                    
+                    // 4. 导入贴纸文件
+                    const newStickerLibrary = [];
+                    const nameConflicts = [];
+                    
+                    if (config.stickerLibrary && config.stickerLibrary.length > 0) {
+                        const stickerFolder = zip.folder('stickers');
+                        
+                        for (const stickerConfig of config.stickerLibrary) {
+                            try {
+                                const fileName = config.stickerFileMapping?.[stickerConfig.id];
+                                if (!fileName) continue;
+                                
+                                const stickerFile = stickerFolder.file(fileName);
+                                if (!stickerFile) continue;
+                                
+                                // 检查文件名冲突
+                                let finalName = stickerConfig.originalName;
+                                const existingSticker = stickerLibrary.find(s => s.originalName === finalName);
+                                
+                                if (existingSticker) {
+                                    const action = confirm(`发现重名文件 "${finalName}"。\n\n点击"确定"覆盖现有文件\n点击"取消"保留两个文件（新文件将重命名）`);
+                                    
+                                    if (!action) {
+                                        // 重命名新文件
+                                        const nameParts = finalName.split('.');
+                                        const ext = nameParts.pop();
+                                        const baseName = nameParts.join('.');
+                                        finalName = `${baseName}(1).${ext}`;
+                                    } else {
+                                        // 删除现有文件
+                                        await deleteSticker(existingSticker.id);
+                                    }
+                                }
+                                
+                                // 获取文件数据并存储
+                                const fileBlob = await stickerFile.async('blob');
+                                const newStickerId = 'sticker_import_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                                
+                                if (fileStorageManager) {
+                                    // 存储到文件系统
+                                    const storeResult = await fileStorageManager.storeFile(fileBlob, {
+                                        category: 'bubble_sticker',
+                                        originalName: finalName
+                                    });
+                                    
+                                    // 创建文件引用
+                                    await fileStorageManager.createFileReference(
+                                        storeResult.fileId,
+                                        'bubble_sticker',
+                                        newStickerId
+                                    );
+                                    
+                                    // 添加到贴纸库
+                                    const newSticker = {
+                                        id: newStickerId,
+                                        fileId: storeResult.fileId,
+                                        originalName: finalName,
+                                        fileType: storeResult.type,
+                                        size: storeResult.size
+                                    };
+                                    
+                                    newStickerLibrary.push(newSticker);
+                                    stickerLibrary.push(newSticker);
+                                }
+                                
+                            } catch (error) {
+                                console.warn(`导入贴纸失败:`, error);
+                            }
+                        }
+                    }
+                    
+                    // 5. 保存更新后的贴纸库
+                    await saveStickerLibraryToStorage();
+                    await renderStickerLibrary();
+                    
+                    // 6. 直接保存为新主题
+                    if (config.bubbleStyles?.self || config.bubbleStyles?.kare) {
+                        // 保存为新主题，自动添加"【导入】"后缀
+                        let baseThemeName = config.themeName || '导入主题';
+                        let importedThemeName = `${baseThemeName}【导入】`;
+                        let counter = 1;
+                        let finalThemeName = importedThemeName;
+                        
+                        // 确保主题名称不重复
+                        while (availableThemes.includes(finalThemeName)) {
+                            finalThemeName = `${importedThemeName}_${counter}`;
+                            counter++;
+                        }
+                        
+                        const themeData = {
+                            type: `theme_${finalThemeName}`,
+                            name: finalThemeName,
+                            createdAt: new Date().toISOString(),
+                            bubbleStyles: config.bubbleStyles,
+                            stickerLibrary: newStickerLibrary
+                        };
+                        
+                        // 保存主题到数据库
+                        const transaction = db.transaction(['themeConfig'], 'readwrite');
+                        const store = transaction.objectStore('themeConfig');
+                        
+                        await new Promise((resolve, reject) => {
+                            const request = store.put(themeData);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                        });
+                        
+                        // 更新主题列表
+                        availableThemes.push(finalThemeName);
+                        updateThemeSelector();
+                        
+                        // 自动切换到新导入的主题
+                        currentThemeName = finalThemeName;
+                        await loadTheme(finalThemeName);
+                        
+                        showToast(`主题已导入并保存为"${finalThemeName}"`, 'success');
+                    }
+                    else {
+                        showToast(`成功导入 ${newStickerLibrary.length} 个贴纸！`, 'success');
+                    }
+                    
+                } catch (error) {
+                    console.error('导入主题失败:', error);
+                    showToast('导入失败: ' + error.message, 'error');
+                }
+            }
+
+            // 多主题管理事件监听器
+            controls.themeSelect.addEventListener('change', async (e) => {
+                const selectedTheme = e.target.value;
+                if (selectedTheme !== currentThemeName) {
+                    await loadTheme(selectedTheme);
+                }
+            });
+
+            controls.createNewThemeBtn.addEventListener('click', createNewTheme);
+
+            controls.renameThemeBtn.addEventListener('click', async () => {
+                await renameTheme(currentThemeName);
+            });
+
+            controls.deleteThemeBtn.addEventListener('click', async () => {
+                await deleteTheme(currentThemeName);
+            });
+
+            // 导入导出事件监听器
+            controls.exportThemeBtn.addEventListener('click', async () => {
+                // 检查是否有未保存的更改
+                if (hasUnsavedChanges()) {
+                    const save = confirm('检测到未保存的更改。是否先保存当前配置？\n\n点击"确定"保存并导出\n点击"取消"放弃更改并导出');
+                    if (save) {
+                        // 触发保存按钮
+                        controls.generateCodeBtn.click();
+                        // 等待保存完成
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+                
+                await exportBubbleTheme();
+            });
+
+            controls.importThemeFile.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (file && file.name.endsWith('.zip')) {
+                    await importBubbleTheme(file);
+                } else if (file) {
+                    showToast('请选择.zip格式的主题包文件', 'error');
+                }
+                // 重置文件输入
+                e.target.value = '';
+            });
             
             initializeApp();
         });
