@@ -37,12 +37,24 @@ class ImageDisplayHelper {
                 const entityId = entityType === 'user' ? 'profile' : entity.id;
                 const cacheKey = `avatar_${entityType}_${entityId}`;
                 
+                // 检查缓存，但如果有新的avatarFileId，先清理旧缓存
                 if (this.urlCache.has(cacheKey)) {
-                    return this.urlCache.get(cacheKey);
+                    const cachedUrl = this.urlCache.get(cacheKey);
+                    // 获取当前实际的文件引用，检查是否有变化
+                    const currentReference = await this.imageAPI.getAvatarURL(entityType, entityId);
+                    if (currentReference && currentReference !== cachedUrl) {
+                        // 文件引用已变化，清理旧缓存
+                        URL.revokeObjectURL(cachedUrl);
+                        this.urlCache.delete(cacheKey);
+                    } else if (cachedUrl) {
+                        return cachedUrl;
+                    }
                 }
                 
                 const url = await this.imageAPI.getAvatarURL(entityType, entityId);
-                this.urlCache.set(cacheKey, url);
+                if (url) {
+                    this.urlCache.set(cacheKey, url);
+                }
                 return url;
             }
             
@@ -205,8 +217,12 @@ class ImageDisplayHelper {
      * @param {string} type - 缓存类型前缀（如 'avatar_', 'background_'）
      */
     clearCacheByType(type) {
-        for (const [key] of this.urlCache) {
+        for (const [key, url] of this.urlCache) {
             if (key.startsWith(type)) {
+                // 释放Blob URL以防止内存泄漏
+                if (url && url.startsWith('blob:')) {
+                    URL.revokeObjectURL(url);
+                }
                 this.urlCache.delete(key);
             }
         }

@@ -439,6 +439,14 @@ async function handleContactAvatarUpload(event) {
         if (fileId) {
             // 更新隐藏的URL输入框为文件ID引用
             document.getElementById('contactAvatar').value = `file:${fileId}`;
+            
+            // 清理file input
+            document.getElementById('avatarUploadInput').value = '';
+            
+            // 清理联系人头像缓存
+            if (window.ImageDisplayHelper) {
+                window.ImageDisplayHelper.clearCacheByType(`avatar_contact_${contactId}`);
+            }
         }
     } catch (error) {
         console.error('联系人头像上传失败:', error);
@@ -452,6 +460,17 @@ async function handleProfileAvatarUpload(event) {
         if (fileId) {
             // 更新隐藏的URL输入框为文件ID引用
             document.getElementById('profileAvatarInput').value = `file:${fileId}`;
+            
+            // 清理file input
+            document.getElementById('profileUploadInput').value = '';
+            
+            // 清理头像缓存
+            if (window.ImageDisplayHelper) {
+                window.ImageDisplayHelper.clearCacheByType('avatar_user_');
+            }
+            
+            // 立即更新UI
+            await updateUserProfileUI();
         }
     } catch (error) {
         console.error('个人头像上传失败:', error);
