@@ -498,7 +498,7 @@
                 const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
                 const currentTextContent = currentBubbleType === 'self' ? bubbleTextContentSelf : bubbleTextContentKare;
                 
-                console.log(`updateBubbleStyle: currentBgType=${currentBgType}, 渐变色1=${controls.gradientColor1.value}, 渐变色2=${controls.gradientColor2.value}`);
+                console.log(`updateBubbleStyle: currentBgType=${currentBgType}, bubbleType=${currentBubbleType}`);
                 
                 // 清理之前的背景样式，避免样式冲突
                 currentBubble.style.background = '';
@@ -519,9 +519,11 @@
                     const opacity = controls.bgOpacity.value;
                     const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
                     currentBubble.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    console.log(`应用纯色背景: rgba(${r}, ${g}, ${b}, ${opacity})`);
                 } else {
                     const color1 = controls.gradientColor1.value, color2 = controls.gradientColor2.value, angle = controls.gradientAngle.value;
                     currentBubble.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+                    console.log(`应用渐变背景: linear-gradient(${angle}deg, ${color1}, ${color2})`);
                 }
                 controls.borderWidthValue.textContent = `${borderWidth}px`;
                 controls.borderRadiusValue.textContent = `${borderRadius}px`;
@@ -1629,7 +1631,7 @@
 
             // 共享的保存配置函数
             async function saveCurrentConfiguration() {
-                console.log('开始保存当前配置...');
+                console.log('开始保存当前配置...', `当前气泡类型: ${currentBubbleType}`);
                 
                 // 1. 生成当前选择气泡类型的HTML和CSS代码（用于显示）
                 const currentBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
@@ -1637,12 +1639,38 @@
                 const bubbleStyle = window.getComputedStyle(currentBubble);
                 const textStyle = window.getComputedStyle(currentTextContent);
                 
+                console.log(`当前${currentBubbleType}气泡的样式:`, {
+                    backgroundType: currentBgType,
+                    backgroundColor: controls.bgColor.value,
+                    gradientColor1: controls.gradientColor1.value,
+                    gradientColor2: controls.gradientColor2.value
+                });
+                
                 // 2. 保存当前UI状态到缓存
                 uiStateCache[currentBubbleType] = captureCurrentUIState();
                 
                 // 3. 生成并保存双方气泡的完整配置（从缓存和当前状态）
-                const selfConfig = uiStateCache.self ? uiStateCache.self : captureCurrentUIState();
-                const kareConfig = uiStateCache.kare ? uiStateCache.kare : captureCurrentUIState();
+                let selfConfig, kareConfig;
+                
+                if (uiStateCache.self) {
+                    selfConfig = uiStateCache.self;
+                } else {
+                    // 临时切换到self类型以捕获其状态
+                    const originalType = currentBubbleType;
+                    currentBubbleType = 'self';
+                    selfConfig = captureCurrentUIState();
+                    currentBubbleType = originalType;
+                }
+                
+                if (uiStateCache.kare) {
+                    kareConfig = uiStateCache.kare;
+                } else {
+                    // 临时切换到kare类型以捕获其状态
+                    const originalType = currentBubbleType;
+                    currentBubbleType = 'kare';
+                    kareConfig = captureCurrentUIState();
+                    currentBubbleType = originalType;
+                }
                 
                 // 生成HTML模板（主应用要求必须有html字段）
                 const generateHtmlTemplate = (config) => {
@@ -2056,35 +2084,50 @@
                 const savedSelfConfig = await loadBubbleStyleConfig('bubbleStyleSelf');
                 const savedKareConfig = await loadBubbleStyleConfig('bubbleStyle');
                 
-                if (savedSelfConfig) {
-                    // 切换到自己模式并应用配置
+                // 如果没有保存的配置，使用默认主题配置
+                if (!savedSelfConfig && !savedKareConfig) {
+                    console.log('没有保存的配置，使用默认主题配置');
+                    
+                    // 先应用self的默认配置
                     currentBubbleType = 'self';
-                    await applyBubbleStyleConfig(savedSelfConfig);
+                    await applyConfigToUI('self', DEFAULT_THEME_CONFIG.self);
+                    updateBubbleStyle();
                     
-                    // 恢复自己的贴图
-                    if (savedSelfConfig.stickers && savedSelfConfig.stickers.length > 0) {
-                        await restoreStickers(savedSelfConfig.stickers, 'self');
-                    }
-                }
-                
-                if (savedKareConfig) {
-                    // 切换到别人模式并应用配置
+                    // 再应用kare的默认配置
                     currentBubbleType = 'kare';
-                    await applyBubbleStyleConfig(savedKareConfig);
+                    await applyConfigToUI('kare', DEFAULT_THEME_CONFIG.kare);
+                    updateBubbleStyle();
                     
-                    // 恢复别人的贴图
-                    if (savedKareConfig.stickers && savedKareConfig.stickers.length > 0) {
-                        await restoreStickers(savedKareConfig.stickers, 'kare');
+                    // 初始化UI状态缓存
+                    uiStateCache.self = { ...DEFAULT_THEME_CONFIG.self, stickers: [] };
+                    uiStateCache.kare = { ...DEFAULT_THEME_CONFIG.kare, stickers: [] };
+                } else {
+                    // 如果有保存的配置，正常应用
+                    if (savedSelfConfig) {
+                        // 切换到自己模式并应用配置
+                        currentBubbleType = 'self';
+                        await applyBubbleStyleConfig(savedSelfConfig);
+                        
+                        // 恢复自己的贴图
+                        if (savedSelfConfig.stickers && savedSelfConfig.stickers.length > 0) {
+                            await restoreStickers(savedSelfConfig.stickers, 'self');
+                        }
+                    }
+                    
+                    if (savedKareConfig) {
+                        // 切换到别人模式并应用配置
+                        currentBubbleType = 'kare';
+                        await applyBubbleStyleConfig(savedKareConfig);
+                        
+                        // 恢复别人的贴图
+                        if (savedKareConfig.stickers && savedKareConfig.stickers.length > 0) {
+                            await restoreStickers(savedKareConfig.stickers, 'kare');
+                        }
                     }
                 }
                 
                 // 默认切换到自己的气泡编辑模式
-                switchBubbleType('self');
-                
-                // 如果没有保存的配置，应用默认样式
-                if (!savedSelfConfig && !savedKareConfig) {
-                    updateBubbleStyle();
-                }
+                await switchBubbleType('self');
             }
             // ==================== 多主题管理功能 ====================
             
