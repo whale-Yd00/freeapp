@@ -110,9 +110,20 @@ class ImageStorageAPI {
 
         } catch (error) {
             console.error(`存储${entityType}头像失败:`, error);
+            console.error('详细错误信息:', {
+                errorName: error.name,
+                errorCode: error.code,
+                errorMessage: error.message,
+                originalError: error.originalError,
+                stackTrace: error.stack,
+                entityType: entityType,
+                entityId: entityId,
+                fileType: imageData instanceof File ? imageData.type : 'unknown',
+                fileSize: imageData instanceof File ? imageData.size : 'unknown'
+            });
             
-            // 如果是我们自定义的DetailedError，直接抛出
-            if (error instanceof DetailedError) {
+            // 如果是我们自定义的DetailedError或者已经有code属性，直接抛出
+            if (error instanceof DetailedError || error.name === 'DetailedError' || error.code) {
                 throw error;
             }
             
@@ -121,7 +132,7 @@ class ImageStorageAPI {
                 throw new DetailedError('STORAGE_FULL', '存储空间不足，请清理数据后重试');
             }
             
-            if (error.name === 'InvalidStateError' || error.message && error.message.includes('database')) {
+            if (error.name === 'InvalidStateError' || (error.message && error.message.includes('database'))) {
                 throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
             }
             
@@ -129,8 +140,13 @@ class ImageStorageAPI {
                 throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
             }
             
-            // 默认错误
-            throw new DetailedError('UNKNOWN_ERROR', `头像上传失败: ${error.message || '未知错误'}`);
+            if (error.message && error.message.includes('表不存在')) {
+                throw new DetailedError('DATABASE_SCHEMA_ERROR', '数据库表结构不完整，请刷新页面重新初始化');
+            }
+            
+            // 默认错误 - 提供更多调试信息
+            const errorMsg = error.message || error.toString() || '未知错误';
+            throw new DetailedError('UNKNOWN_ERROR', `头像上传失败: ${errorMsg}`);
         }
     }
 

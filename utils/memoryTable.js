@@ -417,7 +417,8 @@ class MemoryTableManager {
                 [{ role: 'user', content: memoryUpdatePrompt }],
                 { 
                     temperature: 0.3,
-                    max_tokens: 5000
+                    max_tokens: 8000,
+                    stream: false
                 },
                 (window.apiSettings.timeout || 60) * 1000
             );
