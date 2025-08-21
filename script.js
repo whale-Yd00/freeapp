@@ -5144,6 +5144,10 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
             }
             
             bubbleHtml = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', rawContent);
+            
+            // 处理HTML中的file:格式图片
+            bubbleHtml = await processFileUrlsInHtml(bubbleHtml);
+            
             // 清理 HTML 中的转义换行符，避免显示 \n
             bubbleHtml = bubbleHtml.replace(/\\n/g, '');
             console.log('生成的自定义气泡 HTML:', bubbleHtml);
@@ -5189,6 +5193,10 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
                 }
                 
                 let customBubbleWithHeader = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', groupHeader + rawContent);
+                
+                // 处理HTML中的file:格式图片
+                customBubbleWithHeader = await processFileUrlsInHtml(customBubbleWithHeader);
+                
                 // 清理 HTML 中的转义换行符，避免显示 \n
                 customBubbleWithHeader = customBubbleWithHeader.replace(/\\n/g, '');
                 msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${customBubbleWithHeader}`;
@@ -10828,6 +10836,42 @@ window.addEventListener('message', async function(event) {
         }
     }
 });
+
+/**
+ * 处理HTML中的file:格式图片URL
+ */
+async function processFileUrlsInHtml(html) {
+    if (!html || typeof html !== 'string') return html;
+    
+    // 使用正则表达式查找所有 src="file:fileId" 格式的图片
+    const fileUrlRegex = /src="file:([^"]+)"/g;
+    let match;
+    const replacements = [];
+    
+    while ((match = fileUrlRegex.exec(html)) !== null) {
+        const fileId = match[1];
+        try {
+            // 使用 FileStorageManager 获取真实URL
+            if (window.FileStorageManager && window.FileStorageManager.createFileURL) {
+                const realUrl = await window.FileStorageManager.createFileURL(fileId);
+                replacements.push({
+                    original: match[0],
+                    replacement: `src="${realUrl}"`
+                });
+            }
+        } catch (error) {
+            console.warn('处理文件URL失败:', fileId, error);
+        }
+    }
+    
+    // 应用所有替换
+    let processedHtml = html;
+    for (const replacement of replacements) {
+        processedHtml = processedHtml.replace(replacement.original, replacement.replacement);
+    }
+    
+    return processedHtml;
+}
 
 /**
  * 保存气泡样式到存储
