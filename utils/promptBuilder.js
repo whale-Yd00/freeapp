@@ -138,28 +138,39 @@ class PromptBuilder {
             const senderName = msg.role === 'user' ? (userProfile?.name || userProfile?.nickname || '用户') : (contacts.find(c => c.id === msg.senderId)?.name || contact.name);
             let content = msg.content;
 
-            // 处理红包消息 - 改为user角色以兼容Gemini API
+            // 处理红包消息
             if (msg.type === 'red_packet') { 
                 try { 
                     const p = JSON.parse(content);
                     // 确保金额和消息都存在且有效
                     if (p.amount !== undefined && p.message !== undefined) {
-                        // 将红包信息作为用户消息发送，让AI理解这是一个红包
+                        const isUserSent = msg.role === 'user';
+                        const senderDesc = isUserSent ? `User(${userProfile?.name || '用户'})` : `你(${senderName})`;
+                        const finalRole = isUserSent ? 'user' : 'assistant';
+                        
                         messages.push({ 
-                            role: 'user', 
-                            content: `[用户发送了一个金额为${p.amount}元的红包，留言："${p.message}"]` 
+                            role: finalRole,
+                            content: `[${senderDesc}发送了一个金额为${p.amount}元的红包，留言："${p.message}"]` 
                         }); 
                     } else {
+                        const isUserSent = msg.role === 'user';
+                        const senderDesc = isUserSent ? `User(${userProfile?.name || '用户'})` : `你(${senderName})`;
+                        const finalRole = isUserSent ? 'user' : 'assistant';
+                        
                         messages.push({ 
-                            role: 'user', 
-                            content: `[用户发送了一个红包]` 
+                            role: finalRole, 
+                            content: `[${senderDesc}发送了一个红包]` 
                         }); 
                     }
                 } catch(e) {
                     console.warn('解析红包数据失败:', e, 'content:', content);
+                    const isUserSent = msg.role === 'user';
+                    const senderDesc = isUserSent ? `User(${userProfile?.name || '用户'})` : `你(${senderName})`;
+                    const finalRole = isUserSent ? 'user' : 'assistant';
+                    
                     messages.push({ 
-                        role: 'user', 
-                        content: `[用户发送了一个红包]` 
+                        role: finalRole, 
+                        content: `[${senderDesc}发送了一个红包]` 
                     }); 
                 }
                 return; // 跳过此次循环的后续步骤
@@ -203,9 +214,14 @@ class PromptBuilder {
                 if (msg.type === 'red_packet') {
                     try {
                         const p = JSON.parse(content);
-                        content = `发送了金额为${p.amount}元的红包："${p.message}"`;
+                        // 根据消息的原始role决定发送者描述格式
+                        const isUserSent = msg.role === 'user';
+                        const senderDesc = isUserSent ? `User(${userProfile?.name || '用户'})` : `你(${senderName})`;
+                        content = `${senderDesc}发送了金额为${p.amount}元的红包："${p.message}"`;
                     } catch(e) {
-                        content = '发送了红包';
+                        const isUserSent = msg.role === 'user';
+                        const senderDesc = isUserSent ? `User(${userProfile?.name || '用户'})` : `你(${senderName})`;
+                        content = `${senderDesc}发送了红包`;
                     }
                 } else if (msg.type === 'text') {
                     content = this._replaceBase64WithEmoji(msg.content, emojis);
