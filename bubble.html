@@ -1649,28 +1649,46 @@
                 // 2. 保存当前UI状态到缓存
                 uiStateCache[currentBubbleType] = captureCurrentUIState();
                 
-                // 3. 生成并保存双方气泡的完整配置（从缓存和当前状态）
-                let selfConfig, kareConfig;
+                // 3. 确保双方气泡状态都已缓存
+                console.log('当前缓存状态:', {
+                    self: uiStateCache.self ? '已缓存' : '未缓存',
+                    kare: uiStateCache.kare ? '已缓存' : '未缓存'
+                });
                 
-                if (uiStateCache.self) {
-                    selfConfig = uiStateCache.self;
-                } else {
-                    // 临时切换到self类型以捕获其状态
+                // 如果self气泡未缓存，临时切换到self以缓存其状态
+                if (!uiStateCache.self && currentBubbleType !== 'self') {
+                    console.log('切换到self以缓存其状态');
                     const originalType = currentBubbleType;
-                    currentBubbleType = 'self';
-                    selfConfig = captureCurrentUIState();
-                    currentBubbleType = originalType;
+                    await switchBubbleType('self');
+                    // 切换回来
+                    await switchBubbleType(originalType);
                 }
                 
-                if (uiStateCache.kare) {
-                    kareConfig = uiStateCache.kare;
-                } else {
-                    // 临时切换到kare类型以捕获其状态
+                // 如果kare气泡未缓存，临时切换到kare以缓存其状态
+                if (!uiStateCache.kare && currentBubbleType !== 'kare') {
+                    console.log('切换到kare以缓存其状态');
                     const originalType = currentBubbleType;
-                    currentBubbleType = 'kare';
-                    kareConfig = captureCurrentUIState();
-                    currentBubbleType = originalType;
+                    await switchBubbleType('kare');
+                    // 切换回来
+                    await switchBubbleType(originalType);
                 }
+                
+                // 从缓存获取双方配置
+                const selfConfig = uiStateCache.self || { ...DEFAULT_THEME_CONFIG.self, stickers: [] };
+                const kareConfig = uiStateCache.kare || { ...DEFAULT_THEME_CONFIG.kare, stickers: [] };
+                
+                console.log('从缓存获取配置完成:', {
+                    self: {
+                        backgroundType: selfConfig.backgroundType,
+                        backgroundColor: selfConfig.backgroundColor,
+                        textColor: selfConfig.textColor
+                    },
+                    kare: {
+                        backgroundType: kareConfig.backgroundType,
+                        backgroundColor: kareConfig.backgroundColor,
+                        textColor: kareConfig.textColor
+                    }
+                });
                 
                 // 生成HTML模板（主应用要求必须有html字段）
                 const generateHtmlTemplate = (config, bubbleType) => {
@@ -2142,9 +2160,9 @@
                 kare: null
             };
             
-            // 从UI控件读取当前状态
-            function captureCurrentUIState() {
-                const targetBubble = currentBubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
+            // 从UI控件读取指定气泡类型的状态
+            function captureCurrentUIState(bubbleType = currentBubbleType) {
+                const targetBubble = bubbleType === 'self' ? previewBubbleSelf : previewBubbleKare;
                 
                 return {
                     borderWidth: controls.borderWidth.value,
