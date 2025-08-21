@@ -219,6 +219,12 @@ class FileStorageManager {
             }
 
             const fileId = this.generateFileId();
+            // 确保blob是真正的Blob对象
+            if (!(blob instanceof Blob)) {
+                reject(new Error(`生成的blob不是有效的Blob对象，类型: ${typeof blob}`));
+                return;
+            }
+
             const fileRecord = {
                 fileId: fileId,
                 blob: blob,
@@ -228,10 +234,44 @@ class FileStorageManager {
                 metadata: metadata
             };
 
+            console.log('准备存储文件记录:', {
+                fileId: fileId,
+                blobType: typeof blob,
+                isBlobInstance: blob instanceof Blob,
+                blobSize: blob.size,
+                blobMimeType: blob.type
+            });
+
             const request = store.put(fileRecord);
 
             request.onsuccess = () => {
                 console.log('文件存储成功，文件ID:', fileId);
+                
+                // 立即验证存储的数据
+                const verifyTransaction = this.db.transaction(['fileStorage'], 'readonly');
+                const verifyStore = verifyTransaction.objectStore('fileStorage');
+                const verifyRequest = verifyStore.get(fileId);
+                
+                verifyRequest.onsuccess = () => {
+                    const storedRecord = verifyRequest.result;
+                    console.log('存储验证结果:', {
+                        fileId: fileId,
+                        hasRecord: !!storedRecord,
+                        hasBlob: !!storedRecord?.blob,
+                        blobType: typeof storedRecord?.blob,
+                        isBlobInstance: storedRecord?.blob instanceof Blob,
+                        storedSize: storedRecord?.size,
+                        storedMimeType: storedRecord?.type
+                    });
+                    
+                    if (storedRecord && !(storedRecord.blob instanceof Blob)) {
+                        console.warn('警告：存储的blob不是Blob对象！', {
+                            actualType: typeof storedRecord.blob,
+                            blobConstructor: storedRecord.blob?.constructor?.name
+                        });
+                    }
+                };
+                
                 resolve({
                     fileId: fileId,
                     type: blob.type,
@@ -341,11 +381,51 @@ class FileStorageManager {
                 throw new Error(`文件记录中缺少blob数据: ${fileId}`);
             }
             
-            if (!(fileRecord.blob instanceof Blob)) {
+            console.log('读取的文件记录详情:', {
+                fileId: fileId,
+                hasBlob: !!fileRecord.blob,
+                blobType: typeof fileRecord.blob,
+                isBlobInstance: fileRecord.blob instanceof Blob,
+                blobConstructor: fileRecord.blob?.constructor?.name,
+                blobKeys: fileRecord.blob && typeof fileRecord.blob === 'object' ? Object.keys(fileRecord.blob) : 'N/A'
+            });
+
+            // 尝试处理各种blob格式
+            let actualBlob;
+            if (fileRecord.blob instanceof Blob) {
+                console.log('找到有效的Blob对象');
+                actualBlob = fileRecord.blob;
+            } else if (fileRecord.blob && typeof fileRecord.blob === 'object') {
+                console.log('尝试重构blob对象，对象结构:', fileRecord.blob);
+                
+                // 如果blob是一个对象，尝试重新构造Blob
+                try {
+                    // 检查是否是ArrayBuffer或类似结构
+                    if (fileRecord.blob.data && fileRecord.blob.data instanceof ArrayBuffer) {
+                        console.log('使用 blob.data 重构');
+                        actualBlob = new Blob([fileRecord.blob.data], { type: fileRecord.type || 'application/octet-stream' });
+                    } else if (fileRecord.blob.buffer && fileRecord.blob.buffer instanceof ArrayBuffer) {
+                        console.log('使用 blob.buffer 重构');
+                        actualBlob = new Blob([fileRecord.blob.buffer], { type: fileRecord.type || 'application/octet-stream' });
+                    } else {
+                        console.log('直接使用对象重构');
+                        // 尝试直接使用对象
+                        actualBlob = new Blob([fileRecord.blob], { type: fileRecord.type || 'application/octet-stream' });
+                    }
+                    
+                    console.log('重构成功，新Blob:', {
+                        size: actualBlob.size,
+                        type: actualBlob.type
+                    });
+                } catch (reconstructError) {
+                    console.error('重构失败:', reconstructError);
+                    throw new Error(`无法重构blob对象: ${fileId}, 原因: ${reconstructError.message}`);
+                }
+            } else {
                 throw new Error(`文件记录中的blob不是有效的Blob对象: ${fileId}, 实际类型: ${typeof fileRecord.blob}`);
             }
             
-            const url = URL.createObjectURL(fileRecord.blob);
+            const url = URL.createObjectURL(actualBlob);
             
             // 缓存URL
             this.urlCache.set(fileId, url);
