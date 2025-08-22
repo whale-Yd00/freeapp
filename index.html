@@ -222,6 +222,107 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- 数据优化功能 -->
+                <div class="data-optimization-section" style="margin: 15px;">
+                    <!-- 图片存储优化部分 -->
+                    <div class="context-control" style="margin-bottom: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9;">
+                        <div class="context-header">
+                            <div class="context-title" style="color: #333; font-weight: bold;">📁 图片存储优化</div>
+                            <div class="context-value" id="migrationStatusText">检查中...</div>
+                        </div>
+                        <div class="context-info" style="margin-top: 10px; font-size: 13px; color: #666;">
+                            将现有的base64图片数据转换为高效的文件存储格式，可显著减少存储空间占用并提升性能。
+                        </div>
+                        
+                        <!-- 迁移状态显示 -->
+                        <div id="migrationStatusDetails" style="margin-top: 10px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; font-size: 12px; color: #666;">
+                            <div>正在检查图片数据状态...</div>
+                        </div>
+
+                        <!-- 迁移按钮组 -->
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button type="button" class="form-submit" onclick="checkImageMigrationStatus()" style="flex: 1; font-size: 12px;">
+                                🔍 检查状态
+                            </button>
+                            <button type="button" class="form-submit" id="startMigrationBtn" onclick="startImageMigration()" 
+                                    style="flex: 2; font-size: 12px; background-color: #ff9500;" disabled>
+                                🚀 开始优化
+                            </button>
+                        </div>
+
+                        <!-- 迁移进度显示 -->
+                        <div id="migrationProgress" style="margin-top: 10px; display: none;">
+                            <div style="background: #f0f0f0; border-radius: 4px; overflow: hidden; height: 8px; margin-bottom: 5px;">
+                                <div id="migrationProgressBar" style="background: #07c160; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                            </div>
+                            <div id="migrationProgressText" style="font-size: 11px; color: #666;">准备开始...</div>
+                        </div>
+                    </div>
+
+                    <!-- 聊天记录表情包优化部分 -->
+                    <div class="context-control" style="margin-bottom: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f0f8ff;">
+                        <div class="context-header">
+                            <div class="context-title" style="color: #333; font-weight: bold;">💬 聊天记录表情优化</div>
+                            <div class="context-value" id="chatEmojiMigrationStatusText">检查中...</div>
+                        </div>
+                        <div class="context-info" style="margin-top: 10px; font-size: 13px; color: #666;">
+                            优化聊天记录中的表情包存储格式，将base64格式转换为高效的文件存储，同时保持API兼容性。
+                        </div>
+                        
+                        <!-- 迁移状态显示 -->
+                        <div id="chatEmojiMigrationStatusDetails" style="margin-top: 10px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; font-size: 12px; color: #666;">
+                            <div>正在检查聊天记录中的表情包状态...</div>
+                        </div>
+
+                        <!-- 迁移按钮组 -->
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button type="button" class="form-submit" onclick="checkChatEmojiMigrationStatus()" style="flex: 1; font-size: 12px;">
+                                🔍 检查状态
+                            </button>
+                            <button type="button" class="form-submit" id="startChatEmojiMigrationBtn" onclick="startChatEmojiMigration()" 
+                                    style="flex: 2; font-size: 12px; background-color: #1890ff;" disabled>
+                                💬 开始优化
+                            </button>
+                        </div>
+
+                        <!-- 迁移进度显示 -->
+                        <div id="chatEmojiMigrationProgress" style="margin-top: 10px; display: none;">
+                            <div style="background: #f0f0f0; border-radius: 4px; overflow: hidden; height: 8px; margin-bottom: 5px;">
+                                <div id="chatEmojiMigrationProgressBar" style="background: #1890ff; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                            </div>
+                            <div id="chatEmojiMigrationProgressText" style="font-size: 11px; color: #666;">准备开始...</div>
+                        </div>
+                    </div>
+
+                    <!-- Unsplash -->
+                    <div class="context-control" style="margin-bottom: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f5f8ff;">
+                        <div class="context-header">
+                            <div class="context-title" style="color: #333; font-weight: bold;">🎨 文字配图</div>
+                            <div class="context-value" id="imageKeywordStatusText">
+                                <span id="imageKeywordStatus"></span>
+                            </div>
+                        </div>
+                        <div class="context-info" style="margin-top: 10px; font-size: 13px; color: #666;">
+                            使用 Unsplash API 为论坛或朋友圈配图
+                        </div>
+                        
+                        <!-- 配置状态显示 -->
+                        <div id="imageKeywordConfigStatus" style="margin-top: 10px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; font-size: 12px; color: #666;">
+                            <div>正在检查配置状态...</div>
+                        </div>
+
+                        <!-- 控制按钮 -->
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button type="button" class="form-submit" onclick="checkImageKeywordStatus()" style="flex: 1; font-size: 12px;">
+                                🔍 检查状态
+                            </button>
+                            <button type="button" class="form-submit" onclick="openImageKeywordSettings()" style="flex: 1; font-size: 12px; background-color: #28a745;">
+                                ⚙️ 配置设置
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- 导入导出操作 -->
                 <div class="import-export-actions" style="margin: 15px;">
@@ -769,11 +870,6 @@
                         <label class="form-label">朋友圈主题</label>
                         <input type="text" class="form-input" id="momentGenTopic" placeholder="例如：日常生活、工作感悟、美食分享等（可选）">
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Unsplash API Key（可选）</label>
-                        <input type="text" class="form-input" id="momentUnsplashKey" placeholder="填写后可自动配图，留空则无图片">
-                        <div class="form-hint">在 <a href="https://unsplash.com/developers" target="_blank">Unsplash Developers</a> 获取API Key</div>
-                    </div>
                     <button type="submit" class="form-submit" data-umami-event="Generate Moment Submit">生成朋友圈</button>
                 </form>
             </div>
@@ -911,17 +1007,6 @@
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
-                        <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
-                    </div>
-                    <div class="form-group">
-                        <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
-                        <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
-                        <div class="context-info" style="margin-top: 4px;">
-                            用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
-                        </div>
-                    </div>
                     
                     <div class="context-control">
                         <div class="context-header">
@@ -958,75 +1043,26 @@
                         <div class="context-info" style="margin-top: 4px;">用于总结、填写记忆表格等，建议选择便宜的模型，以节约成本。若不介意成本，可选择与主要模型保持一致。</div>
                     </div>
 
-                    <!-- 图片存储优化部分 -->
-                    <div class="context-control" style="margin-top: 20px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9;">
-                        <div class="context-header">
-                            <div class="context-title" style="color: #333; font-weight: bold;">📁 图片存储优化</div>
-                            <div class="context-value" id="migrationStatusText">检查中...</div>
-                        </div>
-                        <div class="context-info" style="margin-top: 10px;">
-                            将现有的base64图片数据转换为高效的文件存储格式，可显著减少存储空间占用并提升性能。
-                        </div>
-                        
-                        <!-- 迁移状态显示 -->
-                        <div id="migrationStatusDetails" style="margin-top: 10px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; font-size: 12px; color: #666;">
-                            <div>正在检查图片数据状态...</div>
-                        </div>
-
-                        <!-- 迁移按钮组 -->
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button type="button" class="form-submit" onclick="checkImageMigrationStatus()" style="flex: 1; font-size: 12px;">
-                                🔍 检查状态
-                            </button>
-                            <button type="button" class="form-submit" id="startMigrationBtn" onclick="startImageMigration()" 
-                                    style="flex: 2; font-size: 12px; background-color: #ff9500;" disabled>
-                                🚀 开始优化
-                            </button>
-                        </div>
-
-                        <!-- 迁移进度显示 -->
-                        <div id="migrationProgress" style="margin-top: 10px; display: none;">
-                            <div style="background: #f0f0f0; border-radius: 4px; overflow: hidden; height: 8px; margin-bottom: 5px;">
-                                <div id="migrationProgressBar" style="background: #07c160; height: 100%; width: 0%; transition: width 0.3s;"></div>
-                            </div>
-                            <div id="migrationProgressText" style="font-size: 11px; color: #666;">准备开始...</div>
+                    <div class="form-group">
+                        <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
+                        <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
+                    </div>
+                    <div class="form-group">
+                        <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
+                        <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
+                        <div class="context-info" style="margin-top: 4px;">
+                            用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
                         </div>
                     </div>
 
-                    <!-- 聊天记录表情包优化部分 -->
-                    <div class="context-control" style="margin-top: 15px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f0f8ff;">
-                        <div class="context-header">
-                            <div class="context-title" style="color: #333; font-weight: bold;">💬 聊天记录表情优化</div>
-                            <div class="context-value" id="chatEmojiMigrationStatusText">检查中...</div>
-                        </div>
-                        <div class="context-info" style="margin-top: 10px;">
-                            优化聊天记录中的表情包存储格式，将base64格式转换为高效的文件存储，同时保持API兼容性。
-                        </div>
-                        
-                        <!-- 迁移状态显示 -->
-                        <div id="chatEmojiMigrationStatusDetails" style="margin-top: 10px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #ddd; font-size: 12px; color: #666;">
-                            <div>正在检查聊天记录中的表情包状态...</div>
-                        </div>
-
-                        <!-- 迁移按钮组 -->
-                        <div style="display: flex; gap: 10px; margin-top: 10px;">
-                            <button type="button" class="form-submit" onclick="checkChatEmojiMigrationStatus()" style="flex: 1; font-size: 12px;">
-                                🔍 检查状态
-                            </button>
-                            <button type="button" class="form-submit" id="startChatEmojiMigrationBtn" onclick="startChatEmojiMigration()" 
-                                    style="flex: 2; font-size: 12px; background-color: #1890ff;" disabled>
-                                💬 开始优化
-                            </button>
-                        </div>
-
-                        <!-- 迁移进度显示 -->
-                        <div id="chatEmojiMigrationProgress" style="margin-top: 10px; display: none;">
-                            <div style="background: #f0f0f0; border-radius: 4px; overflow: hidden; height: 8px; margin-bottom: 5px;">
-                                <div id="chatEmojiMigrationProgressBar" style="background: #1890ff; height: 100%; width: 0%; transition: width 0.3s;"></div>
-                            </div>
-                            <div id="chatEmojiMigrationProgressText" style="font-size: 11px; color: #666;">准备开始...</div>
+                    <div class="form-group">
+                        <label for="unsplashApiKey" class="form-label">Unsplash API Key（可选）</label>
+                        <input type="password" id="unsplashApiKey" class="form-input" placeholder="输入你的 Unsplash Access Key...">
+                        <div class="context-info" style="margin-top: 4px;">
+                            用于为论坛帖子和朋友圈自动配图。在 <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer">Unsplash Developers</a> 获取API Key。
                         </div>
                     </div>
+
 
                     <button type="submit" class="form-submit">保存</button>
                 </form>
@@ -1365,6 +1401,7 @@
     <script src="utils/fileStorageImporter.js"></script>
     <script src="utils/announcementManager.js"></script>
     <script src="utils/characterMemory.js"></script>
+    <script src="utils/imageKeywordGenerator.js"></script>
     
     <!-- Service Worker Registration -->
     <script>
