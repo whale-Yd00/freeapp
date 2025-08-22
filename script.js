@@ -43,6 +43,7 @@ function initializeLongPressBlocking() {
     // iOS Safari 特殊处理：屏蔽长按高亮
     let longPressTimer = null;
     let touchStartTime = 0;
+    let touchTarget = null;
     
     document.addEventListener('touchstart', function(e) {
         // 输入框允许正常行为
@@ -51,13 +52,31 @@ function initializeLongPressBlocking() {
             return;
         }
         
+        touchTarget = e.target;
         touchStartTime = Date.now();
         longPressTimer = setTimeout(() => {
-            // 长按时移除焦点和选择
-            if (document.activeElement) {
+            // 只有当前活跃元素不是输入框时才blur
+            if (document.activeElement && 
+                document.activeElement.tagName !== 'INPUT' && 
+                document.activeElement.tagName !== 'TEXTAREA' && 
+                document.activeElement.contentEditable !== 'true') {
                 document.activeElement.blur();
             }
-            window.getSelection().removeAllRanges();
+            // 只清除非输入框的选择
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const container = range.commonAncestorContainer;
+                const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+                
+                if (element && 
+                    element.tagName !== 'INPUT' && 
+                    element.tagName !== 'TEXTAREA' && 
+                    element.contentEditable !== 'true' &&
+                    !element.closest('input, textarea, [contenteditable="true"]')) {
+                    selection.removeAllRanges();
+                }
+            }
         }, 500); // 500ms 后算作长按
     }, { passive: true });
 
@@ -66,6 +85,7 @@ function initializeLongPressBlocking() {
             clearTimeout(longPressTimer);
             longPressTimer = null;
         }
+        touchTarget = null;
     }, { passive: true });
 
     document.addEventListener('touchmove', function(e) {
@@ -75,8 +95,16 @@ function initializeLongPressBlocking() {
         }
     }, { passive: true });
 
-    // 额外保护：清除任何意外的选择
+    // 额外保护：清除任何意外的选择（但不干扰正在交互的输入框）
     setInterval(() => {
+        // 如果当前有输入框聚焦，跳过清理
+        if (document.activeElement && (
+            document.activeElement.tagName === 'INPUT' || 
+            document.activeElement.tagName === 'TEXTAREA' || 
+            document.activeElement.contentEditable === 'true')) {
+            return;
+        }
+        
         const selection = window.getSelection();
         if (selection.rangeCount > 0) {
             const range = selection.getRangeAt(0);
@@ -92,7 +120,7 @@ function initializeLongPressBlocking() {
                 selection.removeAllRanges();
             }
         }
-    }, 100);
+    }, 200); // 降低频率，减少对性能的影响
 }
 
 // 在页面加载完成后初始化
