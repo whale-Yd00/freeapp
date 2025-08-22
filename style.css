@@ -2319,8 +2319,8 @@ body.no-has-support.chat-active .bottom-nav {
 }
 
 .post-image-desc {
-    width: 100px;
-    height: 100px;
+    width: 120px;
+    height: 120px;
     background: #f0f2f5;
     border: 1px solid #e1e8ed;
     border-radius: 8px;
@@ -2328,11 +2328,14 @@ body.no-has-support.chat-active .bottom-nav {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 10px;
     color: #666;
     text-align: center;
-    padding: 8px;
-    line-height: 1.3;
+    padding: 12px;
+    line-height: 1.2;
+    overflow: hidden;
+    word-wrap: break-word;
+    hyphens: auto;
 }
 
 .post-actions {

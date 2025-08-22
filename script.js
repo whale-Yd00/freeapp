@@ -942,6 +942,12 @@ async function init() {
         await loadDataFromDB();
         console.log('应用数据加载完成');
         
+        // 初始化图片关键词生成器
+        if (window.imageKeywordGenerator && window.apiService) {
+            window.imageKeywordGenerator.init(apiSettings, window.apiService);
+            console.log('图片关键词生成器初始化完成');
+        }
+        
     } catch (error) {
         console.error('应用初始化失败:', error);
         
@@ -1779,6 +1785,9 @@ function showGeneratePostModal() {
     relationSelect.value = '';
     handleRelationChange();
     
+    // 恢复保存的Unsplash API Key
+    document.getElementById('postUnsplashKey').value = localStorage.getItem('forumUnsplashApiKey') || '';
+    
     showModal('generatePostModal');
 }
 
@@ -1820,6 +1829,7 @@ async function handleGeneratePost(event) {
     const customRelationInput = document.getElementById('postGenCustomRelation');
     const hashtagInput = document.getElementById('postGenHashtag');
     const count = document.getElementById('postGenCount').value;
+    const unsplashKey = document.getElementById('postUnsplashKey').value.trim();
 
     if (!contactId) {
         showToast('请选择角色');
@@ -1854,9 +1864,14 @@ async function handleGeneratePost(event) {
     // 缓存hashtag
     hashtagCache[contactId] = hashtag;
     await saveDataToDB();
+    
+    // 保存Unsplash API Key
+    if (unsplashKey) {
+        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
+    }
 
     closeModal('generatePostModal');
-    await generateWeiboPosts(contactId, relations, relationDescription, hashtag, count);
+    await generateWeiboPosts(contactId, relations, relationDescription, hashtag, count, unsplashKey);
 }
 
 async function saveWeiboPost(postData) {
@@ -1876,7 +1891,7 @@ async function saveWeiboPost(postData) {
     }
 }
 
-async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1) {
+async function generateWeiboPosts(contactId, relations, relationDescription, hashtag, count = 1, unsplashKey = null) {
     
     const contact = contacts.find(c => c.id === contactId);
     
@@ -2001,6 +2016,32 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
             console.error('weiboData.posts不是数组或不存在:', weiboData);
         }
         // --- 时间戳注入结束 ---
+        
+        // --- 图片生成逻辑 ---
+        if (unsplashKey && weiboData.posts && Array.isArray(weiboData.posts)) {
+            try {
+                for (const post of weiboData.posts) {
+                    if (post.image_description && post.image_description.trim()) {
+                        try {
+                            const imageUrl = await fetchMatchingImageForPublish(post.image_description, unsplashKey);
+                            if (imageUrl) {
+                                // 将图片描述替换为实际图片HTML
+                                post.actual_image_url = imageUrl;
+                                // 保留原始描述用于备份
+                                post.original_image_description = post.image_description;
+                                post.image_description = `<img src="${imageUrl}" alt="${post.image_description}" style="width: 100%; max-width: 300px; border-radius: 8px;">`;
+                            }
+                        } catch (imageError) {
+                            console.warn(`为帖子生成图片失败: ${imageError.message}`);
+                            // 图片生成失败时保持原始文字描述
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('批量图片生成过程中出现错误:', error);
+            }
+        }
+        // --- 图片生成结束 ---
         
         const newPost = {
             id: Date.now(),
@@ -2299,6 +2340,9 @@ function renderSingleVirtualPost(postData, index) {
             <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${postIndex})">
                 ...
                 <div class="post-menu-dropdown" id="weibo-menu-${storedPost.id}-${postIndex}">
+                    <div class="menu-item" onclick="regeneratePostImage('${storedPost.id}', ${postIndex})">重新生成图片</div>
+                    <div class="menu-item" onclick="removePostImage('${storedPost.id}', ${postIndex})">删除图片恢复文字</div>
+                    <div class="menu-item" onclick="regeneratePostComments('${storedPost.id}', ${postIndex})">重新生成评论</div>
                     <div class="menu-item" onclick="deleteWeiboPost('${storedPost.id}', ${postIndex})">删除</div>
                 </div>
             </div>
@@ -2504,6 +2548,9 @@ function renderSingleWeiboPost(storedPost) {
                 <div class="post-menu" onclick="toggleWeiboMenu(event, '${storedPost.id}', ${index})">
                     ...
                     <div class="post-menu-dropdown" id="weibo-menu-${storedPost.id}-${index}">
+                        <div class="menu-item" onclick="regeneratePostImage('${storedPost.id}', ${index})">重新生成图片</div>
+                        <div class="menu-item" onclick="removePostImage('${storedPost.id}', ${index})">删除图片恢复文字</div>
+                        <div class="menu-item" onclick="regeneratePostComments('${storedPost.id}', ${index})">重新生成评论</div>
                         <div class="menu-item" onclick="deleteWeiboPost('${storedPost.id}', ${index})">删除</div>
                     </div>
                 </div>
@@ -2875,6 +2922,147 @@ window.addEventListener('click', (event) => {
 });
 
 
+// 重新生成帖子图片
+async function regeneratePostImage(storedPostId, postIndex) {
+    const numericStoredPostId = parseInt(storedPostId, 10);
+    const storedPost = weiboPosts.find(p => p.id === numericStoredPostId);
+    
+    if (!storedPost || !storedPost.data.posts[postIndex]) {
+        showToast('找不到指定的帖子');
+        return;
+    }
+    
+    const post = storedPost.data.posts[postIndex];
+    
+    // 检查是否有原始图片描述
+    const imageDescription = post.original_image_description || post.image_description;
+    
+    if (!imageDescription || imageDescription.trim() === '暂无图片描述') {
+        showToast('该帖子没有图片描述，无法生成图片');
+        return;
+    }
+    
+    const unsplashKey = localStorage.getItem('forumUnsplashApiKey');
+    if (!unsplashKey) {
+        showToast('请先在设置中配置Unsplash API Key');
+        return;
+    }
+    
+    try {
+        showToast('正在重新生成图片...');
+        
+        const imageUrl = await fetchMatchingImageForPublish(imageDescription, unsplashKey);
+        if (imageUrl) {
+            // 更新帖子数据
+            post.actual_image_url = imageUrl;
+            post.original_image_description = imageDescription;
+            post.image_description = `<img src="${imageUrl}" alt="${imageDescription}" style="width: 100%; max-width: 300px; border-radius: 8px;">`;
+            
+            // 更新数据库
+            await updateWeiboPostInDB(storedPost);
+            
+            // 重新渲染
+            renderAllWeiboPosts();
+            
+            showToast('图片已重新生成！');
+        } else {
+            showToast('图片生成失败，请稍后重试');
+        }
+    } catch (error) {
+        console.error('重新生成图片失败:', error);
+        showToast('图片生成失败: ' + error.message);
+    }
+}
+
+
+// 删除帖子图片恢复文字显示
+async function removePostImage(storedPostId, postIndex) {
+    const numericStoredPostId = parseInt(storedPostId, 10);
+    const storedPost = weiboPosts.find(p => p.id === numericStoredPostId);
+    
+    if (!storedPost || !storedPost.data.posts[postIndex]) {
+        showToast('找不到指定的帖子');
+        return;
+    }
+    
+    const post = storedPost.data.posts[postIndex];
+    
+    // 检查是否有图片可以删除
+    if (!post.actual_image_url && !post.image_description.includes('<img')) {
+        showToast('该帖子没有Unsplash图片，无需删除');
+        return;
+    }
+    
+    try {
+        // 恢复原始文字描述
+        if (post.original_image_description) {
+            post.image_description = post.original_image_description;
+        } else {
+            // 如果没有原始描述，从img标签中提取alt文本
+            const imgMatch = post.image_description.match(/alt="([^"]*)"/);
+            if (imgMatch) {
+                post.image_description = imgMatch[1];
+            } else {
+                post.image_description = '图片描述';
+            }
+        }
+        
+        // 清除图片相关字段
+        delete post.actual_image_url;
+        delete post.original_image_description;
+        
+        // 更新数据库
+        await updateWeiboPostInDB(storedPost);
+        
+        // 重新渲染
+        renderAllWeiboPosts();
+        
+        showToast('已删除图片，恢复文字显示');
+    } catch (error) {
+        console.error('删除帖子图片失败:', error);
+        showToast('删除图片失败: ' + error.message);
+    }
+}
+
+// 重新生成帖子评论
+async function regeneratePostComments(storedPostId, postIndex) {
+    const numericStoredPostId = parseInt(storedPostId, 10);
+    const storedPost = weiboPosts.find(p => p.id === numericStoredPostId);
+    
+    if (!storedPost || !storedPost.data.posts[postIndex]) {
+        showToast('找不到指定的帖子');
+        return;
+    }
+    
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        showToast('请先配置API设置');
+        return;
+    }
+    
+    const post = storedPost.data.posts[postIndex];
+    
+    try {
+        showToast('正在重新生成评论...');
+        
+        // 构建重新生成评论的提示词
+        const newComments = await generateAICommentsWithCurrentTime(post.post_content);
+        
+        // 更新帖子评论
+        post.comments = newComments;
+        
+        // 更新数据库
+        await updateWeiboPostInDB(storedPost);
+        
+        // 重新渲染
+        renderAllWeiboPosts();
+        
+        showToast('评论已重新生成！');
+    } catch (error) {
+        console.error('重新生成评论失败:', error);
+        showToast('评论生成失败: ' + error.message);
+    }
+}
+
 async function deleteWeiboPost(storedPostId, postIndex) {
     // Convert storedPostId to the correct type if necessary, assuming it's a number from the template
     const numericStoredPostId = parseInt(storedPostId, 10);
@@ -2936,7 +3124,10 @@ async function updateWeiboPost(postToUpdate) {
     }
 }
 
-
+// 别名函数，用于保持一致性
+async function updateWeiboPostInDB(postToUpdate) {
+    return await updateWeiboPost(postToUpdate);
+}
 
 // --- 朋友圈功能 ---
 
@@ -3063,6 +3254,8 @@ async function handleGenerateMoment(event) {
             authorAvatar: character.avatar,
             content: momentData.content,
             image: imageUrl, // Unsplash图片URL
+            imageCount: imageUrl ? 1 : 0,
+            isUnsplashImage: imageUrl ? true : false, // 标记为Unsplash图片
             time: new Date().toISOString(),
             likes: 0,
             comments: momentData.comments
@@ -3123,7 +3316,7 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
             [{ role: 'user', content: systemPrompt }],
             {
                 temperature: 0.9,
-                max_tokens: 2000,
+                max_tokens: 10000,
                 // 强制要求返回JSON格式，以匹配新的提示词结构
                 response_format: { type: "json_object" },
             },
@@ -3222,7 +3415,7 @@ async function analyzeImageContent(imageBase64, prompt = '请描述这张图片�
                         }
                     ]
                 }],
-                max_tokens: 300,
+                max_tokens: 5000,
                 temperature: 0.7,
                 stream: false
             })
@@ -3302,7 +3495,7 @@ async function generateMomentForCharacter(character, topic = '') {
         body: JSON.stringify({
             model: apiSettings.model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 200,
+            max_tokens: 5000,
             temperature: 0.8,
             stream: false
         })
@@ -3511,35 +3704,15 @@ async function generateMomentContent() {
 
         // 生成朋友圈ID
         const momentId = Date.now().toString();
-        
-        // 如果有图片，存储到文件系统
-        let imageFileIds = [];
-        let imageCount = 0;
-        
-        if (imageUrl && window.ImageStorageAPI) {
-            try {
-                await window.ImageStorageAPI.init();
-                
-                // 从URL下载图片并存储
-                const response = await fetch(imageUrl);
-                const blob = await response.blob();
-                imageFileIds = await window.ImageStorageAPI.storeMomentImages([blob], momentId);
-                imageCount = 1;
-                
-            } catch (error) {
-                console.error('存储AI生成图片失败:', error);
-            }
-        }
 
         const moment = {
             id: momentId,
             authorName: currentContact.name,
             authorAvatar: currentContact.avatar,
             content: momentContent,
-            image: imageUrl, // 保持向后兼容
-            images: imageUrl ? [imageUrl] : [], // 兼容旧版本
-            imageFileIds: imageFileIds, // 新的文件系统存储
-            imageCount: imageCount,
+            image: imageUrl, // 直接保存Unsplash URL
+            imageCount: imageUrl ? 1 : 0, // 简单的计数，不再处理文件存储
+            isUnsplashImage: imageUrl ? true : false, // 标记为Unsplash图片
             time: new Date().toISOString(),
             likes: 0,
             comments: comments
@@ -3560,26 +3733,54 @@ async function generateMomentContent() {
     }
 }
 
+
 /**
  * @description 根据内容生成图片搜索关键词，并调用 Unsplash API 获取图片
- * @changes No changes to this function itself, but its dependency `generateImageSearchQuery` is updated.
+ * @changes 现在使用AI生成更精准的搜索关键词
  */
 async function fetchMatchingImageForPublish(content, apiKey) {
     try {
-        // 暂时直接使用moment文字内容作为搜索关键词，后续需要修改
-        const searchQuery = content;
-        // 这是直接从浏览器向Unsplash API发起的请求
-        const response = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=3&orientation=landscape`, {
+        // 使用AI生成更精准的搜索关键词
+        const searchQuery = await generateImageSearchKeyword(content);
+        console.log(`[fetchMatchingImageForPublish] 原始内容: "${content}"`);
+        console.log(`[fetchMatchingImageForPublish] 搜索关键词: "${searchQuery}"`);
+        
+        // 检查关键词是否为英文（简单检查）
+        const isEnglish = /^[a-zA-Z0-9\s\-.,!?]+$/.test(searchQuery.trim());
+        if (!isEnglish) {
+            console.warn(`[fetchMatchingImageForPublish] 关键词似乎不是英文，可能AI生成失败: "${searchQuery}"`);
+        }
+        
+        // 调用Unsplash API搜索图片
+        const apiUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=3&orientation=landscape`;
+        console.log(`[fetchMatchingImageForPublish] API URL: ${apiUrl}`);
+        
+        const response = await fetch(apiUrl, {
             headers: {
                 'Authorization': `Client-ID ${apiKey}`
             }
         });
-        if (!response.ok) throw new Error('Unsplash API请求失败');
+        
+        console.log(`[fetchMatchingImageForPublish] Response status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[fetchMatchingImageForPublish] API错误详情: ${errorText}`);
+            throw new Error(`Unsplash API请求失败: ${response.status} ${response.statusText}`);
+        }
+        
         const data = await response.json();
-        console.log(response);
-        return (data.results && data.results.length > 0) ? data.results[0].urls.regular : null;
+        console.log(`[fetchMatchingImageForPublish] 搜索结果: 使用关键词"${searchQuery}"找到${data.results?.length || 0}张图片`);
+        
+        if (data.results && data.results.length > 0) {
+            console.log(`[fetchMatchingImageForPublish] 返回图片URL: ${data.results[0].urls.regular}`);
+            return data.results[0].urls.regular;
+        } else {
+            console.warn(`[fetchMatchingImageForPublish] 未找到匹配图片`);
+            return null;
+        }
     } catch (error) {
-        console.error('获取配图失败:', error);
+        console.error('[fetchMatchingImageForPublish] 获取配图失败:', error);
         return null;
     }
 }
@@ -3859,11 +4060,23 @@ async function renderMomentsList() {
                 }
             }
             
-            // 处理图片内容 - 支持多图片和文件系统
+            // 处理图片内容 - 优先处理Unsplash图片，然后是用户上传的图片
             let imageContent = '';
             
-            // 新的文件系统存储方式
-            if (moment.imageFileIds && moment.imageCount > 0 && window.ImageStorageAPI) {
+            // 优先处理Unsplash图片（直接使用URL）
+            if (moment.isUnsplashImage && moment.image) {
+                imageContent = `<div class="moment-images-grid grid-1">
+                                  <div class="moment-image-container">
+                                      <img src="${moment.image}" class="moment-grid-image" onclick="viewImage('${moment.image}')" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" alt="Unsplash图片">
+                                      <div class="moment-image-error" style="display: none;">
+                                          <div class="image-error-icon">📷</div>
+                                          <div class="image-error-text">图片加载失败</div>
+                                      </div>
+                                  </div>
+                                </div>`;
+            }
+            // 用户上传的图片（从文件系统加载）
+            else if (moment.imageFileIds && moment.imageCount > 0 && window.ImageStorageAPI) {
                 try {
                     await window.ImageStorageAPI.init();
                     const imageUrls = await window.ImageStorageAPI.getMomentImagesURLs(moment.id, moment.imageCount);
@@ -3885,8 +4098,8 @@ async function renderMomentsList() {
                     console.error('加载朋友圈图片失败:', error);
                 }
             }
-            // 兼容旧数据结构
-            else {
+            // 兼容旧数据结构（可能是历史数据）
+            else if (moment.image || moment.images) {
                 const images = moment.images || (moment.image ? [moment.image] : []);
                 if (images.length > 0) {
                     const gridClass = `grid-${images.length}`;
@@ -3950,8 +4163,10 @@ async function renderMomentsList() {
             // 菜单内容
             const menuContent = `
                 <div class="moment-menu" id="momentMenu-${moment.id}" style="display: none;">
-                    <div class="moment-menu-item" onclick="event.stopPropagation(); deleteMoment('${moment.id}')">删除</div>
+                    <div class="moment-menu-item" onclick="event.stopPropagation(); regenerateMomentImage('${moment.id}')">重新生成图片</div>
+                    <div class="moment-menu-item" onclick="event.stopPropagation(); removeMomentImage('${moment.id}')">删除图片</div>
                     <div class="moment-menu-item" onclick="event.stopPropagation(); regenerateComments('${moment.id}')">重新生成评论</div>
+                    <div class="moment-menu-item" onclick="event.stopPropagation(); deleteMoment('${moment.id}')">删除</div>
                 </div>
             `;
             
@@ -4869,6 +5084,9 @@ function showApiSettingsModal() {
     // 假设你的HTML中输入框的ID是 minimaxGroupId 和 minimaxApiKey
     document.getElementById('minimaxGroupId').value = apiSettings.minimaxGroupId;
     document.getElementById('minimaxApiKey').value = apiSettings.minimaxApiKey;
+    
+    // 恢复 Unsplash API Key
+    document.getElementById('unsplashApiKey').value = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey') || '';
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
@@ -6157,7 +6375,24 @@ async function saveApiSettings(event) {
     apiSettings.minimaxGroupId = document.getElementById('minimaxGroupId').value.trim();
     apiSettings.minimaxApiKey = document.getElementById('minimaxApiKey').value.trim();
     
+    // 保存 Unsplash API Key
+    const unsplashKey = document.getElementById('unsplashApiKey').value.trim();
+    if (unsplashKey) {
+        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
+        localStorage.setItem('unsplashApiKey', unsplashKey); // 保持向后兼容
+    } else {
+        localStorage.removeItem('forumUnsplashApiKey');
+        localStorage.removeItem('unsplashApiKey');
+    }
+    
     await saveDataToDB();
+    
+    // 重新初始化图片关键词生成器
+    if (window.imageKeywordGenerator && window.apiService) {
+        window.imageKeywordGenerator.init(apiSettings, window.apiService);
+        console.log('图片关键词生成器已更新配置');
+    }
+    
     closeModal('apiSettingsModal');
     updateContextIndicator();
     showToast('设置已保存');
@@ -6819,6 +7054,9 @@ function showManualPostModal() {
     document.getElementById('manualPostContent').value = '';
     document.getElementById('manualPostImageDesc').value = '';
     
+    // 恢复保存的Unsplash API Key
+    document.getElementById('manualPostUnsplashKey').value = localStorage.getItem('forumUnsplashApiKey') || '';
+    
     showModal('manualPostModal');
 }
 
@@ -6829,6 +7067,7 @@ async function handleManualPost(event) {
     const relationTag = document.getElementById('manualPostTag').value.trim();
     const postContent = document.getElementById('manualPostContent').value.trim();
     const imageDescription = document.getElementById('manualPostImageDesc').value.trim();
+    const unsplashKey = document.getElementById('manualPostUnsplashKey').value.trim();
     
     if (!postContent) {
         showToast('请填写帖子内容');
@@ -6840,13 +7079,18 @@ async function handleManualPost(event) {
         return;
     }
     
+    // 保存Unsplash API Key
+    if (unsplashKey) {
+        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
+    }
+    
     closeModal('manualPostModal');
     
     // 生成手动帖子
-    await generateManualPost(authorName, relationTag, postContent, imageDescription);
+    await generateManualPost(authorName, relationTag, postContent, imageDescription, unsplashKey);
 }
 
-async function generateManualPost(authorName, relationTag, postContent, imageDescription) {
+async function generateManualPost(authorName, relationTag, postContent, imageDescription, unsplashKey = null) {
     const now = Date.now();
     const postCreatedAt = new Date(now - (Math.random() * 3 + 2) * 60 * 1000);
     
@@ -6861,6 +7105,23 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
             timestamp: postCreatedAt.toISOString()
         }]
     };
+    
+    // 为手动帖子生成图片
+    if (unsplashKey && imageDescription && imageDescription.trim()) {
+        try {
+            const imageUrl = await fetchMatchingImageForPublish(imageDescription, unsplashKey);
+            if (imageUrl) {
+                // 将图片描述替换为实际图片HTML
+                weiboData.posts[0].actual_image_url = imageUrl;
+                // 保留原始描述用于备份
+                weiboData.posts[0].original_image_description = imageDescription;
+                weiboData.posts[0].image_description = `<img src="${imageUrl}" alt="${imageDescription}" style="width: 100%; max-width: 300px; border-radius: 8px;">`;
+            }
+        } catch (imageError) {
+            console.warn(`为手动帖子生成图片失败: ${imageError.message}`);
+            // 图片生成失败时保持原始文字描述
+        }
+    }
     
     const newPost = {
         id: Date.now(),
@@ -9128,6 +9389,101 @@ function toggleMomentMenu(momentId) {
     }
 }
 
+// 重新生成朋友圈图片
+async function regenerateMomentImage(momentId) {
+    try {
+        // 关闭菜单
+        const menu = document.getElementById(`momentMenu-${momentId}`);
+        if (menu) menu.style.display = 'none';
+        
+        // 找到对应的朋友圈
+        const moment = moments.find(m => m.id === momentId);
+        if (!moment) {
+            showToast('找不到指定的朋友圈');
+            return;
+        }
+        
+        // 检查是否有原始内容可以重新生成图片
+        if (!moment.content && !moment.originalContent) {
+            showToast('该朋友圈没有内容，无法生成图片');
+            return;
+        }
+        
+        const unsplashKey = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey');
+        if (!unsplashKey) {
+            showToast('请先配置Unsplash API Key');
+            return;
+        }
+        
+        showToast('正在重新生成图片...');
+        
+        // 使用朋友圈内容生成图片
+        const contentForImage = moment.originalContent || moment.content;
+        const imageUrl = await fetchMatchingImageForPublish(contentForImage, unsplashKey);
+        
+        if (imageUrl) {
+            // 直接保存Unsplash URL，不存储到IndexedDB
+            moment.image = imageUrl;
+            moment.imageCount = 1;
+            moment.isUnsplashImage = true; // 标记为Unsplash图片
+            // 清除本地存储的图片ID（如果之前有的话）
+            delete moment.imageFileIds;
+            
+            // 更新数据库
+            await saveDataToDB();
+            
+            // 重新渲染朋友圈
+            await renderMomentsList();
+            
+            showToast('图片已重新生成！');
+        } else {
+            showToast('图片生成失败，请稍后重试');
+        }
+    } catch (error) {
+        console.error('重新生成朋友圈图片失败:', error);
+        showToast('图片生成失败: ' + error.message);
+    }
+}
+
+// 删除朋友圈图片
+async function removeMomentImage(momentId) {
+    try {
+        // 关闭菜单
+        const menu = document.getElementById(`momentMenu-${momentId}`);
+        if (menu) menu.style.display = 'none';
+        
+        // 找到对应的朋友圈
+        const moment = moments.find(m => m.id === momentId);
+        if (!moment) {
+            showToast('找不到指定的朋友圈');
+            return;
+        }
+        
+        // 检查是否有图片可以删除
+        if (!moment.image && (!moment.imageFileIds || moment.imageFileIds.length === 0)) {
+            showToast('该朋友圈没有图片，无需删除');
+            return;
+        }
+        
+        // 删除图片相关数据
+        delete moment.image;
+        delete moment.imageFileIds;
+        delete moment.isUnsplashImage;
+        moment.imageCount = 0;
+        
+        // 更新数据库
+        await saveDataToDB();
+        
+        // 重新渲染朋友圈
+        await renderMomentsList();
+        
+        showToast('图片已删除');
+    } catch (error) {
+        console.error('删除朋友圈图片失败:', error);
+        showToast('删除图片失败: ' + error.message);
+    }
+}
+
 // 重新生成评论
 async function regenerateComments(momentId) {
     try {
@@ -9598,7 +9954,7 @@ async function generateCharacterReply(character, replierName, replyContent, mome
                     { role: 'user', content: prompt }
                 ],
                 temperature: 0.8,
-                max_tokens: 100
+                max_tokens: 5000
             })
         });
         
@@ -11405,3 +11761,92 @@ function showUpdateNotification() {
     `;
     notification.style.display = 'flex';
 }
+
+// ===== 图片关键词优化相关函数 =====
+
+// 检查图片关键词优化配置状态
+async function checkImageKeywordStatus() {
+    try {
+        const statusElement = document.getElementById('imageKeywordStatus');
+        const configStatusElement = document.getElementById('imageKeywordConfigStatus');
+        
+        // 检查API配置
+        const hasApiConfig = apiSettings && apiSettings.url && apiSettings.key && apiSettings.model;
+        const hasUnsplashKey = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey');
+        
+        let statusText = '';
+        let statusColor = '';
+        let configDetails = '';
+        
+        if (!hasApiConfig && !hasUnsplashKey) {
+            statusText = '未配置';
+            statusColor = '#dc3545';
+            configDetails = `
+                <div style="color: #dc3545;">❌ 功能未配置</div>
+                <div style="margin-top: 5px;">需要配置：</div>
+                <ul style="margin: 5px 0; padding-left: 15px;">
+                    <li>AI API 配置（用于生成关键词）</li>
+                    <li>Unsplash API Key（用于搜索图片）</li>
+                </ul>
+            `;
+        } else if (!hasApiConfig) {
+            statusText = '部分配置';
+            statusColor = '#ffc107';
+            configDetails = `
+                <div style="color: #ffc107;">⚠️ AI API 未配置</div>
+                <div style="margin-top: 5px;">✅ Unsplash API Key 已配置</div>
+                <div style="margin-top: 5px; color: #666;">需要配置 AI API 才能生成关键词</div>
+            `;
+        } else if (!hasUnsplashKey) {
+            statusText = '部分配置';
+            statusColor = '#ffc107';
+            configDetails = `
+                <div style="color: #28a745;">✅ AI API 已配置</div>
+                <div style="color: #ffc107; margin-top: 5px;">⚠️ Unsplash API Key 未配置</div>
+                <div style="margin-top: 5px; color: #666;">需要配置 Unsplash API Key 才能搜索图片</div>
+            `;
+        } else {
+            statusText = '完全配置';
+            statusColor = '#28a745';
+            const isReady = window.imageKeywordGenerator && window.imageKeywordGenerator.isReady();
+            configDetails = `
+                <div style="color: #28a745;">✅ AI API 已配置</div>
+                <div style="color: #28a745; margin-top: 5px;">✅ Unsplash API Key 已配置</div>
+                <div style="color: #28a745; margin-top: 5px;">✅ 图片关键词生成器：${isReady ? '就绪' : '初始化中'}</div>
+                <div style="margin-top: 5px; color: #666;">功能完全可用</div>
+            `;
+        }
+        
+        statusElement.textContent = statusText;
+        statusElement.style.color = statusColor;
+        configStatusElement.innerHTML = configDetails;
+        
+        showToast('配置状态已更新');
+    } catch (error) {
+        console.error('检查图片关键词配置状态失败:', error);
+        showToast('检查状态失败: ' + error.message);
+    }
+}
+
+// 打开图片关键词设置
+function openImageKeywordSettings() {
+    showModal('apiSettingsModal');
+    showToast('请在 API 配置中设置 AI API 和 Unsplash API Key');
+}
+
+// 在数据管理页面显示时自动检查状态
+document.addEventListener('DOMContentLoaded', function() {
+    // 监听页面切换事件
+    const originalShowPage = window.showPage;
+    if (originalShowPage) {
+        window.showPage = function(pageId) {
+            const result = originalShowPage.call(this, pageId);
+            if (pageId === 'dataManagementPage') {
+                setTimeout(() => {
+                    checkImageKeywordStatus();
+                }, 100);
+            }
+            return result;
+        };
+    }
+});
