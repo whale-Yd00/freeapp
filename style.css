@@ -31,6 +31,13 @@
     padding: 0;
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
+    /* 屏蔽长按选择和上下文菜单 */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: rgba(0,0,0,0);
 }
 
 body {
@@ -4356,6 +4363,15 @@ html[data-keyboard-visible="true"] .chat-messages {
 }
 
 /* 为输入框聚焦时提供更好的体验 */
+/* 可编辑元素恢复文本选择功能 */
+input, textarea, [contenteditable="true"] {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default !important;
+}
+
 .chat-input:focus,
 input:focus,
 textarea:focus {
