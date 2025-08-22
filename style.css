@@ -161,6 +161,7 @@ body {
 .search-bar {
     padding: 8px 15px;
     background-color: #ededed;
+    flex-shrink: 0; /* 不压缩 */
 }
 
 .search-input {
@@ -173,9 +174,12 @@ body {
     font-size: 14px;
 }
 
-/* 联系人列表容器 */
+/* 联系人列表容器 - 主页的滚动区域 */
 #contactList {
-    /* 联系人列表现在在整个页面的滚动容器中 */
+    flex: 1; /* 占据header/search和nav bar之间的空间 */
+    overflow-y: auto; /* 只有这个区域可以滚动 */
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: var(--nav-height, 50px); /* 为底部导航栏留出空间 */
 }
 
 /* 联系人项目 */
