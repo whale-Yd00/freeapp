@@ -15,7 +15,9 @@ export async function handler(event, context) {
   const payload = {
     model: model,
     messages: messages,
-    ...options // 将前端传来的额外选项（如 temperature）加入 payload
+    ...options, // 将前端传来的额外选项（如 temperature）加入 payload
+    // 强制所有API请求都为非流式
+    stream: false
   };
 
   try {

@@ -55,7 +55,9 @@ class APIService {
         const payload = {
             model: model,
             messages: messages,
-            ...options
+            ...options,
+            // 强制所有API请求都为非流式
+            stream: false
         };
 
         for (let i = 0; i < this.maxRetries; i++) {

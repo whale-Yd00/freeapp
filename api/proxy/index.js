@@ -12,7 +12,9 @@ module.exports = async function handler(req, res) {
   const payload = {
     model: model,
     messages: messages,
-    ...options
+    ...options,
+    // 强制所有API请求都为非流式
+    stream: false
   };
 
   try {

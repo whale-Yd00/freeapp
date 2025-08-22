@@ -3085,7 +3085,8 @@ async function analyzeImageContent(imageBase64, prompt = '请描述这张图片�
                     ]
                 }],
                 max_tokens: 300,
-                temperature: 0.7
+                temperature: 0.7,
+                stream: false
             })
         });
         
@@ -3164,7 +3165,8 @@ async function generateMomentForCharacter(character, topic = '') {
             model: apiSettings.model,
             messages: [{ role: 'user', content: prompt }],
             max_tokens: 200,
-            temperature: 0.8
+            temperature: 0.8,
+            stream: false
         })
     });
 
