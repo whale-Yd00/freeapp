@@ -2,6 +2,102 @@
 let consoleLogs = [];
 const maxLogEntries = 500; // 限制日志条目数量避免内存过大
 
+// === 屏蔽长按选择和上下文菜单系统 ===
+function initializeLongPressBlocking() {
+    // 屏蔽上下文菜单（右键菜单和长按菜单）
+    document.addEventListener('contextmenu', function(e) {
+        // 允许输入框的上下文菜单
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
+            e.target.contentEditable === 'true') {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }, { passive: false });
+
+    // 屏蔽选择开始事件
+    document.addEventListener('selectstart', function(e) {
+        // 允许输入框的选择
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
+            e.target.contentEditable === 'true') {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }, { passive: false });
+
+    // 屏蔽拖拽开始事件（某些情况下长按会触发）
+    document.addEventListener('dragstart', function(e) {
+        // 允许输入框内容的拖拽
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
+            e.target.contentEditable === 'true') {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }, { passive: false });
+
+    // iOS Safari 特殊处理：屏蔽长按高亮
+    let longPressTimer = null;
+    let touchStartTime = 0;
+    
+    document.addEventListener('touchstart', function(e) {
+        // 输入框允许正常行为
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
+            e.target.contentEditable === 'true') {
+            return;
+        }
+        
+        touchStartTime = Date.now();
+        longPressTimer = setTimeout(() => {
+            // 长按时移除焦点和选择
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
+            window.getSelection().removeAllRanges();
+        }, 500); // 500ms 后算作长按
+    }, { passive: true });
+
+    document.addEventListener('touchend', function(e) {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function(e) {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }, { passive: true });
+
+    // 额外保护：清除任何意外的选择
+    setInterval(() => {
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            const container = range.commonAncestorContainer;
+            const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+            
+            // 如果选择的不是输入框内容，就清除选择
+            if (element && 
+                element.tagName !== 'INPUT' && 
+                element.tagName !== 'TEXTAREA' && 
+                element.contentEditable !== 'true' &&
+                !element.closest('input, textarea, [contenteditable="true"]')) {
+                selection.removeAllRanges();
+            }
+        }
+    }, 100);
+}
+
+// 在页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', initializeLongPressBlocking);
+
 // === 输入框安全聚焦工具函数 ===
 function safeFocus(element, options = {}) {
     if (!element || typeof element.focus !== 'function') return;
