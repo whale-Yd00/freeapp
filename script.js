@@ -440,12 +440,19 @@ async function handleContactAvatarUpload(event) {
             // 更新隐藏的URL输入框为文件ID引用
             document.getElementById('contactAvatar').value = `file:${fileId}`;
             
-            // 清理file input
-            document.getElementById('avatarUploadInput').value = '';
+            // 不再清理file input，保持上传状态
+            // document.getElementById('avatarUploadInput').value = '';
             
             // 清理联系人头像缓存
             if (window.ImageDisplayHelper) {
                 window.ImageDisplayHelper.clearCacheByType(`avatar_contact_${contactId}`);
+            }
+            
+            // 设置持久状态提示
+            const statusElement = document.getElementById('avatarUploadStatus');
+            if (statusElement) {
+                statusElement.textContent = '已上传';
+                statusElement.style.color = '#07c160';
             }
         }
     } catch (error) {
@@ -461,12 +468,19 @@ async function handleProfileAvatarUpload(event) {
             // 更新隐藏的URL输入框为文件ID引用
             document.getElementById('profileAvatarInput').value = `file:${fileId}`;
             
-            // 清理file input
-            document.getElementById('profileUploadInput').value = '';
+            // 不再清理file input，保持上传状态
+            // document.getElementById('profileUploadInput').value = '';
             
             // 清理头像缓存
             if (window.ImageDisplayHelper) {
                 window.ImageDisplayHelper.clearCacheByType('avatar_user_');
+            }
+            
+            // 设置持久状态提示
+            const statusElement = document.getElementById('profileUploadStatus');
+            if (statusElement) {
+                statusElement.textContent = '已上传';
+                statusElement.style.color = '#07c160';
             }
             
             // 立即更新UI
@@ -4666,8 +4680,20 @@ function closeModal(modalId) {
 function showAddContactModal() {
     editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
-    // 清空语音ID输入框
+    
+    // 清除所有输入框和状态提示
+    document.getElementById('contactName').value = '';
+    document.getElementById('contactAvatar').value = '';
+    document.getElementById('contactPersonality').value = '';
+    document.getElementById('customPrompts').value = '';
     document.getElementById('contactVoiceId').value = '';
+    
+    // 清除文件输入和状态提示
+    const fileInput = document.getElementById('avatarUploadInput');
+    const statusElement = document.getElementById('avatarUploadStatus');
+    if (fileInput) fileInput.value = '';
+    if (statusElement) statusElement.textContent = '';
+    
     showModal('addContactModal');
 }
 
@@ -4676,7 +4702,33 @@ function showEditContactModal() {
     editingContact = currentContact;
     document.getElementById('contactModalTitle').textContent = '编辑AI助手';
     document.getElementById('contactName').value = currentContact.name;
-    document.getElementById('contactAvatar').value = currentContact.avatar || '';
+    
+    // 处理头像显示和状态
+    const avatarInput = document.getElementById('contactAvatar');
+    const fileInput = document.getElementById('avatarUploadInput');
+    const statusElement = document.getElementById('avatarUploadStatus');
+    
+    // 设置隐藏的URL输入框
+    if (currentContact.avatarFileId) {
+        avatarInput.value = `file:${currentContact.avatarFileId}`;
+        // 显示已上传状态
+        if (statusElement) {
+            statusElement.textContent = '已上传';
+            statusElement.style.color = '#07c160';
+        }
+    } else {
+        avatarInput.value = currentContact.avatar || '';
+        // 清除状态提示
+        if (statusElement) {
+            statusElement.textContent = '';
+        }
+    }
+    
+    // 清除file input以避免显示上次的文件
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    
     document.getElementById('contactPersonality').value = currentContact.personality;
     document.getElementById('customPrompts').value = currentContact.customPrompts || '';
     // 加载当前联系人的语音ID
@@ -4759,7 +4811,33 @@ function showRedPacketModal() {
 
 function showEditProfileModal() {
     document.getElementById('profileNameInput').value = userProfile.name;
-    document.getElementById('profileAvatarInput').value = userProfile.avatar || '';
+    
+    // 处理头像显示和状态
+    const avatarInput = document.getElementById('profileAvatarInput');
+    const fileInput = document.getElementById('profileUploadInput');
+    const statusElement = document.getElementById('profileUploadStatus');
+    
+    // 设置隐藏的URL输入框
+    if (userProfile.avatarFileId) {
+        avatarInput.value = `file:${userProfile.avatarFileId}`;
+        // 显示已上传状态
+        if (statusElement) {
+            statusElement.textContent = '已上传';
+            statusElement.style.color = '#07c160';
+        }
+    } else {
+        avatarInput.value = userProfile.avatar || '';
+        // 清除状态提示
+        if (statusElement) {
+            statusElement.textContent = '';
+        }
+    }
+    
+    // 清除file input以避免显示上次的文件
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    
     document.getElementById('profilePersonality').value = userProfile.personality || '';
     showModal('editProfileModal');
 }
@@ -4829,6 +4907,11 @@ async function saveContact(event) {
     await saveDataToDB(); // 使用IndexedDB保存
     await renderContactList();
     closeModal('addContactModal');
+    
+    // 清理自定义状态提示
+    const statusElement = document.getElementById('avatarUploadStatus');
+    if (statusElement) statusElement.textContent = '';
+    
     event.target.reset();
 }
 
@@ -4890,6 +4973,11 @@ async function saveProfile(event) {
     
     await saveDataToDB(); // 使用IndexedDB保存
     await updateUserProfileUI();
+    
+    // 清理自定义状态提示
+    const statusElement = document.getElementById('profileUploadStatus');
+    if (statusElement) statusElement.textContent = '';
+    
     closeModal('editProfileModal');
     showToast('保存成功');
 }
