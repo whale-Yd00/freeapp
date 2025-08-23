@@ -5077,42 +5077,61 @@ function showEditContactModal() {
 }
 
 function showApiSettingsModal() {
-    // 【修改点 3】: 加载 Minimax 的设置
-    document.getElementById('apiUrl').value = apiSettings.url;
-    document.getElementById('apiKey').value = apiSettings.key;
-    document.getElementById('apiTimeout').value = apiSettings.timeout || 60;
-    // 假设你的HTML中输入框的ID是 minimaxGroupId 和 minimaxApiKey
-    document.getElementById('minimaxGroupId').value = apiSettings.minimaxGroupId;
-    document.getElementById('minimaxApiKey').value = apiSettings.minimaxApiKey;
-    
-    // 恢复 Unsplash API Key
-    document.getElementById('unsplashApiKey').value = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey') || '';
-
-    const primarySelect = document.getElementById('primaryModelSelect');
-    const secondarySelect = document.getElementById('secondaryModelSelect');
-
-    // 重置并填充
-    primarySelect.innerHTML = '<option value="">请先测试连接</option>';
-    secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
-    
-    // 如果已有设置，则自动尝试获取模型列表
-    if (apiSettings.url && apiSettings.key) {
-        // 临时显示已保存的选项
-        if (apiSettings.model) {
-            primarySelect.innerHTML = `<option value="${apiSettings.model}">${apiSettings.model}</option>`;
+    try {
+        console.log('显示API设置模态框');
+        
+        // 【修改点 3】: 加载 Minimax 的设置
+        const apiUrlElement = document.getElementById('apiUrl');
+        const apiKeyElement = document.getElementById('apiKey'); 
+        const apiTimeoutElement = document.getElementById('apiTimeout');
+        const minimaxGroupIdElement = document.getElementById('minimaxGroupId');
+        const minimaxApiKeyElement = document.getElementById('minimaxApiKey');
+        const unsplashApiKeyElement = document.getElementById('unsplashApiKey');
+        
+        if (apiUrlElement) apiUrlElement.value = apiSettings.url || '';
+        if (apiKeyElement) apiKeyElement.value = apiSettings.key || '';
+        if (apiTimeoutElement) apiTimeoutElement.value = apiSettings.timeout || 60;
+        if (minimaxGroupIdElement) minimaxGroupIdElement.value = apiSettings.minimaxGroupId || '';
+        if (minimaxApiKeyElement) minimaxApiKeyElement.value = apiSettings.minimaxApiKey || '';
+        
+        // 恢复 Unsplash API Key
+        if (unsplashApiKeyElement) {
+            unsplashApiKeyElement.value = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey') || '';
         }
-        if (apiSettings.secondaryModel && apiSettings.secondaryModel !== 'sync_with_primary') {
-             secondarySelect.innerHTML = `
-                <option value="sync_with_primary">与主模型保持一致</option>
-                <option value="${apiSettings.secondaryModel}">${apiSettings.secondaryModel}</option>`;
+
+        const primarySelect = document.getElementById('primaryModelSelect');
+        const secondarySelect = document.getElementById('secondaryModelSelect');
+
+        if (primarySelect && secondarySelect) {
+            // 重置并填充
+            primarySelect.innerHTML = '<option value="">请先测试连接</option>';
+            secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+            
+            // 如果已有设置，则自动尝试获取模型列表
+            if (apiSettings.url && apiSettings.key) {
+                // 临时显示已保存的选项
+                if (apiSettings.model) {
+                    primarySelect.innerHTML = `<option value="${apiSettings.model}">${apiSettings.model}</option>`;
+                }
+                if (apiSettings.secondaryModel && apiSettings.secondaryModel !== 'sync_with_primary') {
+                     secondarySelect.innerHTML = `
+                        <option value="sync_with_primary">与主模型保持一致</option>
+                        <option value="${apiSettings.secondaryModel}">${apiSettings.secondaryModel}</option>`;
+                }
+                testApiConnection(); // 自动测试连接并填充列表
+            }
+            
+            // 确保在显示模态框时绑定事件
+            primarySelect.onchange = handlePrimaryModelChange;
         }
-        testApiConnection(); // 自动测试连接并填充列表
+
+        showModal('apiSettingsModal');
+        console.log('API设置模态框已显示');
+        
+    } catch (error) {
+        console.error('显示API设置模态框失败:', error);
+        showToast('打开设置失败: ' + error.message);
     }
-    
-    // 确保在显示模态框时绑定事件
-    primarySelect.onchange = handlePrimaryModelChange;
-
-    showModal('apiSettingsModal');
 }
 
 function showBackgroundModal() {
@@ -11770,6 +11789,12 @@ async function checkImageKeywordStatus() {
         const statusElement = document.getElementById('imageKeywordStatus');
         const configStatusElement = document.getElementById('imageKeywordConfigStatus');
         
+        // 检查元素是否存在
+        if (!statusElement || !configStatusElement) {
+            console.warn('图片关键词状态元素未找到');
+            return;
+        }
+        
         // 检查API配置
         const hasApiConfig = apiSettings && apiSettings.url && apiSettings.key && apiSettings.model;
         const hasUnsplashKey = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey');
@@ -11834,19 +11859,28 @@ function openImageKeywordSettings() {
     showToast('请在 API 配置中设置 AI API 和 Unsplash API Key');
 }
 
-// 在数据管理页面显示时自动检查状态
-document.addEventListener('DOMContentLoaded', function() {
-    // 监听页面切换事件
-    const originalShowPage = window.showPage;
-    if (originalShowPage) {
+// 监听数据管理页面显示的安全方式
+function enhanceShowPageForImageKeyword() {
+    if (typeof window.showPage === 'function') {
+        const originalShowPage = window.showPage;
         window.showPage = function(pageId) {
             const result = originalShowPage.call(this, pageId);
             if (pageId === 'dataManagementPage') {
                 setTimeout(() => {
                     checkImageKeywordStatus();
-                }, 100);
+                }, 200);
             }
             return result;
         };
+    } else {
+        // 如果showPage还未定义，延迟执行
+        setTimeout(enhanceShowPageForImageKeyword, 500);
     }
-});
+}
+
+// 页面加载完成后执行增强
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', enhanceShowPageForImageKeyword);
+} else {
+    enhanceShowPageForImageKeyword();
+}
