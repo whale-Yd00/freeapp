@@ -651,30 +651,24 @@ async function handleEmojiFileUpload(event) {
             return;
         }
         
-        const statusElement = document.getElementById('emojiUploadStatus');
-        const emojiTag = document.getElementById('emojiMeaning').value.trim();
+        // 简单存储文件对象，等待保存时处理
+        tempEmojiFile = file;
         
-        if (emojiTag) {
-            // 情况1: 已有意思，直接用fileSystem存储
-            await storeEmojiWithMeaning(file, emojiTag, statusElement);
-        } else {
-            // 情况2: 没有意思，先临时存储文件对象
-            tempEmojiFile = file;
-            
-            if (statusElement) {
-                statusElement.textContent = '图片已选择，请填写表情意思';
-                statusElement.style.color = '#ff9500';
-            }
-            
-            // 生成临时URL用于预览（不存储到数据库）
-            const tempUrl = URL.createObjectURL(file);
-            document.getElementById('emojiUrl').value = `temp:${tempUrl}`;
-            
-            showToast('图片已选择，请填写表情意思');
+        const statusElement = document.getElementById('emojiUploadStatus');
+        if (statusElement) {
+            statusElement.textContent = '图片已选择';
+            statusElement.style.color = '#07c160';
         }
+        
+        // 生成临时URL用于预览
+        const tempUrl = URL.createObjectURL(file);
+        document.getElementById('emojiUrl').value = `temp:${tempUrl}`;
+        
+        showToast('图片已选择，填写意思后点击添加');
+        
     } catch (error) {
-        console.error('表情包上传处理失败:', error);
-        showToast('上传失败，请重试');
+        console.error('表情包文件选择失败:', error);
+        showToast('文件选择失败，请重试');
     }
 }
 
@@ -683,9 +677,8 @@ async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
     try {
         if (statusElement) statusElement.textContent = '正在存储...';
         
-        // 使用ImageStorageAPI存储表情包
-        const imageData = await readFileAsArrayBuffer(file);
-        const fileId = await window.ImageStorageAPI.storeEmoji(imageData, emojiTag);
+        // 直接传递File对象给ImageStorageAPI，让它处理数据类型转换
+        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
         
         if (fileId) {
             document.getElementById('emojiUrl').value = `file:${fileId}`;
@@ -695,7 +688,8 @@ async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
                 statusElement.style.color = '#07c160';
             }
             
-            showToast('表情包上传成功');
+            console.log('表情包存储成功，文件ID:', fileId);
+            return fileId;
         }
     } catch (error) {
         console.error('表情包存储失败:', error);
@@ -703,72 +697,11 @@ async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
             statusElement.textContent = '存储失败';
             statusElement.style.color = '#ff3b30';
         }
-        showToast('存储失败，请重试');
+        showToast('存储失败: ' + error.message);
         throw error;
     }
 }
 
-// 读取文件为ArrayBuffer的辅助函数
-function readFileAsArrayBuffer(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = e => reject(e);
-        reader.readAsArrayBuffer(file);
-    });
-}
-
-// 设置表情包意思输入框事件监听器
-function setupEmojiMeaningEventListener() {
-    // 使用防抖机制避免频繁触发
-    let debounceTimer = null;
-    
-    const emojiMeaningInput = document.getElementById('emojiMeaning');
-    if (!emojiMeaningInput) return;
-    
-    // 监听输入事件
-    emojiMeaningInput.addEventListener('input', function(event) {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-            handleEmojiMeaningChange(event.target.value.trim());
-        }, 500); // 500ms防抖
-    });
-    
-    // 监听失去焦点事件（立即触发）
-    emojiMeaningInput.addEventListener('blur', function(event) {
-        clearTimeout(debounceTimer);
-        handleEmojiMeaningChange(event.target.value.trim());
-    });
-}
-
-// 处理表情包意思改变的逻辑
-async function handleEmojiMeaningChange(meaning) {
-    if (!meaning || !tempEmojiFile) return;
-    
-    try {
-        const statusElement = document.getElementById('emojiUploadStatus');
-        const emojiUrlInput = document.getElementById('emojiUrl');
-        
-        // 检查URL是否是临时URL
-        if (!emojiUrlInput.value.startsWith('temp:')) return;
-        
-        console.log('检测到意思输入，开始转换临时文件到fileSystem:', meaning);
-        
-        // 使用fileSystem存储表情包
-        await storeEmojiWithMeaning(tempEmojiFile, meaning, statusElement);
-        
-        // 清理临时数据
-        if (emojiUrlInput.value.startsWith('temp:')) {
-            const tempUrl = emojiUrlInput.value.substring(5);
-            URL.revokeObjectURL(tempUrl);
-        }
-        tempEmojiFile = null;
-        
-    } catch (error) {
-        console.error('自动转换表情包存储失败:', error);
-        showToast('自动转换失败，请重新上传');
-    }
-}
 
 // --- 全局状态 ---
 let contacts = [];
@@ -6810,7 +6743,8 @@ async function sendRedPacket(event) {
     }
     currentContact.lastMessage = '[红包]';
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
-    renderMessages(true);
+    // 使用addSingleMessage添加消息到界面，避免重新渲染整个聊天
+    await addSingleMessage(packetMessage, true);
     await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     closeModal('redPacketModal');
@@ -6821,13 +6755,15 @@ async function sendEmoji(emoji) {
     if (!currentContact) return;
     // 使用新的[emoji:tag]格式存储
     const content = emoji.tag ? `[emoji:${emoji.tag}]` : emoji.url;
-    currentContact.messages.push({ role: 'user', content: content, type: 'emoji', time: new Date().toISOString(), senderId: 'user' });
+    const emojiMessage = { role: 'user', content: content, type: 'emoji', time: new Date().toISOString(), senderId: 'user' };
+    currentContact.messages.push(emojiMessage);
     if (currentContact.messages.length > currentlyDisplayedMessageCount) {
         currentlyDisplayedMessageCount++;
     }
     currentContact.lastMessage = '[表情]';
     currentContact.lastTime = formatContactListTime(new Date().toISOString());
-    renderMessages(true);
+    // 使用addSingleMessage添加消息到界面，避免重新渲染整个聊天
+    await addSingleMessage(emojiMessage, true);
     await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
     toggleEmojiPanel(true);
@@ -6855,7 +6791,8 @@ async function sendEmoji(emoji) {
             }
             currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : '[表情]';
             currentContact.lastTime = formatContactListTime(new Date().toISOString());
-            renderMessages(true);
+            // 使用addSingleMessage添加AI回复消息，避免重新渲染整个聊天
+            await addSingleMessage(aiMessage, true);
             await renderContactList();
             await saveDataToDB();
         }
@@ -6897,7 +6834,7 @@ async function clearMessages() {
         currentlyDisplayedMessageCount = 0; // 重置计数
         currentContact.lastMessage = '暂无消息';
         currentContact.lastTime = formatContactListTime(new Date().toISOString());
-        renderMessages(true); // 重新渲染
+        renderMessages(false); // 重新渲染，但不滚动到底部
         await renderContactList();
         await saveDataToDB();
         
@@ -7287,10 +7224,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkBrowserCompatibility();
 
     setupServiceWorkerUpdater();
-    
-    // 添加表情包意思输入框事件监听器
-    setupEmojiMeaningEventListener();
-    
+        
     // 检查URL中是否有导入ID
     const urlParams = new URLSearchParams(window.location.search);
     const importId = urlParams.get('importId');
@@ -9329,7 +9263,7 @@ async function startChatEmojiMigration() {
             
             // 刷新当前聊天显示
             if (window.currentContact) {
-                await renderMessages();
+                await renderMessages(false); // 明确指定非初始加载，避免滚动
             }
             
         } else {
@@ -9450,7 +9384,7 @@ async function performFileStorageMigration() {
         // 刷新当前聊天显示（如果有的话）
         if (window.currentContact) {
             try {
-                await renderMessages();
+                await renderMessages(false); // 明确指定非初始加载，避免滚动
                 console.log('聊天界面已刷新');
             } catch (error) {
                 console.warn('刷新聊天界面失败:', error);
@@ -11853,7 +11787,7 @@ async function applyBubbleStyleToCurrentChat() {
         
         // 重新渲染当前聊天消息以应用新样式
         if (window.currentContact && (window.customBubbleStyleKare || window.customBubbleStyleSelf)) {
-            await renderMessages();
+            await renderMessages(false); // 明确指定非初始加载，避免滚动
             console.log('气泡样式已应用到当前聊天');
         } else if (!window.customBubbleStyleKare && !window.customBubbleStyleSelf) {
             // 清除自定义样式，使用默认样式
@@ -11997,7 +11931,7 @@ async function resetBubbleStyleToDefault() {
         
         // 如果当前在聊天页面，重新渲染消息以应用默认样式
         if (window.currentContact && document.getElementById('chatPage').classList.contains('active')) {
-            await renderMessages();
+            await renderMessages(false); // 明确指定非初始加载，避免滚动
         }
         
     } catch (error) {
