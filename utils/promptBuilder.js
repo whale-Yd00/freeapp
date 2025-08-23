@@ -19,9 +19,30 @@ class PromptBuilder {
         // 获取角色记忆（新功能）
         let characterMemory = '';
         if (window.characterMemoryManager) {
-            const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
-            if (memory) {
-                characterMemory = memory;
+            if (currentContact.type === 'group') {
+                // 群聊：获取所有群成员的角色记忆
+                const memberMemories = [];
+                if (currentContact.members && currentContact.members.length > 0) {
+                    for (const memberId of currentContact.members) {
+                        const member = contacts.find(c => c.id === memberId);
+                        if (member && member.type === 'private') {
+                            const memberMemory = await window.characterMemoryManager.getCharacterMemory(memberId);
+                            if (memberMemory && memberMemory.trim()) {
+                                memberMemories.push(`-- 以下是${member.name}角色的角色记忆，只有${member.name}知道 --\n${memberMemory}\n -- 角色${member.name}的记忆结束 -- \n`);
+                            }
+                        }
+                    }
+                }
+                
+                if (memberMemories.length > 0) {
+                    characterMemory = memberMemories.join('\n\n');
+                }
+            } else {
+                // 私聊：保持原有逻辑
+                const memory = await window.characterMemoryManager.getCharacterMemory(contact.id);
+                if (memory) {
+                    characterMemory = memory;
+                }
             }
         }
         
