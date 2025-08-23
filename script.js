@@ -5745,16 +5745,20 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
     }
 
     if (isInitialLoad) {
-        // 延时滚动，让动画先开始，然后平滑滚动到底部
-        setTimeout(() => {
-            chatMessages.scrollTo({
-                top: chatMessages.scrollHeight,
-                behavior: 'smooth'
-            });
-        }, hasNewMessage ? 200 : 0); // 新消息延时200ms滚动，让动画先开始并完成大部分
+        // 只有在初始化加载且没有新消息时才滚动到底部
+        // 这样可以避免每次重新渲染都滚动到顶部的问题
+        if (!hasNewMessage) {
+            setTimeout(() => {
+                chatMessages.scrollTo({
+                    top: chatMessages.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 100);
+        }
     } else {
+        // 非初始化加载时保持当前滚动位置
         const newScrollHeight = chatMessages.scrollHeight;
-        chatMessages.scrollTop = newScrollHeight - oldScrollHeight;
+        chatMessages.scrollTop = chatMessages.scrollTop + (newScrollHeight - oldScrollHeight);
     }
 }
 
@@ -6112,40 +6116,122 @@ async function addSingleMessage(message, isNewMessage = false) {
         avatarContent = await getAvatarHTML(userProfile, 'user') || userProfile?.name?.[0] || '我';
     }
 
-    // 先移除复杂的语音处理逻辑，专注于修复基础消息样式
+    // 应用自定义气泡样式（与renderMessages中的逻辑保持一致）
+    const currentBubbleStyle = message.role === 'user' ? 
+        (window.customBubbleStyleSelf || window.customBubbleStyle) : 
+        (window.customBubbleStyleKare || window.customBubbleStyle);
+        
+    let bubbleHtml = '';
+    if (currentBubbleStyle && currentBubbleStyle.html && message.type !== 'emoji' && message.type !== 'red_packet') {
+        // 使用自定义气泡样式 - 获取原始内容，不包装 message-content
+        console.log(`应用${message.role === 'user' ? '我的' : '对方的'}自定义气泡样式`);
+        
+        let rawContent = '';
+        if (message.type === 'emoji') {
+            rawContent = await renderEmojiContent(message.content);
+        } else if (message.type === 'red_packet') {
+            // 红包保持原有格式
+            rawContent = contentHtml;
+        } else {
+            // 处理文本，但不包装 message-content
+            rawContent = message.content.replace(/\n/g, '<br>');
+            
+            // 处理内联表情
+            const emojiTagRegex = /\[emoji:([^\]]+)\]/g;
+            const emojiMatches = [...rawContent.matchAll(emojiTagRegex)];
+            for (const match of emojiMatches) {
+                const fullMatch = match[0];
+                const emojiName = match[1];
+                const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+                
+                if (foundEmoji && foundEmoji.tag) {
+                    const emojiHtml = await renderEmojiContent(`[emoji:${foundEmoji.tag}]`, true);
+                    rawContent = rawContent.replace(fullMatch, emojiHtml);
+                } else if (foundEmoji && foundEmoji.url) {
+                    const replacement = `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">`;
+                    rawContent = rawContent.replace(fullMatch, replacement);
+                }
+            }
+        }
+        
+        bubbleHtml = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', rawContent);
+        
+        // 处理HTML中的file:格式图片
+        bubbleHtml = await processFileUrlsInHtml(bubbleHtml);
+        
+        // 清理 HTML 中的转义换行符，避免显示 \n
+        bubbleHtml = bubbleHtml.replace(/\\n/g, '');
+        console.log('生成的自定义气泡 HTML:', bubbleHtml);
+    } else {
+        // 使用默认气泡样式
+        console.log('使用默认气泡样式，自定义样式状态:', {
+            hasCustomStyle: !!window.customBubbleStyle,
+            hasHtml: !!window.customBubbleStyle?.html
+        });
+        bubbleHtml = `<div class="message-bubble">${contentHtml}</div>`;
+    }
 
     if (currentContact.type === 'group' && message.role === 'assistant') {
         // 修复：从contacts数组中查找成员
         const member = contacts.find(c => c.id === message.senderId);
         const memberName = member ? member.name : '未知成员';
-        msgDiv.innerHTML = `
-            <div class="message-avatar">${avatarContent}</div>
-            <div class="message-bubble">
-                <div class="group-message-header">
-                    <div class="group-message-name">${memberName}</div>
-                </div>
-                ${contentHtml}
-            </div>
-        `;
+        
+        if (currentBubbleStyle && currentBubbleStyle.html && message.type !== 'emoji' && message.type !== 'red_packet') {
+            // 对于群聊消息，在自定义气泡前添加发送者信息
+            const groupHeader = `<div class="group-message-header"><div class="group-message-name">${memberName}</div></div>`;
+            
+            // 获取原始内容（与上面相同的逻辑）
+            let rawContent = '';
+            if (message.type === 'emoji') {
+                rawContent = await renderEmojiContent(message.content);
+            } else if (message.type === 'red_packet') {
+                rawContent = contentHtml;
+            } else {
+                rawContent = message.content.replace(/\n/g, '<br>');
+                const emojiTagRegex = /\[emoji:([^\]]+)\]/g;
+                const emojiMatches = [...rawContent.matchAll(emojiTagRegex)];
+                for (const match of emojiMatches) {
+                    const fullMatch = match[0];
+                    const emojiName = match[1];
+                    const foundEmoji = emojis.find(e => e.tag === emojiName || e.meaning === emojiName);
+                    
+                    if (foundEmoji && foundEmoji.tag) {
+                        const emojiHtml = await renderEmojiContent(`[emoji:${foundEmoji.tag}]`, true);
+                        rawContent = rawContent.replace(fullMatch, emojiHtml);
+                    } else if (foundEmoji && foundEmoji.url) {
+                        const replacement = `<img src="${foundEmoji.url}" style="max-width: 100px; max-height: 100px; border-radius: 8px; vertical-align: middle; margin: 2px;">`;
+                        rawContent = rawContent.replace(fullMatch, replacement);
+                    }
+                }
+            }
+            
+            let customBubbleWithHeader = currentBubbleStyle.html.replace('{{BUBBLE_TEXT}}', groupHeader + rawContent);
+            
+            // 处理HTML中的file:格式图片
+            customBubbleWithHeader = await processFileUrlsInHtml(customBubbleWithHeader);
+            
+            // 清理 HTML 中的转义换行符，避免显示 \n
+            customBubbleWithHeader = customBubbleWithHeader.replace(/\\n/g, '');
+            msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${customBubbleWithHeader}`;
+        } else {
+            msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div><div class="message-bubble"><div class="group-message-header"><div class="group-message-name">${memberName}</div></div>${contentHtml}</div>`;
+        }
     } else {
-        msgDiv.innerHTML = `
-            <div class="message-avatar">${avatarContent}</div>
-            <div class="message-bubble">
-                ${contentHtml}
-            </div>
-        `;
+        msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${bubbleHtml}`;
     }
 
     // 添加到聊天界面
     chatMessages.appendChild(msgDiv);
 
-    // 延时滚动，让动画先开始，与动画时间配合
-    setTimeout(() => {
-        chatMessages.scrollTo({
-            top: chatMessages.scrollHeight,
-            behavior: 'smooth'
-        });
-    }, isNewMessage ? 150 : 0); // 新消息延时150ms，让滑入动画更明显
+    // 只有新消息才滚动到底部，避免每次添加消息都重新滚动
+    if (isNewMessage) {
+        setTimeout(() => {
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+        }, 150); // 新消息延时150ms，让滑入动画更明显
+    }
 
     // 先暂时移除复杂的语音生成逻辑，专注于修复消息样式问题
     // TODO: 稍后重新添加语音功能
