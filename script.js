@@ -2,6 +2,109 @@
 let consoleLogs = [];
 const maxLogEntries = 500; // 限制日志条目数量避免内存过大
 
+// === 主题管理系统 ===
+class ThemeManager {
+    constructor() {
+        this.THEME_KEY = 'whale-llt-theme';
+        this.themes = {
+            system: 'system-theme',
+            light: '',
+            dark: 'dark-mode'
+        };
+        this.currentTheme = this.getStoredTheme();
+        this.mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    }
+
+    getStoredTheme() {
+        return localStorage.getItem(this.THEME_KEY) || 'system';
+    }
+
+    setTheme(theme) {
+        if (!this.themes.hasOwnProperty(theme)) {
+            console.warn('未知主题:', theme);
+            return;
+        }
+
+        this.currentTheme = theme;
+        localStorage.setItem(this.THEME_KEY, theme);
+        this.applyTheme();
+        this.updateThemeUI();
+    }
+
+    applyTheme() {
+        const body = document.body;
+        
+        // 移除所有主题类
+        Object.values(this.themes).forEach(className => {
+            if (className) body.classList.remove(className);
+        });
+
+        // 应用当前主题类
+        const themeClass = this.themes[this.currentTheme];
+        if (themeClass) {
+            body.classList.add(themeClass);
+        }
+    }
+
+    updateThemeUI() {
+        // 更新主题切换按钮的显示状态
+        const buttons = document.querySelectorAll('[data-theme]');
+        buttons.forEach(btn => {
+            if (btn.dataset.theme === this.currentTheme) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        
+        console.log('主题UI已更新，当前主题:', this.currentTheme);
+    }
+
+    init() {
+        // 立即应用主题，避免闪烁
+        this.applyTheme();
+        
+        // 初始化UI状态
+        this.updateThemeUI();
+        
+        // 监听系统主题变化
+        this.mediaQuery.addEventListener('change', () => {
+            if (this.currentTheme === 'system') {
+                this.applyTheme();
+            }
+        });
+
+        console.log('主题管理器初始化完成，当前主题:', this.currentTheme);
+    }
+
+    getCurrentTheme() {
+        return this.currentTheme;
+    }
+}
+
+// 创建全局主题管理器实例
+window.themeManager = new ThemeManager();
+
+// 主题切换函数
+function switchTheme(theme) {
+    window.themeManager.setTheme(theme);
+    
+    // 提供用户反馈
+    const themeNames = {
+        system: '跟随系统',
+        light: '亮色模式', 
+        dark: '暗黑模式'
+    };
+    
+    // 可以在这里添加toast提示，但现在先不添加以免干扰用户
+    console.log(`已切换到${themeNames[theme]}主题`);
+}
+
+// 获取当前主题
+function getCurrentTheme() {
+    return window.themeManager.getCurrentTheme();
+}
+
 // === 屏蔽长按选择和上下文菜单系统 ===
 function initializeLongPressBlocking() {
     // 屏蔽上下文菜单（右键菜单和长按菜单）
@@ -4176,7 +4279,7 @@ async function renderMomentsList() {
                         const safeContent = comment.content.replace(/'/g, '&#39;');
                         return `<div onclick="showMomentReplyToComment('${moment.id}', '${comment.author}')" style="font-size: 13px; color: #576b95; margin-bottom: 4px; cursor: pointer; padding: 4px; border-radius: 4px; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='transparent'">
                             <span onclick="event.stopPropagation(); handleCommentAuthorClick('${comment.author}')" style="cursor: pointer; color: #576b95; font-weight: bold;">${comment.author}:</span>
-                            <span style="color: #333; margin-left: 4px;">${safeContent}</span>
+                            <span class="moment-comment">${safeContent}</span>
                         </div>`;
                     }).join('');
                 commentsContent = `<div style="margin-top: 10px; padding-top: 10px; border-top: 0.5px solid #eee;">${commentsList}</div>`;
@@ -7220,6 +7323,9 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // 优先初始化主题管理器，避免主题闪烁
+    window.themeManager.init();
+    
     // 兼容性检测：检测浏览器是否支持 :has() 选择器
     checkBrowserCompatibility();
 
@@ -9878,7 +9984,6 @@ function showMomentComment(momentId) {
     const textarea = replyContainer.querySelector('.moment-reply-input');
     
     replyContainer.classList.add('active');
-    replyContainer.style.display = 'block'; // 确保显示
     safeFocus(textarea, { delay: 100 });
     
     // 关闭菜单（发现页面才有菜单）
@@ -9911,7 +10016,6 @@ function hideMomentComment(momentId) {
     const textarea = replyContainer.querySelector('.moment-reply-input');
     
     replyContainer.classList.remove('active');
-    replyContainer.style.display = 'none'; // 确保隐藏
     textarea.value = '';
 }
 
@@ -10328,19 +10432,19 @@ async function createUserProfileMomentElement(moment) {
                     `<div style="width: 32px; height: 32px; border-radius: 4px; background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 14px;">${comment.author.charAt(0)}</div>`;
                 
                 return `
-                    <div class="moment-comment-item" data-comment-index="${index}" style="display: flex; margin-bottom: 12px;">
+                    <div class="profile-moment-comment-item" data-comment-index="${index}" style="display: flex; margin-bottom: 12px;">
                         <div style="margin-right: 10px;">${commentAvatarContent}</div>
                         <div style="flex: 1;">
-                            <div class="moment-comment-author" onclick="handleCommentAuthorClick('${comment.author}')" style="font-weight: 600; color: #576b95; cursor: pointer; line-height: 16px;">${comment.author}</div>
-                            <div class="moment-comment-text" style="color: #333; line-height: 16px;">${safeContent}</div>
-                            <div class="moment-comment-actions" style="margin-top: 4px; font-size: 12px; color: #999;">
-                                <span class="moment-comment-time">${formatContactListTime(commentTimeStr)}</span>
+                            <div class="profile-moment-comment-author" onclick="handleCommentAuthorClick('${comment.author}')" style="font-weight: 600; color: #576b95; cursor: pointer; line-height: 16px;">${comment.author}</div>
+                            <div class="profile-moment-comment-text">${safeContent}</div>
+                            <div class="profile-moment-comment-actions" style="margin-top: 4px; font-size: 12px; color: #999;">
+                                <span class="profile-moment-comment-time">${formatContactListTime(commentTimeStr)}</span>
                             </div>
                         </div>
                     </div>
                 `;
             }).join('');
-        commentsContent = `<div class="moment-comments">${commentsList}</div>`;
+        commentsContent = `<div class="profile-moment-comments">${commentsList}</div>`;
     }
     
     // 个人主页使用独立按钮
@@ -10401,7 +10505,7 @@ async function createUserProfileMomentElement(moment) {
             <div class="moment-avatar" style="margin-right: 12px; flex-shrink: 0;">${avatarContent}</div>
             <div class="moment-info" style="flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 40px;">
                 <div class="moment-name" style="font-weight: 600; color: #576b95; font-size: 15px; line-height: 1.2; margin: 0;">${moment.authorName}</div>
-                <div class="user-profile-moment-content" style="font-size: 16px; line-height: 1.4; color: #333; margin: 0; flex-grow: 1; display: flex; align-items: flex-end;">${moment.content}</div>
+                <div class="user-profile-moment-content">${moment.content}</div>
             </div>
         </div>
         ${imagesHtml}

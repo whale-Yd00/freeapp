@@ -2,6 +2,8 @@
 node_modules/
 .vercel
 
+.vscode
+
 #AI
 GEMINI.md
 CLAUDE.md
