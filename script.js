@@ -1867,6 +1867,18 @@ async function initializeDatabaseOnce() {
             window.isIndexedDBReady = true;
             console.log('[DEBUG] 数据库状态标志已设置: isIndexedDBReady = true');
             
+            // 发出初始化完成事件，通知其他组件
+            if (typeof window.dispatchEvent === 'function') {
+                window.dispatchEvent(new CustomEvent('databaseReady', {
+                    detail: { 
+                        db: db, 
+                        version: db.version,
+                        timestamp: Date.now()
+                    }
+                }));
+                console.log('[事件通知] 已发出 databaseReady 事件');
+            }
+            
             return db;
             
         } catch (error) {
