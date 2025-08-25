@@ -6854,20 +6854,31 @@ function handlePrimaryModelChange() {
 
 async function saveApiSettings(event) {
     event.preventDefault();
-    apiSettings.url = document.getElementById('apiUrl').value;
-    apiSettings.key = document.getElementById('apiKey').value;
-    apiSettings.model = document.getElementById('primaryModelSelect').value;
-    apiSettings.secondaryModel = document.getElementById('secondaryModelSelect').value;
-    apiSettings.contextMessageCount = parseInt(document.getElementById('contextSlider').value);
-    apiSettings.timeout = parseInt(document.getElementById('apiTimeout').value) || 60;
+    
+    // 安全获取DOM元素值的辅助函数
+    const getElementValue = (id, defaultValue = '') => {
+        const element = document.getElementById(id);
+        return element ? element.value : defaultValue;
+    };
+    
+    const getElementIntValue = (id, defaultValue = 0) => {
+        const element = document.getElementById(id);
+        return element ? parseInt(element.value) || defaultValue : defaultValue;
+    };
+    
+    apiSettings.url = getElementValue('apiUrl');
+    apiSettings.key = getElementValue('apiKey');
+    apiSettings.model = getElementValue('primaryModelSelect');
+    apiSettings.secondaryModel = getElementValue('secondaryModelSelect');
+    apiSettings.contextMessageCount = getElementIntValue('contextSlider');
+    apiSettings.timeout = getElementIntValue('apiTimeout', 60);
     
     // 【修改点 4】: 保存 Minimax 的设置
-    // 假设你的HTML中输入框的ID是 minimaxGroupId 和 minimaxApiKey
-    apiSettings.minimaxGroupId = document.getElementById('minimaxGroupId').value.trim();
-    apiSettings.minimaxApiKey = document.getElementById('minimaxApiKey').value.trim();
+    apiSettings.minimaxGroupId = getElementValue('minimaxGroupId').trim();
+    apiSettings.minimaxApiKey = getElementValue('minimaxApiKey').trim();
     
     // 保存 Unsplash API Key
-    const unsplashKey = document.getElementById('unsplashApiKey').value.trim();
+    const unsplashKey = getElementValue('unsplashApiKey').trim();
     if (unsplashKey) {
         localStorage.setItem('forumUnsplashApiKey', unsplashKey);
         localStorage.setItem('unsplashApiKey', unsplashKey); // 保持向后兼容
