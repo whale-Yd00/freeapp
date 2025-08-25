@@ -1861,6 +1861,11 @@ async function initializeDatabaseOnce() {
             console.log('[DEBUG] 数据库初始化成功，版本:', db.version);
             console.log('[DEBUG] 可用的存储:', Array.from(db.objectStoreNames));
             
+            // 设置全局状态
+            window.db = db;
+            window.isIndexedDBReady = true;
+            console.log('[DEBUG] 数据库状态标志已设置: isIndexedDBReady = true');
+            
             return db;
             
         } catch (error) {
