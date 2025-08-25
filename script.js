@@ -866,7 +866,7 @@ const RELATION_PRESETS = {
 let hashtagCache = {};
 
 let audio = null;
-let db = null; // IndexedDB 实例
+// IndexedDB 实例统一使用 window.db，不再使用局部变量
 
 // 全局错误处理 - 捕获未处理的Promise拒绝
 window.addEventListener('unhandledrejection', function(event) {
@@ -998,6 +998,7 @@ let isEmojiGridRendered = false;
 let isMomentsRendered = false;
 let isMusicPlayerInitialized = false;
 let isIndexedDBReady = false; 
+// ⚠️ 注意：数据库操作统一使用 window.db 和 window.isIndexedDBReady，不要使用局部变量 
 const MESSAGES_PER_PAGE = 15;
 let currentlyDisplayedMessageCount = 0;
 let isLoadingMoreMessages = false;
@@ -1085,14 +1086,14 @@ async function init() {
             
             // 验证关键表是否存在
             const requiredStores = ['contacts', 'moments', 'apiSettings'];
-            const missingStores = requiredStores.filter(store => !db.objectStoreNames.contains(store));
+            const missingStores = requiredStores.filter(store => !window.db.objectStoreNames.contains(store));
             if (missingStores.length > 0) {
                 throw new Error(`数据库初始化不完整，缺少存储: ${missingStores.join(', ')}`);
             }
             
             console.log('[DEBUG] 统一数据库初始化成功');
-            console.log('[DEBUG] 数据库版本:', db.version);
-            console.log('[DEBUG] 可用存储:', Array.from(db.objectStoreNames));
+            console.log('[DEBUG] 数据库版本:', window.db.version);
+            console.log('[DEBUG] 可用存储:', Array.from(window.db.objectStoreNames));
             
         }, '应用初始化 - 统一数据库连接');
         // [DEBUG-MOMENTS-ROLES-END]
@@ -1355,7 +1356,7 @@ function startConnectionMonitoring() {
     }
     
     dbReadinessCheckInterval = setInterval(() => {
-        if (!isIndexedDBReady || !db) {
+        if (!window.isIndexedDBReady || !window.db) {
             console.warn('检测到数据库连接断开，准备自动重连...');
             clearInterval(dbReadinessCheckInterval);
             handleConnectionLoss();
@@ -1409,13 +1410,13 @@ async function performEmojiOptimization() {
     try {
         console.log('开始执行表情数据结构优化...');
         
-        if (!isIndexedDBReady) {
+        if (!window.isIndexedDBReady) {
             console.error('数据库未准备就绪，无法执行优化');
             return;
         }
         
         // 获取当前数据
-        const transaction = db.transaction(['contacts', 'emojis', 'emojiImages'], 'readonly');
+        const transaction = window.db.transaction(['contacts', 'emojis', 'emojiImages'], 'readonly');
         const contactsStore = transaction.objectStore('contacts');
         const emojisStore = transaction.objectStore('emojis');
         const emojiImagesStore = transaction.objectStore('emojiImages');
@@ -1496,7 +1497,7 @@ async function performEmojiOptimization() {
         
         // 保存优化后的数据
         if (processedCount > 0) {
-            const writeTransaction = db.transaction(['contacts', 'emojis', 'emojiImages'], 'readwrite');
+            const writeTransaction = window.db.transaction(['contacts', 'emojis', 'emojiImages'], 'readwrite');
             
             // 更新表情图片数据
             if (newEmojiImages.length > 0) {
@@ -1692,15 +1693,15 @@ async function loadDataFromDB() {
 
 async function saveDataToDB() {
     return await ensureDBReady(async () => {
-        console.log('开始保存数据到数据库...');
+        console.log('[FIXED] 开始保存数据到数据库，使用 window.db...');
         
         // 检查是否存在新的emojiImages存储
         const storeNames = ['contacts', 'apiSettings', 'emojis', 'backgrounds', 'userProfile', 'moments', 'hashtagCache'];
-        if (db.objectStoreNames.contains('emojiImages')) {
+        if (window.db.objectStoreNames.contains('emojiImages')) {
             storeNames.push('emojiImages');
         }
         
-        const transaction = db.transaction(storeNames, 'readwrite');
+        const transaction = window.db.transaction(storeNames, 'readwrite');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
@@ -2134,13 +2135,13 @@ async function handleGeneratePost(event) {
 }
 
 async function saveWeiboPost(postData) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         console.error('IndexedDB not ready, cannot save post.');
         showToast('数据库错误，无法保存帖子');
         return;
     }
     try {
-        const transaction = db.transaction(['weiboPosts'], 'readwrite');
+        const transaction = window.db.transaction(['weiboPosts'], 'readwrite');
         const store = transaction.objectStore('weiboPosts');
         await promisifyRequest(store.add(postData));
         await promisifyTransaction(transaction);
@@ -2421,13 +2422,13 @@ function calculateRenderRange(scrollTop) {
 
 // 数据一致性检查和修复函数
 async function checkAndRepairDataConsistency() {
-    if (!isIndexedDBReady || !db) {
+    if (!window.isIndexedDBReady || !window.db) {
         return false;
     }
     
     try {
         // 从数据库重新加载所有帖子
-        const transaction = db.transaction(['weiboPosts'], 'readonly');
+        const transaction = window.db.transaction(['weiboPosts'], 'readonly');
         const store = transaction.objectStore('weiboPosts');
         const allDbPosts = await promisifyRequest(store.getAll());
         
@@ -2966,8 +2967,8 @@ async function showReplyBox(postHtmlId) {
             } else {
                 // 尝试从数据库重新加载
                 try {
-                    if (isIndexedDBReady && db) {
-                        const transaction = db.transaction(['weiboPosts'], 'readonly');
+                    if (window.isIndexedDBReady && window.db) {
+                        const transaction = window.db.transaction(['weiboPosts'], 'readonly');
                         const store = transaction.objectStore('weiboPosts');
                         
                         // 尝试数字ID和字符串ID
@@ -3342,9 +3343,9 @@ async function deleteWeiboPost(storedPostId, postIndex) {
         if (postGroup.data.posts.length === 0) {
             weiboPosts.splice(postGroupIndex, 1);
             // Also delete the entire entry from IndexedDB
-            if (isIndexedDBReady) {
+            if (window.isIndexedDBReady) {
                 try {
-                    const transaction = db.transaction(['weiboPosts'], 'readwrite');
+                    const transaction = window.db.transaction(['weiboPosts'], 'readwrite');
                     const store = transaction.objectStore('weiboPosts');
                     await promisifyRequest(store.delete(numericStoredPostId));
                     await promisifyTransaction(transaction);
@@ -3367,13 +3368,13 @@ async function deleteWeiboPost(storedPostId, postIndex) {
 }
 
 async function updateWeiboPost(postToUpdate) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         console.error('IndexedDB not ready, cannot update post.');
         showToast('数据库错误，无法更新帖子');
         return;
     }
     try {
-        const transaction = db.transaction(['weiboPosts'], 'readwrite');
+        const transaction = window.db.transaction(['weiboPosts'], 'readwrite');
         const store = transaction.objectStore('weiboPosts');
         await promisifyRequest(store.put(postToUpdate));
         await promisifyTransaction(transaction);
@@ -4648,11 +4649,11 @@ async function initMusicPlayer() {
 
 async function loadPlaylistFromDB() {
     return new Promise((resolve, reject) => {
-        if (!isIndexedDBReady) { // 确保DB已准备好
+        if (!window.isIndexedDBReady) { // 确保DB已准备好
             reject('IndexedDB not ready');
             return;
         }
-        const transaction = db.transaction(['songs'], 'readonly');
+        const transaction = window.db.transaction(['songs'], 'readonly');
         const store = transaction.objectStore('songs');
         const request = store.getAll();
 
@@ -4704,12 +4705,12 @@ async function saveSong() {
         lyrics: lyrics
     };
 
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         showToast('数据库未准备好，无法保存歌曲。');
         return;
     }
 
-    const transaction = db.transaction(['songs'], 'readwrite');
+    const transaction = window.db.transaction(['songs'], 'readwrite');
     const store = transaction.objectStore('songs');
     const request = store.add(songRecord);
 
@@ -4736,12 +4737,12 @@ async function playSong(index) {
         currentObjectUrl = null;
     }
 
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         showToast('数据库未准备好，无法播放歌曲。');
         return;
     }
 
-    const transaction = db.transaction(['songs'], 'readonly');
+    const transaction = window.db.transaction(['songs'], 'readonly');
     const store = transaction.objectStore('songs');
     const request = store.get(songInfo.id);
 
@@ -4776,12 +4777,12 @@ async function deleteSong(index) {
     showConfirmDialog('删除确认', '确定要永久删除这首歌吗？', async () => {
         const songInfo = playlist[index];
         
-        if (!isIndexedDBReady) {
+        if (!window.isIndexedDBReady) {
             showToast('数据库未准备好，无法删除歌曲。');
             return;
         }
 
-        const transaction = db.transaction(['songs'], 'readwrite');
+        const transaction = window.db.transaction(['songs'], 'readwrite');
         const store = transaction.objectStore('songs');
         const request = store.delete(songInfo.id);
 
@@ -5138,13 +5139,13 @@ async function processTextWithInlineEmojis(textContent) {
     }
 }
 async function saveEmojiImage(tag, base64Data) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法保存表情图片。');
         return;
     }
     
     // 如果 emojiImages 存储不存在，提示用户刷新页面
-    if (!db.objectStoreNames.contains('emojiImages')) {
+    if (!window.db.objectStoreNames.contains('emojiImages')) {
         console.log('检测到 emojiImages 存储不存在，需要升级数据库');
         if (typeof showToast === 'function') {
             showToast('检测到数据库需要升级，请刷新页面');
@@ -5153,7 +5154,7 @@ async function saveEmojiImage(tag, base64Data) {
     }
     
     try {
-        const transaction = db.transaction(['emojiImages'], 'readwrite');
+        const transaction = window.db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
         await promisifyRequest(store.put({ tag: tag, data: base64Data }));
     } catch (error) {
@@ -5163,7 +5164,7 @@ async function saveEmojiImage(tag, base64Data) {
 }
 
 async function getEmojiImage(tag) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法获取表情图片。');
         return null;
     }
@@ -5183,7 +5184,7 @@ async function getEmojiImage(tag) {
         }
         
         // 回退到旧的 emojiImages 存储
-        if (!db.objectStoreNames.contains('emojiImages')) {
+        if (!window.db.objectStoreNames.contains('emojiImages')) {
             console.log('检测到 emojiImages 存储不存在，需要升级数据库');
             if (typeof showToast === 'function') {
                 showToast('检测到数据库需要升级，请刷新页面');
@@ -5191,7 +5192,7 @@ async function getEmojiImage(tag) {
             return null;
         }
         
-        const transaction = db.transaction(['emojiImages'], 'readonly');
+        const transaction = window.db.transaction(['emojiImages'], 'readonly');
         const store = transaction.objectStore('emojiImages');
         const result = await promisifyRequest(store.get(tag));
         return result ? result.data : null;
@@ -5203,13 +5204,13 @@ async function getEmojiImage(tag) {
 }
 
 async function deleteEmojiImage(tag) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         console.warn('IndexedDB 未准备好，无法删除表情图片。');
         return;
     }
     
     // 如果 emojiImages 存储不存在，提示用户刷新页面
-    if (!db.objectStoreNames.contains('emojiImages')) {
+    if (!window.db.objectStoreNames.contains('emojiImages')) {
         console.log('检测到 emojiImages 存储不存在，需要升级数据库');
         if (typeof showToast === 'function') {
             showToast('检测到数据库需要升级，请刷新页面');
@@ -5218,7 +5219,7 @@ async function deleteEmojiImage(tag) {
     }
     
     try {
-        const transaction = db.transaction(['emojiImages'], 'readwrite');
+        const transaction = window.db.transaction(['emojiImages'], 'readwrite');
         const store = transaction.objectStore('emojiImages');
         await promisifyRequest(store.delete(tag));
     } catch (error) {
@@ -5230,7 +5231,7 @@ async function deleteEmojiImage(tag) {
 
 // 数据库优化函数：将现有base64表情转换为标签格式
 async function optimizeEmojiDatabase() {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         showToast('数据库未准备好，无法执行优化');
         return;
     }
@@ -7238,7 +7239,7 @@ async function deleteCurrentContact() {
  * @param {string} contactId 要删除的联系人/群聊的ID
  */
 async function deleteContact(contactId) {
-    if (!isIndexedDBReady) {
+    if (!window.isIndexedDBReady) {
         showToast('数据库未准备好，无法删除。');
         return;
     }
@@ -7254,7 +7255,7 @@ async function deleteContact(contactId) {
     }
 
     try {
-        const transaction = db.transaction(['contacts'], 'readwrite');
+        const transaction = window.db.transaction(['contacts'], 'readwrite');
         const store = transaction.objectStore('contacts');
         await promisifyRequest(store.delete(contactId)); // 从IndexedDB删除
 
@@ -9627,7 +9628,7 @@ async function performFileStorageMigration() {
     try {
         console.log('开始执行文件存储自动迁移...');
         
-        if (!isIndexedDBReady) {
+        if (!window.isIndexedDBReady) {
             console.error('数据库未准备就绪，无法执行迁移');
             return;
         }
@@ -11332,14 +11333,14 @@ function safeCreateTransaction(db, storeNames, mode = 'readonly') {
     
     // 检查所有存储是否存在
     const missingStores = storeNames.filter(storeName => 
-        !db.objectStoreNames.contains(storeName)
+        !window.db.objectStoreNames.contains(storeName)
     );
     
     if (missingStores.length > 0) {
         throw new Error(`存储不存在: ${missingStores.join(', ')}`);
     }
     
-    return db.transaction(storeNames, mode);
+    return window.db.transaction(storeNames, mode);
 }
 
 
