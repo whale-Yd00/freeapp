@@ -2265,7 +2265,8 @@ window.DatabaseManager = {
     }
 };
 
-// 页面加载完成后初始化
+// 页面加载完成后初始化 - 修改为检查是否已初始化，避免重复初始化
+// 与 script.js 中的 initializeDatabaseOnce() 协调工作
 if (typeof document !== 'undefined') {
     // 等待主应用初始化完成后再初始化数据库管理器
     const initializeDatabaseManager = () => {
@@ -2283,10 +2284,12 @@ if (typeof document !== 'undefined') {
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-            setTimeout(initializeDatabaseManager, 1000);
+            // 增加延迟确保主应用有充分时间完成数据库初始化
+            setTimeout(initializeDatabaseManager, 2000);
         });
     } else {
-        setTimeout(initializeDatabaseManager, 1000);
+        // 增加延迟确保主应用有充分时间完成数据库初始化  
+        setTimeout(initializeDatabaseManager, 2000);
     }
 }
 
