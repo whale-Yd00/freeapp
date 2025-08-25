@@ -1328,8 +1328,9 @@ function waitForIndexedDBReady(timeout = 30000) {
         const startTime = Date.now();
         
         function checkReady() {
-            if (isIndexedDBReady && db) {
-                console.log('IndexedDB就绪状态检查: 已就绪');
+            console.log(`[DEBUG-FIXED] checkReady检查: window.isIndexedDBReady=${window.isIndexedDBReady}, window.db=${!!window.db}`);
+            if (window.isIndexedDBReady && window.db) {
+                console.log('IndexedDB就绪状态检查: 已就绪 [FIXED]');
                 resolve(true);
                 return;
             }
@@ -1545,7 +1546,7 @@ async function performEmojiOptimization() {
 
 async function loadDataFromDB() {
     return await ensureDBReady(async () => {
-        console.log('开始从数据库加载数据...');
+        console.log('[FIXED] 开始从数据库加载数据，使用 window.db...');
         
         const storeNames = [
         'contacts', 
@@ -1559,13 +1560,13 @@ async function loadDataFromDB() {
         ];
 
         // 先检查存不存在 emojiImages
-        if (db.objectStoreNames.contains('emojiImages')) {
+        if (window.db.objectStoreNames.contains('emojiImages')) {
             storeNames.push('emojiImages');
         } else {
             console.warn('数据库版本未包含 emojiImages 存储，建议更新页面以升级数据库。');
         }
         
-        const transaction = db.transaction(storeNames, 'readonly');
+        const transaction = window.db.transaction(storeNames, 'readonly');
         
         const contactsStore = transaction.objectStore('contacts');
         const apiSettingsStore = transaction.objectStore('apiSettings');
