@@ -814,6 +814,11 @@ let currentContact = null;
 window.currentContact = currentContact;
 let editingContact = null;
 
+// [DEBUG-MOMENTS-ROLES-START] 数据库初始化竞态条件控制，修复完成后可选择保留
+let isInitializingDatabase = false; // 防止多个组件同时初始化数据库
+let databaseInitializationPromise = null; // 缓存初始化Promise，避免重复初始化
+// [DEBUG-MOMENTS-ROLES-END]
+
 // 【修改点 1】: 更新 apiSettings 结构以适应 Minimax
 let apiSettings = {
     url: '',
@@ -1064,32 +1069,33 @@ if ('serviceWorker' in navigator) {
 // --- 初始化 ---
 async function init() {
     try {
-        console.log('开始应用初始化...');
+        console.log('[DEBUG] 开始应用初始化...');
         
+        // [DEBUG-MOMENTS-ROLES-START] 使用统一的数据库初始化，修复完成后可选择保留
         await executeWithRetry(async () => {
-            // 永远只相信 dataMigrator！
-            if (window.DatabaseManager && window.DatabaseManager.init) {
-                const result = await window.DatabaseManager.init();
-                if (result.success) {
-                    console.log('数据库通过 dataMigrator 初始化成功');
-                    db = window.db; // 确保db实例被正确赋值
-                    isIndexedDBReady = window.isIndexedDBReady;
-                } else {
-                    // 如果 dataMigrator 初始化失败，就直接抛出错误，不再尝试用旧方法
-                    throw new Error('DatabaseManager 初始化失败: ' + result.error);
-                }
-            } else {
-                // 如果 DatabaseManager 根本不存在，这也是个严重错误
-                throw new Error('DatabaseManager 未加载，无法初始化数据库');
+            console.log('[DEBUG] 调用统一的数据库初始化函数');
+            
+            // 使用统一的数据库初始化函数，防止竞态条件
+            const db = await initializeDatabaseOnce();
+            
+            // 二次确认初始化结果
+            if (!db || !window.isIndexedDBReady) {
+                throw new Error('统一数据库初始化后连接仍未建立');
             }
             
-            // 二次确认
-            if (!db || !isIndexedDBReady) {
-                throw new Error('数据库连接在初始化后仍未建立');
+            // 验证关键表是否存在
+            const requiredStores = ['contacts', 'moments', 'apiSettings'];
+            const missingStores = requiredStores.filter(store => !db.objectStoreNames.contains(store));
+            if (missingStores.length > 0) {
+                throw new Error(`数据库初始化不完整，缺少存储: ${missingStores.join(', ')}`);
             }
-            console.log('数据库连接建立成功');
             
-        }, '应用初始化 - 数据库连接');
+            console.log('[DEBUG] 统一数据库初始化成功');
+            console.log('[DEBUG] 数据库版本:', db.version);
+            console.log('[DEBUG] 可用存储:', Array.from(db.objectStoreNames));
+            
+        }, '应用初始化 - 统一数据库连接');
+        // [DEBUG-MOMENTS-ROLES-END]
         
         // 从IndexedDB加载数据
         await loadDataFromDB();
@@ -1571,10 +1577,25 @@ async function loadDataFromDB() {
         
         // 加载联系人数据
         contacts = (await promisifyRequest(contactsStore.getAll(), '加载联系人数据')) || [];
-        console.log(`加载了 ${contacts.length} 个联系人`);
+        console.log(`[DEBUG] 从数据库加载了 ${contacts.length} 个联系人`);
         
         // 更新全局引用
         window.contacts = contacts;
+        
+        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+        if (contacts.length > 0) {
+            const privateContacts = contacts.filter(c => c.type === 'private');
+            console.log('[DEBUG] contacts数据加载详情:', {
+                totalContacts: contacts.length,
+                privateContacts: privateContacts.length,
+                contactsList: contacts.map(c => ({ name: c.name, id: c.id, type: c.type })),
+                windowContactsSet: !!window.contacts,
+                windowContactsLength: window.contacts ? window.contacts.length : 0
+            });
+        } else {
+            console.warn('[DEBUG] 数据库中没有找到任何联系人数据');
+        }
+        // [DEBUG-MOMENTS-ROLES-END]
         
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
@@ -1789,6 +1810,73 @@ function promisifyTransaction(transaction, context = '数据库事务') {
 async function executeWithRetry(operation, context = '数据库操作') {
     return await retryWithBackoff(operation, context);
 }
+
+// [DEBUG-MOMENTS-ROLES-START] 统一的数据库初始化函数，修复完成后可选择保留
+/**
+ * 统一的数据库初始化函数，防止多组件竞态条件
+ * 解决 FileStorageManager 和 DataMigrator 同时调用 indexedDB.open() 导致的表结构不完整问题
+ */
+async function initializeDatabaseOnce() {
+    // 如果已经有缓存的初始化Promise，直接返回
+    if (databaseInitializationPromise) {
+        console.log('[DEBUG] 数据库正在初始化中，等待现有初始化完成...');
+        return await databaseInitializationPromise;
+    }
+    
+    // 如果数据库已经就绪且版本正确，直接返回
+    if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
+        console.log('[DEBUG] 数据库已经初始化完成，跳过重复初始化');
+        return window.db;
+    }
+    
+    console.log('[DEBUG] 开始统一的数据库初始化流程...');
+    
+    // 创建初始化Promise并缓存，确保只有一个初始化过程
+    databaseInitializationPromise = (async () => {
+        try {
+            isInitializingDatabase = true;
+            
+            // 如果有现有连接，先关闭
+            if (window.db) {
+                console.log('[DEBUG] 关闭现有数据库连接进行清理');
+                window.db.close();
+                window.db = null;
+                window.isIndexedDBReady = false;
+            }
+            
+            // 使用 DataMigrator 作为唯一的数据库初始化入口
+            if (!window.dbManager) {
+                console.log('[DEBUG] 创建 DataMigrator 实例');
+                window.dbManager = new IndexedDBManager();
+            }
+            
+            console.log('[DEBUG] 调用 DataMigrator.initDB()');
+            const db = await window.dbManager.initDB();
+            
+            // 验证初始化结果
+            if (!db || !db.objectStoreNames.contains('contacts')) {
+                throw new Error('数据库初始化不完整：缺少 contacts 表');
+            }
+            
+            console.log('[DEBUG] 数据库初始化成功，版本:', db.version);
+            console.log('[DEBUG] 可用的存储:', Array.from(db.objectStoreNames));
+            
+            return db;
+            
+        } catch (error) {
+            console.error('[DEBUG] 统一数据库初始化失败:', error);
+            // 清理状态，允许重试
+            databaseInitializationPromise = null;
+            isInitializingDatabase = false;
+            throw error;
+        } finally {
+            isInitializingDatabase = false;
+        }
+    })();
+    
+    return await databaseInitializationPromise;
+}
+// [DEBUG-MOMENTS-ROLES-END]
 
 // 增强版数据库就绪检查 - 在执行操作前确保数据库可用
 async function ensureDBReady(operation, context = '数据库操作') {
@@ -3319,6 +3407,27 @@ async function showManualMomentModal() {
 }
 
 function showGenerateMomentModal() {
+    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+    console.log('[DEBUG] showGenerateMomentModal 被调用');
+    console.log('[DEBUG] 打开生成朋友圈模态框时的全局状态:', {
+        windowContacts: !!window.contacts,
+        contactsLength: window.contacts ? window.contacts.length : 0,
+        isIndexedDBReady: !!window.isIndexedDBReady,
+        dbConnected: !!window.db,
+        dbVersion: window.db ? window.db.version : 'no-db',
+        timestamp: new Date().toISOString()
+    });
+    
+    if (window.contacts && window.contacts.length > 0) {
+        const privateContacts = window.contacts.filter(c => c.type === 'private');
+        console.log('[DEBUG] 私聊角色详情:', {
+            totalContacts: window.contacts.length,
+            privateContactsCount: privateContacts.length,
+            privateContactsNames: privateContacts.map(c => ({ name: c.name, id: c.id, type: c.type }))
+        });
+    }
+    // [DEBUG-MOMENTS-ROLES-END]
+    
     showModal('generateMomentModal');
     
     // 清空表单
@@ -3329,21 +3438,101 @@ function showGenerateMomentModal() {
     loadMomentCharacterOptions();
 }
 
-// 加载角色选项
+// 加载角色选项 - 增强版本，处理数据未就绪情况
 async function loadMomentCharacterOptions() {
     const select = document.getElementById('momentGenCharacterSelect');
-    select.innerHTML = '<option value="">请选择...</option>';
+    select.innerHTML = '<option value="">加载中...</option>';
     
-    // 只添加联系人选项（AI角色），不包括"我"
-    if (window.contacts && window.contacts.length > 0) {
-        window.contacts.forEach(contact => {
-            if (contact.type === 'private') { // 只显示私聊角色
-                const option = document.createElement('option');
-                option.value = contact.id;
-                option.textContent = contact.name;
-                select.appendChild(option);
+    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+    console.log('[DEBUG] loadMomentCharacterOptions 开始执行');
+    console.log('[DEBUG] 当前状态:', {
+        windowContacts: !!window.contacts,
+        contactsLength: window.contacts ? window.contacts.length : 0,
+        isIndexedDBReady: !!window.isIndexedDBReady,
+        dbConnected: !!window.db,
+        dbReadyState: window.db ? window.db.readyState : 'no-db'
+    });
+    // [DEBUG-MOMENTS-ROLES-END]
+    
+    try {
+        // 确保数据已经加载完成 - 最多等待10秒
+        let attempts = 0;
+        const maxAttempts = 20; // 10秒 (20 * 500ms)
+        
+        while ((!window.contacts || window.contacts.length === 0) && attempts < maxAttempts) {
+            console.log(`[DEBUG] 角色数据未准备好，等待加载... (尝试 ${attempts + 1}/${maxAttempts})`);
+            
+            // 如果数据库还没就绪，等待数据库初始化
+            if (!window.isIndexedDBReady || !window.db) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                attempts++;
+                continue;
             }
+            
+            // 如果数据库就绪但contacts为空，尝试主动加载
+            if ((!window.contacts || window.contacts.length === 0) && attempts === 5) {
+                console.log('[DEBUG] 主动触发数据重新加载');
+                try {
+                    await loadDataFromDB();
+                } catch (loadError) {
+                    console.error('[DEBUG] 主动加载数据失败:', loadError);
+                }
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+        }
+        
+        // 更新选择框
+        select.innerHTML = '<option value="">请选择...</option>';
+        
+        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+        console.log('[DEBUG] 等待完成后的状态:', {
+            windowContacts: !!window.contacts,
+            contactsLength: window.contacts ? window.contacts.length : 0,
+            attempts: attempts,
+            timedOut: attempts >= maxAttempts
         });
+        // [DEBUG-MOMENTS-ROLES-END]
+        
+        // 只添加联系人选项（AI角色），不包括"我"
+        if (window.contacts && window.contacts.length > 0) {
+            let addedCount = 0;
+            window.contacts.forEach(contact => {
+                if (contact.type === 'private') { // 只显示私聊角色
+                    const option = document.createElement('option');
+                    option.value = contact.id;
+                    option.textContent = contact.name;
+                    select.appendChild(option);
+                    addedCount++;
+                    
+                    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+                    console.log(`[DEBUG] 添加角色: ${contact.name} (ID: ${contact.id})`);
+                    // [DEBUG-MOMENTS-ROLES-END]
+                }
+            });
+            
+            // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+            console.log(`[DEBUG] 成功添加 ${addedCount} 个角色到选择列表`);
+            // [DEBUG-MOMENTS-ROLES-END]
+            
+            if (addedCount === 0) {
+                select.innerHTML = '<option value="">未找到AI角色，请先添加角色</option>';
+                console.warn('[DEBUG] 没有找到任何私聊类型的角色');
+            }
+        } else {
+            select.innerHTML = '<option value="">未找到AI角色，请先添加角色</option>';
+            console.warn('[DEBUG] window.contacts 为空或不存在');
+        }
+        
+    } catch (error) {
+        console.error('[DEBUG] 加载角色选项失败:', error);
+        select.innerHTML = '<option value="">加载失败，请重试</option>';
+        
+        // 如果是严重错误，尝试显示用户友好的错误信息
+        if (typeof showToast === 'function') {
+            showToast('角色列表加载失败，请刷新页面重试', 'error');
+        }
     }
 }
 
