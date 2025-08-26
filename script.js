@@ -2045,8 +2045,7 @@ function showGeneratePostModal() {
     relationSelect.value = '';
     handleRelationChange();
     
-    // 恢复保存的Unsplash API Key
-    document.getElementById('postUnsplashKey').value = localStorage.getItem('forumUnsplashApiKey') || '';
+    // postUnsplashKey元素已从HTML中移除，不再恢复Unsplash API Key
     
     showModal('generatePostModal');
 }
@@ -2089,7 +2088,8 @@ async function handleGeneratePost(event) {
     const customRelationInput = document.getElementById('postGenCustomRelation');
     const hashtagInput = document.getElementById('postGenHashtag');
     const count = document.getElementById('postGenCount').value;
-    const unsplashKey = document.getElementById('postUnsplashKey').value.trim();
+    // postUnsplashKey元素已从HTML中移除，从localStorage直接获取
+    const unsplashKey = localStorage.getItem('forumUnsplashApiKey') || '';
 
     if (!contactId) {
         showToast('请选择角色');
@@ -2125,10 +2125,7 @@ async function handleGeneratePost(event) {
     hashtagCache[contactId] = hashtag;
     await saveDataToDB();
     
-    // 保存Unsplash API Key
-    if (unsplashKey) {
-        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
-    }
+    // Unsplash API Key已从localStorage获取，无需重复保存
 
     closeModal('generatePostModal');
     await generateWeiboPosts(contactId, relations, relationDescription, hashtag, count, unsplashKey);
@@ -4053,7 +4050,8 @@ async function generateMomentContent() {
         const momentContent = data.choices[0].message.content || '';
 
         let imageUrl = null;
-        const unsplashKey = document.getElementById('unsplashApiKey').value.trim();
+        // unsplashApiKey元素已从HTML中移除，从localStorage直接获取
+        const unsplashKey = localStorage.getItem('unsplashApiKey') || '';
         if (unsplashKey) {
             imageUrl = await fetchMatchingImageForPublish(momentContent, unsplashKey);
         }
@@ -7612,8 +7610,7 @@ function showManualPostModal() {
     document.getElementById('manualPostContent').value = '';
     document.getElementById('manualPostImageDesc').value = '';
     
-    // 恢复保存的Unsplash API Key
-    document.getElementById('manualPostUnsplashKey').value = localStorage.getItem('forumUnsplashApiKey') || '';
+    // manualPostUnsplashKey元素已从HTML中移除，不再恢复Unsplash API Key
     
     showModal('manualPostModal');
 }
@@ -7625,7 +7622,8 @@ async function handleManualPost(event) {
     const relationTag = document.getElementById('manualPostTag').value.trim();
     const postContent = document.getElementById('manualPostContent').value.trim();
     const imageDescription = document.getElementById('manualPostImageDesc').value.trim();
-    const unsplashKey = document.getElementById('manualPostUnsplashKey').value.trim();
+    // manualPostUnsplashKey元素已从HTML中移除，从localStorage直接获取
+    const unsplashKey = localStorage.getItem('forumUnsplashApiKey') || '';
     
     if (!postContent) {
         showToast('请填写帖子内容');
@@ -7637,10 +7635,7 @@ async function handleManualPost(event) {
         return;
     }
     
-    // 保存Unsplash API Key
-    if (unsplashKey) {
-        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
-    }
+    // Unsplash API Key已从localStorage获取，无需重复保存
     
     closeModal('manualPostModal');
     
