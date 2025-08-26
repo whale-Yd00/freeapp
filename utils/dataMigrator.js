@@ -2265,12 +2265,74 @@ window.DatabaseManager = {
     }
 };
 
-// 页面加载完成后初始化 - 修改为检查是否已初始化，避免重复初始化
+// 页面加载完成后初始化 - 智能协调机制，基于事件而非固定延迟
 // 与 script.js 中的 initializeDatabaseOnce() 协调工作
 if (typeof document !== 'undefined') {
+    
+    // 智能等待主应用初始化完成 - 事件+轮询混合机制
+    const waitForMainAppInit = async (maxWait = 10000) => {
+        const startTime = Date.now();
+        
+        return new Promise((resolve) => {
+            let resolved = false;
+            
+            // 方式1：监听数据库就绪事件（最快响应）
+            const eventListener = (event) => {
+                if (!resolved) {
+                    resolved = true;
+                    const waitTime = Date.now() - startTime;
+                    console.log(`[智能协调] 通过事件检测到主应用初始化完成，等待时间: ${waitTime}ms`);
+                    window.removeEventListener('databaseReady', eventListener);
+                    resolve(true);
+                }
+            };
+            window.addEventListener('databaseReady', eventListener);
+            
+            // 方式2：轮询检查（兜底机制）
+            const checkInterval = 100; // 降低频率，节省资源
+            const checkReady = () => {
+                if (resolved) return;
+                
+                // 检查主应用是否已完成初始化
+                if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
+                    resolved = true;
+                    const waitTime = Date.now() - startTime;
+                    console.log(`[智能协调] 通过轮询检测到主应用初始化完成，等待时间: ${waitTime}ms`);
+                    window.removeEventListener('databaseReady', eventListener);
+                    resolve(true);
+                    return;
+                }
+                
+                // 超时保护
+                if (Date.now() - startTime > maxWait) {
+                    if (!resolved) {
+                        resolved = true;
+                        console.warn(`[智能协调] 主应用初始化超时 (${maxWait}ms)，继续执行扩展初始化`);
+                        window.removeEventListener('databaseReady', eventListener);
+                        resolve(false);
+                    }
+                    return;
+                }
+                
+                setTimeout(checkReady, checkInterval);
+            };
+            
+            // 立即检查一次，以防事件已经错过
+            checkReady();
+        });
+    };
+
     // 等待主应用初始化完成后再初始化数据库管理器
-    const initializeDatabaseManager = () => {
-        window.DatabaseManager.init().then(result => {
+    const initializeDatabaseManager = async () => {
+        try {
+            // 智能等待主应用完成初始化
+            const mainAppReady = await waitForMainAppInit();
+            
+            if (!mainAppReady) {
+                console.warn('[智能协调] 主应用初始化可能未完成，但继续执行扩展初始化');
+            }
+            
+            const result = await window.DatabaseManager.init();
             if (result.success) {
                 // 增强API设置模态框
                 if (typeof window.enhanceApiSettingsModal === 'function') {
@@ -2279,17 +2341,19 @@ if (typeof document !== 'undefined') {
             } else {
                 console.error('数据库管理器初始化失败:', result.error);
             }
-        });
+        } catch (error) {
+            console.error('[智能协调] 扩展初始化过程出错:', error);
+        }
     };
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-            // 增加延迟确保主应用有充分时间完成数据库初始化
-            setTimeout(initializeDatabaseManager, 2000);
+            // 给主应用一个最小启动时间
+            setTimeout(initializeDatabaseManager, 100);
         });
     } else {
-        // 增加延迟确保主应用有充分时间完成数据库初始化  
-        setTimeout(initializeDatabaseManager, 2000);
+        // 页面已加载，立即开始智能等待
+        setTimeout(initializeDatabaseManager, 100);
     }
 }
 
