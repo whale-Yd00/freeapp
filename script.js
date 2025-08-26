@@ -3451,7 +3451,7 @@ function showGenerateMomentModal() {
     
     // 清空表单
     document.getElementById('momentGenTopic').value = '';
-    document.getElementById('momentUnsplashKey').value = localStorage.getItem('unsplashApiKey') || '';
+    // momentUnsplashKey元素已从HTML中移除，移除相关代码避免null指针异常
     
     // 加载角色列表
     loadMomentCharacterOptions();
@@ -3561,7 +3561,8 @@ async function handleGenerateMoment(event) {
     
     const contactId = document.getElementById('momentGenCharacterSelect').value;
     const topic = document.getElementById('momentGenTopic').value.trim();
-    const unsplashKey = document.getElementById('momentUnsplashKey').value.trim();
+    // momentUnsplashKey元素已从HTML中移除，从localStorage直接获取
+    const unsplashKey = localStorage.getItem('unsplashApiKey') || '';
     
     if (!contactId) {
         showToast('请选择角色');
@@ -3573,10 +3574,7 @@ async function handleGenerateMoment(event) {
         return;
     }
     
-    // 保存Unsplash API Key
-    if (unsplashKey) {
-        localStorage.setItem('unsplashApiKey', unsplashKey);
-    }
+    // Unsplash API Key已从localStorage获取，无需重复保存
     
     try {
         // 找到角色信息
