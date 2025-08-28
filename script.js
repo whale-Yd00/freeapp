@@ -888,6 +888,22 @@ window.addEventListener('unhandledrejection', function(event) {
         url: window.location.href
     });
     
+    // 检查是否是API相关的错误，如果是则显示重试对话框
+    const errorMessage = event.reason?.message || event.reason?.toString() || '';
+    const isAPIError = errorMessage.includes('API请求失败') || 
+                      errorMessage.includes('API Error') || 
+                      errorMessage.includes('429') ||
+                      errorMessage.includes('500') ||
+                      errorMessage.includes('503') ||
+                      errorMessage.includes('502') ||
+                      errorMessage.includes('空回') ||
+                      errorMessage.includes('AI回复内容为空') ||
+                      errorMessage.includes('AI未返回有效内容');
+    
+    if (isAPIError && typeof showApiError === 'function') {
+        showApiError(event.reason || new Error(errorMessage));
+    }
+    
     // 防止控制台显示未处理的错误（已记录）
     event.preventDefault();
 });
@@ -1107,6 +1123,9 @@ async function init() {
             window.imageKeywordGenerator.init(apiSettings, window.apiService);
             console.log('图片关键词生成器初始化完成');
         }
+        
+        // 七夕节特殊处理 - 检查是否为8月29日且第一次打开
+        await checkSpecialEvents();
         
     } catch (error) {
         console.error('应用初始化失败:', error);
@@ -2022,6 +2041,11 @@ async function showPageAsync(pageIdToShow) {
         await renderMomentsList();
         isMomentsRendered = true;
     }
+    
+    // 更新朋友圈锁定指示器显示状态
+    if (window.momentsLockManager) {
+        window.momentsLockManager.updateLockIndicator();
+    }
 
     if (pageIdToShow === 'dataManagementPage') {
         refreshDatabaseStats();
@@ -2338,7 +2362,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         console.error('错误类型:', error.name);
         console.error('错误消息:', error.message);
         console.error('完整错误对象:', error);
-        showToast('生成论坛失败: ' + error.message);
+        showApiError(error);
     } finally {
         loadingIndicator.remove();
     }
@@ -3316,7 +3340,7 @@ async function regeneratePostComments(storedPostId, postIndex) {
         showToast('评论已重新生成！');
     } catch (error) {
         console.error('重新生成评论失败:', error);
-        showToast('评论生成失败: ' + error.message);
+        showApiError(error);
     }
 }
 
@@ -3393,6 +3417,11 @@ let momentUploadedImages = [];
 
 // 朋友圈发布方式选择
 function showPublishMomentModal() {
+    // 检查朋友圈操作是否被锁定
+    if (window.momentsLockManager && window.momentsLockManager.checkLocked()) {
+        return;
+    }
+    
     // 显示朋友圈发布方式选择模态框
     showModal('momentChoiceModal');
 }
@@ -3627,7 +3656,7 @@ async function handleGenerateMoment(event) {
         
     } catch (error) {
         console.error('生成朋友圈失败:', error);
-        showToast('生成朋友圈失败: ' + error.message);
+        showApiError(error);
     }
 }
 
@@ -4022,6 +4051,11 @@ async function publishManualMoment(authorName, content, imageItems) {
  * @changes **MODIFIED**: Changed API request to be compatible with OpenAI format.
  */
 async function generateMomentContent() {
+    // 检查朋友圈操作是否被锁定
+    if (window.momentsLockManager && window.momentsLockManager.checkLocked()) {
+        return;
+    }
+    
     if (!currentContact) {
         showToast('请先选择一个联系人');
         return;
@@ -5052,12 +5086,214 @@ function showUploadError(error) {
     }
 }
 
-// 处理API错误的专用函数，自动检测空回复并设置合适的显示时长
-function showApiError(prefix, error) {
-    const errorMessage = error.message || '未知错误';
-    const isEmptyResponse = errorMessage.includes('空回');
-    const duration = isEmptyResponse ? 6000 : 2000;
-    showToast(`${prefix}: ${errorMessage}`, duration);
+// 处理API错误的专用函数，七夕节特殊功能：所有API失败都显示重试确认对话框
+function showApiError(prefixOrError, error) {
+    let errorMessage;
+    let prefix = '';
+    
+    // 支持单参数和双参数调用
+    if (typeof prefixOrError === 'string' && error) {
+        // 双参数调用：showApiError('前缀', error)
+        prefix = prefixOrError + ': ';
+        errorMessage = error.message || '未知错误';
+    } else {
+        // 单参数调用：showApiError(error)
+        errorMessage = prefixOrError.message || '未知错误';
+    }
+    
+    // 七夕节特殊功能：所有API失败都显示重试确认对话框
+    showQixiRetryModal(prefixOrError, error, errorMessage, prefix);
+}
+
+// === localStorage清空功能 ===
+function showClearLocalStorageConfirmation() {
+    showModal('clearLocalStorageModal');
+    console.log('显示localStorage清空确认对话框');
+}
+
+function executeLocalStorageClear() {
+    try {
+        // 记录清空前的localStorage项目数量
+        const itemCount = localStorage.length;
+        console.log(`准备清空localStorage，当前有${itemCount}个项目`);
+        
+        // 获取所有localStorage键名（用于日志记录）
+        const allKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            allKeys.push(localStorage.key(i));
+        }
+        
+        console.log('localStorage清空前的所有键名:', allKeys);
+        
+        // 执行清空操作
+        localStorage.clear();
+        
+        // 关闭对话框
+        closeModal('clearLocalStorageModal');
+        
+        // 显示成功提示
+        showToast(`✅ localStorage已清空！已删除${itemCount}个项目`, 3000);
+        
+        // 记录操作到控制台
+        console.log('✅ localStorage清空操作完成', {
+            timestamp: new Date().toISOString(),
+            clearedItemsCount: itemCount,
+            clearedKeys: allKeys,
+            currentItemsCount: localStorage.length
+        });
+        
+        // 可选：延迟刷新页面让用户看到结果
+        setTimeout(() => {
+            if (confirm('localStorage已清空。是否要刷新页面以确保所有组件正确重置？')) {
+                window.location.reload();
+            }
+        }, 2000);
+        
+    } catch (error) {
+        console.error('清空localStorage时发生错误:', error);
+        showToast(`❌ 清空失败: ${error.message}`, 3000);
+        closeModal('clearLocalStorageModal');
+    }
+}
+
+// === 七夕节特殊功能：AI空回复重试 ===
+let qixiRetryContext = null; // 存储重试上下文
+
+function showQixiRetryModal(prefixOrError, error, errorMessage, prefix) {
+    // 检查模态框元素是否存在
+    const modal = document.getElementById('qixiRetryModal');
+    if (!modal) {
+        // 如果模态框不存在，直接显示确认对话框作为fallback
+        const shouldRetry = confirm(`操作失败：${errorMessage}\n\n是否要重新尝试？`);
+        if (shouldRetry) {
+            // 保存重试上下文
+            if (typeof prefixOrError === 'string' && error) {
+                qixiRetryContext = { type: 'dual-param', prefix: prefixOrError, error: error, errorMessage, fullPrefix: prefix };
+            } else {
+                qixiRetryContext = { type: 'single-param', error: prefixOrError, errorMessage, fullPrefix: prefix };
+            }
+            handleQixiRetry();
+        }
+        return;
+    }
+    
+    // 保存重试上下文，支持单参数和双参数调用
+    if (typeof prefixOrError === 'string' && error) {
+        qixiRetryContext = { type: 'dual-param', prefix: prefixOrError, error: error, errorMessage, fullPrefix: prefix };
+    } else {
+        qixiRetryContext = { type: 'single-param', error: prefixOrError, errorMessage, fullPrefix: prefix };
+    }
+    
+    // 更新模态框中的错误信息显示
+    const errorDiv = document.querySelector('#qixiRetryModal .qixi-retry-message');
+    if (errorDiv) {
+        errorDiv.innerHTML = `
+            <p><strong>操作失败</strong></p>
+            <p>${errorMessage}</p>
+            <p>是否要重新尝试？</p>
+        `;
+    }
+    
+    showModal('qixiRetryModal');
+}
+
+async function handleQixiRetry() {
+    closeModal('qixiRetryModal');
+    
+    if (!qixiRetryContext) {
+        showToast('重试上下文丢失，请重新操作');
+        return;
+    }
+    
+    try {
+        showToast('🌹 正在重新尝试...');
+        
+        // 根据当前场景重新执行相应的操作
+        if (currentContact) {
+            // 重新发送消息
+            if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+                showToast('请先设置API');
+                return;
+            }
+            
+            showTypingIndicator();
+            
+            try {
+                let replies;
+                if (currentContact.type === 'group') {
+                    const result = await callChatAPIWithPriority(currentContact, [], true);
+                    replies = result.replies;
+                } else {
+                    const result = await callChatAPIWithPriority(currentContact, [], true);
+                    replies = result.replies;
+                }
+                
+                hideTypingIndicator();
+                
+                if (!replies || replies.length === 0) {
+                    showToast('重试后仍未获得有效回复');
+                    return;
+                }
+                
+                // 处理AI回复
+                for (let i = 0; i < replies.length; i++) {
+                    const response = replies[i];
+                    const isLastReply = i === replies.length - 1;
+                    
+                    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
+                    
+                    let messageContent = removeThinkingChain(response.content);
+                    let forceVoice = false;
+
+                    if (messageContent.startsWith('[语音]:')) {
+                        forceVoice = true;
+                        messageContent = messageContent.substring(4).trim();
+                    }
+
+                    const aiMessage = { 
+                        role: 'assistant', 
+                        content: messageContent,
+                        type: response.type, 
+                        time: new Date().toISOString(), 
+                        senderId: currentContact.id,
+                        forceVoice: forceVoice
+                    };
+
+                    currentContact.messages.push(aiMessage);
+
+                    if (currentContact.messages.length > currentlyDisplayedMessageCount) {
+                        currentlyDisplayedMessageCount++;
+                    }
+                    
+                    await addSingleMessage(aiMessage, true);
+                    
+                    if (isLastReply) {
+                        currentContact.lastMessage = response.type === 'text' ? response.content.substring(0, 20) + '...' : (response.type === 'emoji' ? '[表情]' : '[红包]');
+                        currentContact.lastTime = formatContactListTime(new Date().toISOString());
+                        await renderContactList();
+                        await saveDataToDB();
+                    }
+                }
+                
+                showToast('重试成功');
+                
+            } catch (retryError) {
+                hideTypingIndicator();
+                console.error('重试失败:', retryError);
+                
+                showToast('重试失败: ' + retryError.message);
+            }
+        } else {
+            showToast('没有当前聊天对象，无法重试');
+        }
+        
+    } catch (error) {
+        console.error('处理重试时发生错误:', error);
+        showToast('重试过程出现错误: ' + error.message);
+    } finally {
+        // 清理重试上下文
+        qixiRetryContext = null;
+    }
 }
 
 // === 表情图片管理函数 ===
@@ -5352,7 +5588,12 @@ function showTopNotification(message) {
 }
 
 function showModal(modalId) {
-    document.getElementById(modalId).style.display = 'block';
+    const modal = document.getElementById(modalId);
+    if (!modal) {
+        console.error('模态框不存在:', modalId);
+        return;
+    }
+    modal.style.display = 'block';
     if (modalId === 'apiSettingsModal') {
         document.getElementById('contextSlider').value = apiSettings.contextMessageCount;
         document.getElementById('contextValue').textContent = apiSettings.contextMessageCount + '条';
@@ -5360,7 +5601,12 @@ function showModal(modalId) {
 }
 
 function closeModal(modalId) {
-    document.getElementById(modalId).style.display = 'none';
+    const modal = document.getElementById(modalId);
+    if (!modal) {
+        console.error('要关闭的模态框不存在:', modalId);
+        return;
+    }
+    modal.style.display = 'none';
     if (modalId === 'addContactModal') {
         editingContact = null;
         document.getElementById('contactModalTitle').textContent = '添加AI助手';
@@ -6229,7 +6475,7 @@ async function sendMessage() {
             await sendGroupMessage();
         } else {
             showTypingIndicator();
-            const { replies } = await callAPI(currentContact);
+            const { replies } = await callChatAPIWithPriority(currentContact, [], true);
             hideTypingIndicator();
             
             // 异步更新记忆表格（不阻塞后续流程）
@@ -6303,7 +6549,7 @@ async function sendMessage() {
             timestamp: new Date().toISOString(),
             url: window.location.href
         });
-        showApiError(error);
+        // API错误已在callAPI内部处理，这里只需要清理UI状态
         hideTypingIndicator();
     } finally {
         sendBtn.disabled = false;
@@ -6316,7 +6562,7 @@ async function sendGroupMessage() {
     showTypingIndicator();
     try {
         // 一次性调用API获取所有群成员的回复
-        const { replies } = await callAPI(currentContact);
+        const { replies } = await callChatAPIWithPriority(currentContact, [], true);
         hideTypingIndicator();
         
         if (!replies || replies.length === 0) {
@@ -6793,8 +7039,9 @@ async function callAPI(contact, turnContext = []) {
             timestamp: new Date().toISOString(),
             networkStatus: navigator.onLine ? 'online' : 'offline'
         });
-        showToast("API 调用失败: " + error.message);
-        throw error;
+        // 不再抛出错误，让showApiError处理重试逻辑
+        showApiError(error);
+        return null; // 返回null表示API调用失败
     }
 }
 
@@ -7117,7 +7364,7 @@ async function sendEmoji(emoji) {
     } catch (error) {
         hideTypingIndicator();
         console.error('AI回复错误:', error);
-        showToast('AI回复失败');
+        showApiError(error);
     }
 }
 
@@ -7576,16 +7823,18 @@ window.addEventListener('error', (event) => {
     });
 });
 
-// 处理Promise rejections
-window.addEventListener('unhandledrejection', (event) => {
-    console.error('未处理的Promise拒绝:', {
-        reason: event.reason,
-        promise: event.promise,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-    });
-});
+// 处理Promise rejections（重复的监听器，应该统一处理）
+// window.addEventListener('unhandledrejection', (event) => {
+//     console.error('未处理的Promise拒绝:', {
+//         reason: event.reason,
+//         promise: event.promise,
+//         timestamp: new Date().toISOString(),
+//         userAgent: navigator.userAgent,
+//         url: window.location.href
+//     });
+//     event.preventDefault(); // 阻止默认浏览器提示框
+// });
+// 注释掉重复的监听器，使用第一个已经有preventDefault的监听器
 
 // --- 新增：帖子选择和手动发帖功能 ---
 
@@ -7794,7 +8043,7 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
 
     } catch (error) {
         console.error('生成评论失败:', error);
-        showToast('生成评论失败: ' + error.message);
+        showApiError(error);
     } finally {
         loadingIndicator.remove();
     }
@@ -9945,6 +10194,11 @@ function toggleMomentMenu(momentId) {
 // 重新生成朋友圈图片
 async function regenerateMomentImage(momentId) {
     try {
+        // 检查朋友圈操作是否被锁定
+        if (window.momentsLockManager && window.momentsLockManager.checkLocked()) {
+            return;
+        }
+        
         // 关闭菜单
         const menu = document.getElementById(`momentMenu-${momentId}`);
         if (menu) menu.style.display = 'none';
@@ -10040,6 +10294,11 @@ async function removeMomentImage(momentId) {
 // 重新生成评论
 async function regenerateComments(momentId) {
     try {
+        // 检查朋友圈操作是否被锁定
+        if (window.momentsLockManager && window.momentsLockManager.checkLocked()) {
+            return;
+        }
+        
         // 关闭菜单
         const menu = document.getElementById(`momentMenu-${momentId}`);
         if (menu) menu.style.display = 'none';
@@ -10070,7 +10329,7 @@ async function regenerateComments(momentId) {
         
     } catch (error) {
         console.error('重新生成评论失败:', error);
-        showToast('重新生成评论失败: ' + error.message);
+        showApiError(error);
     }
 }
 
@@ -12259,58 +12518,146 @@ async function resetBubbleStyleToDefault() {
 function setupServiceWorkerUpdater() {
     if ('serviceWorker' in navigator) {
         let newWorker;
+        let refreshing = false;
+
+        // 监听 Service Worker 控制器变化（当新 SW 接管页面时）
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (refreshing) return;
+            console.log('Service Worker 控制器已更新，准备刷新页面...');
+            refreshing = true;
+            window.location.reload();
+        });
 
         navigator.serviceWorker.ready.then(reg => {
+            console.log('Service Worker 就绪，开始监听更新...');
+            
+            // 手动检查更新（每 2 小时检查一次）
+            setInterval(() => {
+                console.log('手动检查 Service Worker 更新...');
+                reg.update();
+            }, 2 * 60 * 60 * 1000); // 2 小时
+
             // 浏览器在后台发现新版本的 service-worker.js 文件时会触发 updatefound 事件
             reg.addEventListener('updatefound', () => {
+                console.log('发现新的 Service Worker 版本！');
                 newWorker = reg.installing;
                 
                 newWorker.addEventListener('statechange', () => {
+                    console.log('Service Worker 状态变化:', newWorker.state);
                     // newWorker.state 变为 installed，表示新 Service Worker 已安装完毕
                     if (newWorker.state === 'installed') {
                         // 检查当前是否有 Service Worker 在控制页面
                         if (navigator.serviceWorker.controller) {
                             // 这意味着页面被旧的 Service Worker 控制着，需要更新
-                            showUpdateNotification();
+                            console.log('显示更新通知...');
+                            showUpdateNotification(newWorker);
+                        } else {
+                            // 首次安装 Service Worker
+                            console.log('Service Worker 首次安装完成');
                         }
                     }
                 });
             });
+        }).catch(err => {
+            console.error('Service Worker ready 失败:', err);
         });
     }
 }
 
 // 显示更新提示的UI函数
-function showUpdateNotification() {
+function showUpdateNotification(newWorker) {
     let notification = document.getElementById('sw-update-notification');
     if (!notification) {
         notification = document.createElement('div');
         notification.id = 'sw-update-notification';
-        // 一些简单的样式
+        // 更好看的样式
         notification.style.cssText = `
             position: fixed;
             bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background-color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 12px 20px;
-            border-radius: 25px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            padding: 16px 24px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
             z-index: 10000;
             display: flex;
             align-items: center;
-            gap: 15px;
-            font-size: 14px;
+            gap: 20px;
+            font-size: 15px;
+            font-weight: 500;
+            min-width: 320px;
+            opacity: 0;
+            animation: slideUp 0.3s ease-out forwards;
         `;
+        
+        // 添加动画样式
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideUp {
+                from {
+                    opacity: 0;
+                    transform: translate(-50%, 20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translate(-50%, 0);
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
         document.body.appendChild(notification);
     }
 
+    // 创建更新按钮点击处理函数
+    const handleUpdate = () => {
+        console.log('用户确认更新，通知新 Service Worker 跳过等待...');
+        // 通知新的 Service Worker 跳过等待状态
+        if (newWorker) {
+            newWorker.postMessage({ type: 'SKIP_WAITING' });
+        }
+        // 隐藏通知
+        notification.style.display = 'none';
+    };
+
     notification.innerHTML = `
-        <span>应用有新版本啦！</span>
-        <button onclick="window.location.reload()" style="background: #07c160; color: white; border: none; padding: 6px 12px; border-radius: 15px; cursor: pointer;">立即刷新</button>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+            <span>发现新版本！</span>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button onclick="this.parentElement.parentElement.style.display='none'" 
+                style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                稍后
+            </button>
+            <button id="update-btn" 
+                style="background: rgba(255,255,255,0.9); color: #333; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
+                立即更新
+            </button>
+        </div>
     `;
+    
+    // 绑定更新按钮事件
+    notification.querySelector('#update-btn').addEventListener('click', handleUpdate);
+    
     notification.style.display = 'flex';
+    
+    // 30 秒后自动隐藏通知
+    setTimeout(() => {
+        if (notification && notification.style.display !== 'none') {
+            notification.style.opacity = '0.7';
+            notification.querySelector('span').textContent = '新版本可用（30秒后自动隐藏）';
+            setTimeout(() => {
+                if (notification && notification.style.display !== 'none') {
+                    notification.style.display = 'none';
+                }
+            }, 5000);
+        }
+    }, 30000);
 }
 
 // ===== 图片关键词优化相关函数 =====
@@ -12416,3 +12763,2399 @@ if (document.readyState === 'loading') {
 } else {
     enhanceShowPageForImageKeyword();
 }
+
+// ===== API请求队列系统 =====
+
+/**
+ * API请求队列管理器
+ */
+class APIRequestQueue {
+    constructor() {
+        this.queue = [];
+        this.isProcessing = false;
+        this.currentRequest = null;
+        this.maxRetries = 3;
+        
+        // 优先级常量
+        this.PRIORITY = {
+            URGENT: 1,    // 聊天消息
+            HIGH: 2,      // 用户主动操作
+            NORMAL: 3,    // 后台任务
+            LOW: 4        // 七夕节等特殊任务
+        };
+    }
+    
+    /**
+     * 添加API请求到队列
+     */
+    async addRequest(apiCall, options = {}) {
+        const requestItem = {
+            id: generateId(),
+            apiCall,
+            priority: options.priority || this.PRIORITY.NORMAL,
+            retries: 0,
+            maxRetries: options.maxRetries || this.maxRetries,
+            description: options.description || '未知请求',
+            onProgress: options.onProgress || null,
+            onComplete: options.onComplete || null,
+            onError: options.onError || null,
+            timestamp: Date.now()
+        };
+        
+        console.log(`[队列] 添加请求: ${requestItem.description}, 优先级: ${requestItem.priority}`);
+        
+        // 插入到合适的位置（按优先级排序）
+        let insertIndex = this.queue.length;
+        for (let i = 0; i < this.queue.length; i++) {
+            if (this.queue[i].priority > requestItem.priority) {
+                insertIndex = i;
+                break;
+            }
+        }
+        
+        this.queue.splice(insertIndex, 0, requestItem);
+        
+        // 如果没有在处理请求，立即开始处理
+        if (!this.isProcessing) {
+            this.processQueue();
+        }
+        
+        return requestItem.id;
+    }
+    
+    /**
+     * 处理队列中的请求
+     */
+    async processQueue() {
+        if (this.isProcessing || this.queue.length === 0) {
+            return;
+        }
+        
+        this.isProcessing = true;
+        console.log(`[队列] 开始处理，队列中有 ${this.queue.length} 个请求`);
+        
+        while (this.queue.length > 0) {
+            const request = this.queue.shift();
+            this.currentRequest = request;
+            
+            try {
+                console.log(`[队列] 处理请求: ${request.description}`);
+                
+                if (request.onProgress) {
+                    request.onProgress(request.id, '开始处理');
+                }
+                
+                const result = await request.apiCall();
+                
+                if (request.onComplete) {
+                    request.onComplete(request.id, result);
+                }
+                
+                console.log(`[队列] 请求完成: ${request.description}`);
+                
+            } catch (error) {
+                console.error(`[队列] 请求失败: ${request.description}`, error);
+                
+                request.retries++;
+                if (request.retries < request.maxRetries) {
+                    console.log(`[队列] 重试请求 (${request.retries}/${request.maxRetries}): ${request.description}`);
+                    // 重新加入队列，但降低优先级
+                    request.priority = Math.min(request.priority + 1, this.PRIORITY.LOW);
+                    this.queue.unshift(request);
+                } else {
+                    console.error(`[队列] 请求最终失败: ${request.description}`);
+                    if (request.onError) {
+                        request.onError(request.id, error);
+                    }
+                }
+            }
+            
+            this.currentRequest = null;
+            
+            // 添加小延迟避免过快请求
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        this.isProcessing = false;
+        console.log('[队列] 所有请求处理完成');
+    }
+    
+    /**
+     * 获取队列状态
+     */
+    getStatus() {
+        return {
+            queueLength: this.queue.length,
+            isProcessing: this.isProcessing,
+            currentRequest: this.currentRequest ? {
+                id: this.currentRequest.id,
+                description: this.currentRequest.description,
+                priority: this.currentRequest.priority
+            } : null
+        };
+    }
+    
+    /**
+     * 取消指定请求
+     */
+    cancelRequest(requestId) {
+        const index = this.queue.findIndex(req => req.id === requestId);
+        if (index !== -1) {
+            const removed = this.queue.splice(index, 1)[0];
+            console.log(`[队列] 取消请求: ${removed.description}`);
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * 清空队列
+     */
+    clearQueue() {
+        this.queue = [];
+        console.log('[队列] 队列已清空');
+    }
+}
+
+// 创建全局队列实例
+window.apiRequestQueue = new APIRequestQueue();
+
+// ===== 通用工具函数 =====
+
+/**
+ * 生成唯一ID
+ */
+function generateId() {
+    return Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// 将函数设为全局可访问
+window.generateId = generateId;
+
+// ===== 渐变背景管理系统 =====
+
+/**
+ * 渐变背景管理器 - 管理特殊活动的自定义渐变背景
+ */
+class GradientBackgroundManager {
+    constructor() {
+        this.storageKey = 'statusBallCustomGradients';
+        this.customGradients = this.loadCustomGradients();
+        this.presets = this.getGradientPresets();
+    }
+    
+    /**
+     * 获取预设渐变
+     */
+    getGradientPresets() {
+        return {
+            // 七夕节预设
+            qixi_classic: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            qixi_romantic: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+            qixi_dreamy: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+            
+            // 生日预设
+            birthday_cake: 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)',
+            birthday_party: 'linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)',
+            birthday_joy: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+            
+            // 节日预设
+            holiday_festival: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
+            holiday_fireworks: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+            holiday_celebration: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+            
+            // 通用预设
+            sunrise: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%)',
+            ocean: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            forest: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+            sunset: 'linear-gradient(135deg, #ff6e7f 0%, #bfe9ff 100%)',
+            galaxy: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            aurora: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)'
+        };
+    }
+    
+    /**
+     * 从本地存储加载自定义渐变
+     */
+    loadCustomGradients() {
+        try {
+            const stored = localStorage.getItem(this.storageKey);
+            return stored ? JSON.parse(stored) : {};
+        } catch (error) {
+            console.error('加载自定义渐变失败:', error);
+            return {};
+        }
+    }
+    
+    /**
+     * 保存自定义渐变到本地存储
+     */
+    saveCustomGradients() {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.customGradients));
+        } catch (error) {
+            console.error('保存自定义渐变失败:', error);
+        }
+    }
+    
+    /**
+     * 设置自定义渐变
+     * @param {string} eventType - 事件类型
+     * @param {string} gradient - 渐变CSS
+     * @param {string} name - 渐变名称（可选）
+     */
+    setCustomGradient(eventType, gradient, name = '') {
+        if (!this.customGradients[eventType]) {
+            this.customGradients[eventType] = {};
+        }
+        
+        const gradientId = 'custom_' + Date.now();
+        this.customGradients[eventType][gradientId] = {
+            gradient: gradient,
+            name: name || `自定义渐变 ${Object.keys(this.customGradients[eventType]).length + 1}`,
+            createdAt: new Date().toISOString()
+        };
+        
+        this.saveCustomGradients();
+        return gradientId;
+    }
+    
+    /**
+     * 获取事件类型的渐变
+     * @param {string} eventType - 事件类型
+     * @param {string} gradientId - 渐变ID（可选，不提供则使用默认）
+     */
+    getGradient(eventType, gradientId = null) {
+        // 如果指定了gradientId，尝试获取自定义渐变
+        if (gradientId && this.customGradients[eventType] && this.customGradients[eventType][gradientId]) {
+            return this.customGradients[eventType][gradientId].gradient;
+        }
+        
+        // 尝试获取事件类型的默认自定义渐变
+        if (this.customGradients[eventType]) {
+            const customGradientsForEvent = Object.values(this.customGradients[eventType]);
+            if (customGradientsForEvent.length > 0) {
+                // 返回最新的自定义渐变
+                return customGradientsForEvent[customGradientsForEvent.length - 1].gradient;
+            }
+        }
+        
+        // 返回预设渐变
+        const presetKey = `${eventType}_classic`;
+        return this.presets[presetKey] || this.presets.sunrise;
+    }
+    
+    /**
+     * 获取事件类型的所有渐变
+     * @param {string} eventType - 事件类型
+     */
+    getAllGradientsForEvent(eventType) {
+        const gradients = [];
+        
+        // 添加预设渐变
+        Object.keys(this.presets).forEach(key => {
+            if (key.startsWith(eventType + '_')) {
+                gradients.push({
+                    id: key,
+                    name: this.getPresetName(key),
+                    gradient: this.presets[key],
+                    type: 'preset'
+                });
+            }
+        });
+        
+        // 添加自定义渐变
+        if (this.customGradients[eventType]) {
+            Object.entries(this.customGradients[eventType]).forEach(([id, data]) => {
+                gradients.push({
+                    id: id,
+                    name: data.name,
+                    gradient: data.gradient,
+                    type: 'custom',
+                    createdAt: data.createdAt
+                });
+            });
+        }
+        
+        return gradients;
+    }
+    
+    /**
+     * 获取预设名称
+     */
+    getPresetName(presetKey) {
+        const names = {
+            qixi_classic: '七夕经典',
+            qixi_romantic: '七夕浪漫',
+            qixi_dreamy: '七夕梦幻',
+            birthday_cake: '生日蛋糕',
+            birthday_party: '生日派对',
+            birthday_joy: '生日欢乐',
+            holiday_festival: '节日庆典',
+            holiday_fireworks: '节日烟花',
+            holiday_celebration: '节日庆祝',
+            sunrise: '日出',
+            ocean: '海洋',
+            forest: '森林',
+            sunset: '日落',
+            galaxy: '星河',
+            aurora: '极光'
+        };
+        return names[presetKey] || presetKey;
+    }
+    
+    /**
+     * 删除自定义渐变
+     * @param {string} eventType - 事件类型
+     * @param {string} gradientId - 渐变ID
+     */
+    deleteCustomGradient(eventType, gradientId) {
+        if (this.customGradients[eventType] && this.customGradients[eventType][gradientId]) {
+            delete this.customGradients[eventType][gradientId];
+            
+            // 如果该事件类型没有自定义渐变了，删除整个条目
+            if (Object.keys(this.customGradients[eventType]).length === 0) {
+                delete this.customGradients[eventType];
+            }
+            
+            this.saveCustomGradients();
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * 创建渐变选择器UI
+     * @param {string} eventType - 事件类型
+     * @param {Function} onSelect - 选择回调
+     */
+    createGradientSelector(eventType, onSelect) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20000;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        `;
+        
+        const gradients = this.getAllGradientsForEvent(eventType);
+        
+        content.innerHTML = `
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin: 0 0 15px 0;">选择渐变背景</h3>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="text" id="customGradientInput" 
+                           placeholder="输入CSS渐变，如: linear-gradient(135deg, #ff0000 0%, #0000ff 100%)"
+                           style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <button onclick="addCustomGradient()" 
+                            style="padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        添加
+                    </button>
+                </div>
+            </div>
+            <div id="gradientList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;">
+                ${gradients.map(g => `
+                    <div class="gradient-item" 
+                         style="cursor: pointer; border-radius: 8px; overflow: hidden; border: 2px solid transparent;"
+                         data-gradient="${g.gradient.replace(/"/g, '&quot;')}"
+                         data-id="${g.id}">
+                        <div style="height: 80px; background: ${g.gradient};"></div>
+                        <div style="padding: 8px; background: #f5f5f5; font-size: 12px; text-align: center;">
+                            ${g.name}
+                            ${g.type === 'custom' ? '<br><small style="color: #666;">自定义</small>' : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div style="text-align: right; margin-top: 20px;">
+                <button onclick="closeGradientSelector()" 
+                        style="padding: 8px 16px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    关闭
+                </button>
+            </div>
+        `;
+        
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // 添加事件处理
+        window.addCustomGradient = () => {
+            const input = document.getElementById('customGradientInput');
+            const gradient = input.value.trim();
+            if (gradient) {
+                const gradientId = this.setCustomGradient(eventType, gradient);
+                onSelect(gradient, gradientId);
+                closeGradientSelector();
+            }
+        };
+        
+        window.closeGradientSelector = () => {
+            modal.remove();
+            delete window.addCustomGradient;
+            delete window.closeGradientSelector;
+        };
+        
+        // 添加渐变选择事件
+        modal.querySelectorAll('.gradient-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const gradient = item.dataset.gradient.replace(/&quot;/g, '"');
+                const gradientId = item.dataset.id;
+                onSelect(gradient, gradientId);
+                closeGradientSelector();
+            });
+            
+            // 悬停效果
+            item.addEventListener('mouseenter', () => {
+                item.style.borderColor = '#2196F3';
+            });
+            
+            item.addEventListener('mouseleave', () => {
+                item.style.borderColor = 'transparent';
+            });
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeGradientSelector();
+            }
+        });
+    }
+}
+
+// 创建全局渐变管理器实例
+window.gradientManager = new GradientBackgroundManager();
+
+// ===== 状态球事件类型配置 =====
+
+const STATUS_BALL_CONFIGS = {
+    qixi: {
+        name: '七夕节',
+        emoji: '🌟',
+        completedEmoji: '🎉',
+        theme: {
+            primary: '#e91e63',
+            gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',  // 蓝紫渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',  // 粉红渐变
+                'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',  // 蓝青渐变
+                'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',  // 暖色渐变
+                'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)'   // 清新渐变
+            ]
+        },
+        titles: {
+            loading: '七夕节特殊准备中',
+            processing: '七夕节祝福生成中',
+            completed: '七夕节朋友圈生成完成'
+        },
+        descriptions: {
+            loading: '我们正在准备应用',
+            processing: '后台处理，不影响聊天',
+            completed: '已为好友生成祝福'
+        }
+    },
+    birthday: {
+        name: '生日',
+        emoji: '🎂',
+        completedEmoji: '🎉',
+        theme: {
+            primary: '#ff9800',
+            gradient: 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)',  // 橙色渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)',  // 红橙渐变
+                'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',  // 杏色渐变
+                'linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%)',  // 粉橙渐变
+                'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'   // 温暖渐变
+            ]
+        },
+        titles: {
+            loading: '生日特殊准备中',
+            processing: '生日祝福生成中',
+            completed: '生日朋友圈生成完成'
+        },
+        descriptions: {
+            loading: '我们正在准备生日内容',
+            processing: '后台处理，不影响聊天',
+            completed: '已为好友生成生日祝福'
+        }
+    },
+    holiday: {
+        name: '节日',
+        emoji: '🎊',
+        completedEmoji: '🎉',
+        theme: {
+            primary: '#4caf50',
+            gradient: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',  // 绿色渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',  // 青绿渐变
+                'linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%)',  // 薄荷渐变
+                'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',  // 深蓝渐变
+                'linear-gradient(135deg, #ff6e7f 0%, #bfe9ff 100%)'   // 彩虹渐变
+            ]
+        },
+        titles: {
+            loading: '节日特殊准备中',
+            processing: '节日祝福生成中',
+            completed: '节日朋友圈生成完成'
+        },
+        descriptions: {
+            loading: '我们正在准备节日内容',
+            processing: '后台处理，不影响聊天',
+            completed: '已为好友生成节日祝福'
+        }
+    },
+    // 新增：春节特殊配置
+    spring_festival: {
+        name: '春节',
+        emoji: '🧧',
+        completedEmoji: '🎊',
+        theme: {
+            primary: '#d32f2f',
+            gradient: 'linear-gradient(135deg, #d32f2f 0%, #f44336 50%, #ff9800 100%)',  // 红橙渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%)',    // 红色渐变
+                'linear-gradient(135deg, #f85032 0%, #e73827 100%)',  // 深红渐变
+                'linear-gradient(135deg, #ff6b6b 0%, #ffd93d 100%)',  // 红黄渐变
+                'linear-gradient(135deg, #e52d27 0%, #b31217 100%)'   // 暗红渐变
+            ]
+        },
+        titles: {
+            loading: '春节特殊准备中',
+            processing: '春节祝福生成中',
+            completed: '春节朋友圈生成完成'
+        },
+        descriptions: {
+            loading: '我们正在准备春节内容',
+            processing: '后台处理，不影响聊天',
+            completed: '已为好友生成春节祝福'
+        }
+    },
+    // 新增：中秋特殊配置
+    mid_autumn: {
+        name: '中秋节',
+        emoji: '🌕',
+        completedEmoji: '🥮',
+        theme: {
+            primary: '#ffc107',
+            gradient: 'linear-gradient(135deg, #ffc107 0%, #ff9800 50%, #f57c00 100%)',  // 金黄渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #fff3a3 0%, #ffc107 100%)',  // 明黄渐变
+                'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',  // 月光渐变
+                'linear-gradient(135deg, #434343 0%, #000000 100%)',  // 夜空渐变
+                'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)'   // 深夜渐变
+            ]
+        },
+        titles: {
+            loading: '中秋节特殊准备中',
+            processing: '中秋祝福生成中',
+            completed: '中秋节朋友圈生成完成'
+        },
+        descriptions: {
+            loading: '我们正在准备中秋内容',
+            processing: '后台处理，不影响聊天',
+            completed: '已为好友生成中秋祝福'
+        }
+    }
+};
+
+// ===== 通用状态球管理系统 =====
+
+/**
+ * 状态球管理器 - 统一管理所有类型的悬浮球状态
+ */
+class StatusBallManager {
+    constructor() {
+        this.activeStates = new Map(); // 当前活跃的状态
+        this.currentState = null;      // 当前显示的状态
+        this.stateConfigs = new Map(); // 状态配置
+        this.priorityOrder = ['api_queue', 'special_event', 'system']; // 状态优先级
+        
+        // 初始化状态配置
+        this.initializeStateConfigs();
+        
+        // 监听API队列变化
+        this.startMonitoringAPIQueue();
+    }
+    
+    /**
+     * 初始化各种状态的配置
+     */
+    initializeStateConfigs() {
+        // API队列状态配置
+        this.stateConfigs.set('api_queue', {
+            name: 'API队列',
+            emoji: '✨',
+            completedEmoji: '✅',
+            theme: {
+                primary: '#2196F3',
+                gradient: 'linear-gradient(135deg, #42A5F5 0%, #1976D2 100%)'
+            },
+            titles: {
+                loading: 'API队列处理中',
+                processing: 'API请求处理中',
+                completed: 'API队列处理完成'
+            },
+            descriptions: {
+                loading: '正在处理API请求',
+                processing: '后台处理，不影响使用',
+                completed: '所有API请求已处理完成'
+            },
+            priority: 1 // 最高优先级
+        });
+        
+        // 特殊事件状态配置（继承原有的配置，并使用自定义渐变）
+        Object.keys(STATUS_BALL_CONFIGS).forEach(eventType => {
+            const baseConfig = STATUS_BALL_CONFIGS[eventType];
+            const customGradient = window.gradientManager ? 
+                window.gradientManager.getGradient(eventType) : 
+                baseConfig.theme.gradient;
+                
+            this.stateConfigs.set(`special_event_${eventType}`, {
+                ...baseConfig,
+                type: 'special_event',
+                priority: 2,
+                theme: {
+                    ...baseConfig.theme,
+                    gradient: customGradient
+                }
+            });
+        });
+        
+        // 系统状态配置
+        this.stateConfigs.set('system', {
+            name: '系统',
+            emoji: '🔧',
+            completedEmoji: '✅',
+            theme: {
+                primary: '#607D8B',
+                gradient: 'linear-gradient(135deg, #78909C 0%, #455A64 100%)'
+            },
+            titles: {
+                loading: '系统处理中',
+                processing: '后台任务执行中',
+                completed: '系统任务完成'
+            },
+            descriptions: {
+                loading: '正在执行系统任务',
+                processing: '后台处理，不影响使用',
+                completed: '系统任务已完成'
+            },
+            priority: 3
+        });
+    }
+    
+    /**
+     * 开始监控API队列状态
+     */
+    startMonitoringAPIQueue() {
+        // 每秒检查一次API队列状态
+        setInterval(() => {
+            this.updateAPIQueueStatus();
+        }, 1000);
+        
+        // 初始检查
+        this.updateAPIQueueStatus();
+    }
+    
+    /**
+     * 更新API队列状态
+     */
+    updateAPIQueueStatus() {
+        if (!window.apiRequestQueue) return;
+        
+        const status = window.apiRequestQueue.getStatus();
+        const hasActiveQueue = status.queueLength >= 2 || (status.isProcessing && status.queueLength >= 1);
+        
+        if (hasActiveQueue) {
+            // 计算进度
+            const totalTasks = status.queueLength + (status.currentRequest ? 1 : 0);
+            const completedTasks = status.currentRequest ? 1 : 0;
+            
+            const queueState = {
+                type: 'api_queue',
+                completedTasks: completedTasks,
+                totalTasks: totalTasks,
+                currentRequest: status.currentRequest,
+                queueLength: status.queueLength,
+                isProcessing: status.isProcessing,
+                config: this.stateConfigs.get('api_queue')
+            };
+            
+            this.updateState('api_queue', queueState);
+        } else {
+            this.removeState('api_queue');
+        }
+    }
+    
+    /**
+     * 显示特殊事件状态
+     */
+    showSpecialEvent(eventType, queueState) {
+        const stateKey = `special_event_${eventType}`;
+        const enhancedQueueState = {
+            ...queueState,
+            type: 'special_event',
+            eventType: eventType
+        };
+        
+        this.updateState(stateKey, enhancedQueueState);
+    }
+    
+    /**
+     * 更新状态
+     */
+    updateState(stateKey, stateData) {
+        this.activeStates.set(stateKey, stateData);
+        
+        // 检查是否需要切换显示的状态
+        this.checkAndSwitchState();
+    }
+    
+    /**
+     * 移除状态
+     */
+    removeState(stateKey) {
+        this.activeStates.delete(stateKey);
+        
+        // 如果移除的是当前显示的状态，切换到下一个状态
+        if (this.currentState === stateKey) {
+            this.currentState = null;
+            this.checkAndSwitchState();
+        }
+    }
+    
+    /**
+     * 检查并切换到最高优先级的状态
+     */
+    checkAndSwitchState() {
+        if (this.activeStates.size === 0) {
+            // 没有活跃状态，隐藏悬浮窗
+            this.hideStatusBall();
+            return;
+        }
+        
+        // 找到最高优先级的活跃状态
+        let highestPriorityState = null;
+        let highestPriority = Infinity;
+        
+        for (const [stateKey, state] of this.activeStates) {
+            const config = this.stateConfigs.get(stateKey);
+            if (config && config.priority < highestPriority) {
+                highestPriority = config.priority;
+                highestPriorityState = stateKey;
+            }
+        }
+        
+        // 如果需要切换状态
+        if (highestPriorityState && highestPriorityState !== this.currentState) {
+            this.switchToState(highestPriorityState);
+        } else if (this.currentState) {
+            // 更新当前状态
+            this.updateCurrentState();
+        }
+    }
+    
+    /**
+     * 切换到指定状态
+     */
+    switchToState(stateKey) {
+        const state = this.activeStates.get(stateKey);
+        if (!state) return;
+        
+        this.currentState = stateKey;
+        
+        if (state.type === 'api_queue') {
+            this.showAPIQueueStatus(state);
+        } else if (state.type === 'special_event') {
+            this.showSpecialEventStatus(state);
+        }
+    }
+    
+    /**
+     * 显示API队列状态
+     */
+    showAPIQueueStatus(queueState) {
+        if (window.statusBallWindowState && window.statusBallWindowState.type === 'api_queue') {
+            // 更新现有悬浮窗
+            this.updateAPIQueueFloatingWindow(queueState);
+        } else {
+            // 创建新的悬浮窗
+            this.createAPIQueueFloatingWindow(queueState);
+        }
+    }
+    
+    /**
+     * 创建API队列悬浮窗
+     */
+    createAPIQueueFloatingWindow(queueState) {
+        // 先移除可能已存在的悬浮窗
+        hideStatusBallFloatingWindow();
+        
+        const config = queueState.config;
+        
+        // 创建容器
+        const container = document.createElement('div');
+        container.id = 'statusBallFloatingContainer';
+        container.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+        
+        // 创建详情窗口
+        const detailWindow = document.createElement('div');
+        detailWindow.id = 'statusBallDetailWindow';
+        detailWindow.style.cssText = `
+            width: 300px;
+            background: ${config.theme.gradient};
+            color: white;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            display: block;
+        `;
+        
+        detailWindow.innerHTML = `
+            <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <div style="font-size: 18px;">${config.emoji}</div>
+                <div style="flex: 1; margin-left: 8px;">
+                    <div style="font-weight: bold; font-size: 14px;">${config.titles.processing}</div>
+                    <div style="font-size: 11px; opacity: 0.8;">${config.descriptions.processing}</div>
+                </div>
+                <button onclick="window.statusBallManager.collapseCurrentWindow()" 
+                        style="background: none; border: none; color: white; font-size: 16px; cursor: pointer; opacity: 0.7; padding: 2px 6px; border-radius: 3px;">
+                    −
+                </button>
+            </div>
+            
+            <div id="statusBallInfo" style="font-size: 12px; margin-bottom: 8px; opacity: 0.9;">
+                队列长度: ${queueState.queueLength} | 正在处理: ${queueState.isProcessing ? '是' : '否'}
+            </div>
+            
+            <div id="statusBallCurrentRequest" style="font-size: 11px; margin-bottom: 8px; opacity: 0.8;">
+                ${queueState.currentRequest ? `当前: ${queueState.currentRequest.description}` : '等待中...'}
+            </div>
+            
+            <div style="background: rgba(255,255,255,0.2); height: 4px; border-radius: 2px; overflow: hidden;">
+                <div id="statusBallProgressBar" 
+                     style="height: 100%; background: rgba(255,255,255,0.8); transition: width 0.3s; width: 0%;"></div>
+            </div>
+            
+            <div id="statusBallStatus" style="font-size: 11px; margin-top: 8px; opacity: 0.8;">
+                监控API队列状态...
+            </div>
+        `;
+        
+        // 创建小球
+        const floatingBall = document.createElement('div');
+        floatingBall.id = 'statusBallFloatingBall';
+        floatingBall.style.cssText = `
+            width: 50px;
+            height: 50px;
+            background: ${config.theme.gradient};
+            color: white;
+            border-radius: 50%;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s ease;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            position: relative;
+            backdrop-filter: blur(10px);
+        `;
+        
+        floatingBall.innerHTML = `
+            <div style="position: relative;">
+                ${config.emoji}
+                <div id="statusBallBadge" style="
+                    position: absolute;
+                    top: -8px;
+                    right: -8px;
+                    background: #ff4757;
+                    color: white;
+                    border-radius: 10px;
+                    padding: 1px 6px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    min-width: 16px;
+                    text-align: center;
+                    ${queueState.queueLength === 0 ? 'display: none;' : ''}
+                ">${queueState.queueLength}</div>
+            </div>
+        `;
+        
+        // 添加到容器
+        container.appendChild(detailWindow);
+        container.appendChild(floatingBall);
+        document.body.appendChild(container);
+        
+        // 添加功能
+        makeDraggable(floatingBall, container);
+        floatingBall.addEventListener('click', () => this.expandCurrentWindow());
+        
+        // 存储状态
+        window.statusBallWindowState = {
+            container,
+            detailWindow,
+            floatingBall,
+            type: 'api_queue',
+            state: queueState,
+            isExpanded: true
+        };
+    }
+    
+    /**
+     * 更新API队列悬浮窗
+     */
+    updateAPIQueueFloatingWindow(queueState) {
+        if (!window.statusBallWindowState) return;
+        
+        const infoElement = document.getElementById('statusBallInfo');
+        const currentRequestElement = document.getElementById('statusBallCurrentRequest');
+        const statusElement = document.getElementById('statusBallStatus');
+        const badge = document.getElementById('statusBallBadge');
+        
+        if (infoElement) {
+            infoElement.textContent = `队列长度: ${queueState.queueLength} | 正在处理: ${queueState.isProcessing ? '是' : '否'}`;
+        }
+        
+        if (currentRequestElement) {
+            currentRequestElement.textContent = queueState.currentRequest 
+                ? `当前: ${queueState.currentRequest.description}` 
+                : '等待中...';
+        }
+        
+        if (statusElement) {
+            statusElement.textContent = queueState.isProcessing ? '正在处理请求...' : '监控API队列状态...';
+        }
+        
+        if (badge) {
+            badge.textContent = queueState.queueLength;
+            badge.style.display = queueState.queueLength === 0 ? 'none' : 'block';
+        }
+        
+        // 更新存储的状态
+        window.statusBallWindowState.state = queueState;
+    }
+    
+    /**
+     * 显示特殊事件状态
+     */
+    showSpecialEventStatus(eventState) {
+        // 复用现有的悬浮窗函数
+        showStatusBallFloatingWindow(eventState);
+        
+        // 更新类型标记
+        if (window.statusBallWindowState) {
+            window.statusBallWindowState.type = 'special_event';
+            window.statusBallWindowState.state = eventState;
+        }
+    }
+    
+    /**
+     * 更新当前状态
+     */
+    updateCurrentState() {
+        if (!this.currentState) return;
+        
+        const state = this.activeStates.get(this.currentState);
+        if (!state) return;
+        
+        if (state.type === 'api_queue') {
+            this.updateAPIQueueFloatingWindow(state);
+        } else if (state.type === 'special_event') {
+            updateStatusBallFloatingWindow(state);
+        }
+    }
+    
+    /**
+     * 展开当前窗口
+     */
+    expandCurrentWindow() {
+        if (!window.statusBallWindowState) return;
+        
+        const { detailWindow, floatingBall } = window.statusBallWindowState;
+        
+        detailWindow.style.display = 'block';
+        floatingBall.style.display = 'none';
+        window.statusBallWindowState.isExpanded = true;
+        
+        // 清除动画
+        floatingBall.style.animation = '';
+    }
+    
+    /**
+     * 收起当前窗口
+     */
+    collapseCurrentWindow() {
+        if (!window.statusBallWindowState) return;
+        
+        const { detailWindow, floatingBall } = window.statusBallWindowState;
+        
+        detailWindow.style.display = 'none';
+        floatingBall.style.display = 'flex';
+        window.statusBallWindowState.isExpanded = false;
+        
+        // 添加脉冲动画
+        floatingBall.style.animation = 'statusBallPulse 2s ease-in-out 3';
+    }
+    
+    /**
+     * 隐藏状态球
+     */
+    hideStatusBall() {
+        hideStatusBallFloatingWindow();
+        this.currentState = null;
+    }
+    
+    /**
+     * 获取当前状态
+     */
+    getCurrentState() {
+        return this.currentState ? this.activeStates.get(this.currentState) : null;
+    }
+    
+    /**
+     * 获取所有活跃状态
+     */
+    getActiveStates() {
+        return Array.from(this.activeStates.values());
+    }
+}
+
+// 创建全局状态球管理器实例
+window.statusBallManager = new StatusBallManager();
+
+
+/**
+ * 检查特殊事件并处理相关逻辑
+ */
+async function checkSpecialEvents() {
+    try {
+        const today = new Date();
+        const month = (today.getMonth() + 1).toString().padStart(2, '0');
+        const day = today.getDate().toString().padStart(2, '0');
+        const dateString = `${month}-${day}`;
+        
+        console.log('当前日期检查:', dateString);
+        
+        // 检查是否为8月29日
+        if (month === '08' && day === '29') {
+            console.log('今天是七夕节！'); // 保持原有日志，因为这是具体的日期判断
+            
+            // 检查是否为今日第一次打开应用
+            const lastSpecialEventVisit = localStorage.getItem('lastSpecialEventVisit');
+            const todayString = today.toDateString();
+            
+            if (lastSpecialEventVisit !== todayString) {
+                console.log('今日第一次打开应用，开始特殊事件流程');
+                
+                // 记录今日已访问
+                localStorage.setItem('lastSpecialEventVisit', todayString);
+                
+                // 启动特殊事件流程（七夕节）
+                await startSpecialEventFlow('qixi');
+            } else {
+                console.log('今日已处理过特殊事件流程');
+            }
+        }
+    } catch (error) {
+        console.error('特殊事件检查出错:', error);
+    }
+}
+
+/**
+ * 开始特殊事件流程
+ * @param {string} eventType - 事件类型 ('qixi', 'birthday', 'holiday' 等)
+ */
+async function startSpecialEventFlow(eventType = 'qixi') {
+    try {
+        const config = STATUS_BALL_CONFIGS[eventType];
+        if (!config) {
+            throw new Error(`未知的事件类型: ${eventType}`);
+        }
+        
+        // 获取用户资料和联系人信息
+        const userProfile = await getUserProfile();
+        if (!userProfile || !userProfile.name) {
+            throw new Error('无法获取用户资料');
+        }
+        
+        const contactsInfo = await getAllContactsInfo();
+        if (!contactsInfo || contactsInfo.length === 0) {
+            throw new Error('没有找到任何联系人');
+        }
+        
+        // 锁定朋友圈操作
+        window.momentsLockManager.lock(`发布朋友圈功能暂时被锁定：${config.name}`);
+        
+        // 显示初始加载弹窗
+        showStatusBallLoadingModal(config);
+        updateStatusBallProgress(0, 1, '等待AI响应', config);
+        
+        // 第一步：添加获取祝福人员列表的请求到队列
+        const queueState = {
+            completedTasks: 0,
+            totalTasks: 1, // 初始只有1个任务（获取列表）
+            blessers: [],
+            eventType: eventType,
+            config: config
+        };
+        
+        const getBlessersRequestId = await window.apiRequestQueue.addRequest(
+            () => getBlessersFromAI(contactsInfo, userProfile, eventType),
+            {
+                priority: window.apiRequestQueue.PRIORITY.LOW,
+                description: `获取${config.name}祝福人员列表`,
+                onComplete: (requestId, blessers) => {
+                    console.log('获取到祝福人员列表:', blessers);
+                    queueState.blessers = blessers;
+                    queueState.totalTasks = blessers.length + 1;
+                    queueState.completedTasks = 1;
+                    
+                    // 转换为悬浮窗
+                    hideStatusBallLoadingModal();
+                    // 使用状态球管理器显示特殊事件
+                    window.statusBallManager.showSpecialEvent(eventType, queueState);
+                    
+                    // 添加生成朋友圈的请求
+                    addEventMomentsToQueue(blessers, contactsInfo, userProfile, queueState);
+                },
+                onError: (requestId, error) => {
+                    console.error('获取祝福人员失败:', error);
+                    hideStatusBallLoadingModal();
+                    window.momentsLockManager.unlock(); // 出错时解锁
+                    showApiError(error);
+                }
+            }
+        );
+        
+    } catch (error) {
+        console.error(`${eventType}流程启动失败:`, error);
+        hideStatusBallLoadingModal();
+        window.momentsLockManager.unlock(); // 出错时解锁
+        const config = STATUS_BALL_CONFIGS[eventType] || STATUS_BALL_CONFIGS.qixi;
+        showApiError(error);
+    }
+}
+
+/**
+ * 显示状态球加载弹窗
+ * @param {Object} config - 事件配置
+ */
+function showStatusBallLoadingModal(config) {
+    const modal = document.createElement('div');
+    modal.id = 'statusBallLoadingModal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="text-align: center; padding: 30px;">
+            <h3 style="color: ${config.theme.primary}; margin-bottom: 20px;">${config.emoji} ${config.titles.loading} ${config.emoji}</h3>
+            <p style="margin-bottom: 20px;">请稍等。<br>${config.descriptions.loading}。<br>正在等待API响应……</p>
+            <div id="statusBallProgress" style="margin-bottom: 15px; font-weight: bold; color: ${config.theme.primary};">(0/1)</div>
+            <div style="width: 100%; height: 4px; background-color: #f0f0f0; border-radius: 2px; overflow: hidden;">
+                <div id="statusBallProgressBar" style="width: 0%; height: 100%; background-color: ${config.theme.primary}; transition: width 0.3s;"></div>
+            </div>
+            <p style="margin-top: 15px; font-size: 12px; color: #666;">请不要关闭应用</p>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+}
+
+/**
+ * 更新状态球进度
+ * @param {number} current - 当前进度
+ * @param {number} total - 总进度
+ * @param {string} message - 进度消息
+ * @param {Object} config - 事件配置
+ */
+function updateStatusBallProgress(current, total, message = '', config) {
+    const progressElement = document.getElementById('statusBallProgress');
+    const progressBar = document.getElementById('statusBallProgressBar');
+    
+    if (progressElement && progressBar) {
+        const percentage = Math.round((current / total) * 100);
+        progressElement.textContent = `(${current}/${total}) ${message}`;
+        progressBar.style.width = percentage + '%';
+    }
+}
+
+/**
+ * 隐藏状态球加载弹窗
+ */
+function hideStatusBallLoadingModal() {
+    const modal = document.getElementById('statusBallLoadingModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+/**
+ * 显示七夕节完成弹窗
+ */
+function showQixiCompleteModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="text-align: center; padding: 30px;">
+            <h3 style="color: #e91e63; margin-bottom: 20px;">🎉 欢迎 🎉</h3>
+            <p style="margin-bottom: 20px;">朋友圈 更新了一些新内容~</p>
+            <button onclick="this.parentElement.parentElement.remove()" 
+                    style="background-color: #e91e63; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                查看朋友圈
+            </button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // 3秒后自动关闭
+    setTimeout(() => {
+        modal.remove();
+    }, 3000);
+}
+
+/**
+ * 获取所有联系人信息
+ */
+async function getAllContactsInfo() {
+    try {
+        // 确保contacts已加载
+        if (!window.contacts || window.contacts.length === 0) {
+            console.warn('联系人列表为空，尝试从数据库重新加载');
+            await loadDataFromDB();
+        }
+        
+        return window.contacts.filter(contact => contact.type === 'private');
+    } catch (error) {
+        console.error('获取联系人信息失败:', error);
+        throw error;
+    }
+}
+
+/**
+ * 通过AI判断可能送祝福的人员
+ * @param {Array} contactsInfo - 联系人信息
+ * @param {Object} userProfile - 用户资料
+ * @param {string} eventType - 事件类型
+ */
+async function getBlessersFromAI(contactsInfo, userProfile, eventType = 'qixi') {
+    try {
+        if (!window.apiService || !apiSettings) {
+            throw new Error('API服务未初始化');
+        }
+        
+        // 构建联系人信息字符串
+        const contactsString = contactsInfo.map(contact => 
+            `【${contact.name}】人设为：${contact.personality}`
+        ).join('\n');
+        
+        // 获取事件配置
+        const config = STATUS_BALL_CONFIGS[eventType];
+        const eventName = config ? config.name : '特殊日子';
+        
+        // 根据事件类型构建不同的prompt
+        let eventDescription = '';
+        switch (eventType) {
+            case 'qixi':
+                eventDescription = '今天是中国传统节日【七夕节】';
+                break;
+            case 'birthday':
+                eventDescription = `今天是用户【${userProfile.name}】的生日`;
+                break;
+            case 'holiday':
+                eventDescription = '今天是特殊节日';
+                break;
+            default:
+                eventDescription = '今天是特殊日子';
+        }
+        
+        // 构建请求prompt
+        const prompt = `${eventDescription}。请判断以下人物中，可能在${eventName}给用户（${userProfile.name}）送上祝福的有谁？输出所有可能的人名为列表，如["A", "B"]。
+
+${contactsString}
+
+用户${userProfile.name}的人设为：${userProfile.personality || '无'}
+
+请直接返回JSON格式的列表，列表内的名字必须为【】内的用户名。不要包含其他解释。`;
+
+        // 调用API
+        const response = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{ role: 'user', content: prompt }],
+            {
+                temperature: 0.7,
+                max_tokens: 5000,
+            },
+            apiSettings.timeout * 1000 || 30000
+        );
+        
+        const rawContent = response.choices[0]?.message?.content;
+        console.log('AI返回的原始内容:', rawContent);
+        
+        if (!rawContent) {
+            throw new Error('AI返回空内容');
+        }
+        
+        // 提取人名列表
+        let blessers = [];
+        try {
+            // 尝试直接解析JSON
+            const match = rawContent.match(/\[.*?\]/);
+            if (match) {
+                blessers = JSON.parse(match[0]);
+            } else {
+                // 如果没有找到JSON数组，尝试提取引号中的名字
+                const names = rawContent.match(/"([^"]+)"/g);
+                if (names) {
+                    blessers = names.map(name => name.replace(/"/g, ''));
+                }
+            }
+        } catch (parseError) {
+            console.warn('解析AI回复失败，尝试正则提取:', parseError);
+            // 使用正则表达式提取可能的人名
+            const names = rawContent.match(/["']([^"']+)["']/g);
+            if (names) {
+                blessers = names.map(name => name.replace(/["']/g, ''));
+            }
+        }
+        
+        // 验证人名是否存在于联系人中
+        const validBlessers = blessers.filter(name => 
+            contactsInfo.some(contact => contact.name === name)
+        );
+        
+        console.log('有效的祝福人员:', validBlessers);
+        return validBlessers;
+        
+    } catch (error) {
+        console.error('AI判断祝福人员失败:', error);
+        throw error;
+    }
+}
+
+/**
+ * 为指定联系人生成特殊事件朋友圈
+ * @param {Object} contact - 联系人信息
+ * @param {Object} userProfile - 用户资料
+ * @param {string} eventType - 事件类型
+ */
+async function generateEventMoment(contact, userProfile, eventType = 'qixi') {
+    try {
+        const config = STATUS_BALL_CONFIGS[eventType];
+        const eventName = config ? config.name : '特殊日子';
+        const topic = `${eventName}给${userProfile.name}的祝福`;
+        
+        // 调用现有的朋友圈生成函数
+        const result = await generateMomentAndComments(contact, userProfile, topic);
+        
+        if (result && result.content) {
+            console.log(`成功为 ${contact.name} 生成${eventName}朋友圈:`, result.content);
+            
+            // 生成事件日期
+            const eventDate = new Date();
+            
+            // 根据事件类型设置日期
+            if (eventType === 'qixi') {
+                eventDate.setMonth(7); // 8月（月份从0开始）
+                eventDate.setDate(29);
+            } else if (eventType === 'birthday') {
+                // 生日保持当前日期
+            } else {
+                // 其他节日保持当前日期
+            }
+            
+            eventDate.setHours(0, 0, 0, 0); // 零点整
+            
+            // 只随机化秒数，保持都在零点零分
+            const randomSeconds = Math.floor(Math.random() * 60); // 0-59秒
+            eventDate.setSeconds(randomSeconds);
+            
+            // 保存朋友圈到数据库
+            const moment = {
+                id: generateId(),
+                authorId: contact.id,
+                authorName: contact.name,
+                content: result.content,
+                imageUrl: null, // 暂时不处理图片
+                likes: [],
+                comments: result.comments || [], // 稍后处理评论时间
+                timestamp: eventDate.toISOString(),
+                time: eventDate.toISOString(), // 添加time字段，朋友圈渲染需要这个
+                topic: topic // 添加主题标记
+            };
+            
+            // 修正评论的时间戳也为事件当天零点
+            if (moment.comments && moment.comments.length > 0) {
+                moment.comments.forEach((comment, index) => {
+                    // 给每个评论一个稍晚的时间（在朋友圈发布后的几秒内）
+                    const commentTime = new Date(eventDate);
+                    commentTime.setSeconds(commentTime.getSeconds() + 10 + index * 5); // 朋友圈发布后10秒开始，每个评论间隔5秒
+                    comment.timestamp = commentTime.toISOString();
+                });
+            }
+            
+            // 添加到全局朋友圈列表
+            console.log(`当前朋友圈数量: ${moments.length}`);
+            moments.unshift(moment);
+            console.log(`添加后朋友圈数量: ${moments.length}`);
+            console.log(`新添加的朋友圈:`, { 
+                id: moment.id, 
+                authorName: moment.authorName, 
+                content: moment.content.substring(0, 50) + '...' 
+            });
+            
+            // 保存到数据库
+            await saveDataToDB();
+            console.log('朋友圈已保存到数据库');
+            
+            console.log(`${eventName}朋友圈已保存到数据库: ${contact.name}`);
+            return result;
+        } else {
+            throw new Error('生成的朋友圈内容为空');
+        }
+    } catch (error) {
+        console.error(`为 ${contact.name} 生成${eventName}朋友圈失败:`, error);
+        throw error;
+    }
+}
+
+/**
+ * 将特殊事件朋友圈生成请求添加到队列
+ */
+async function addEventMomentsToQueue(blessers, contactsInfo, userProfile, queueState) {
+    for (const blesserName of blessers) {
+        const contact = contactsInfo.find(c => c.name === blesserName);
+        if (contact) {
+            await window.apiRequestQueue.addRequest(
+                () => generateEventMoment(contact, userProfile, queueState.eventType),
+                {
+                    priority: window.apiRequestQueue.PRIORITY.LOW,
+                    description: `生成${blesserName}的${queueState.config.name}祝福朋友圈`,
+                    onProgress: (requestId, status) => {
+                        // 确保使用七夕渐变
+                        if (queueState.eventType === 'qixi' && window.statusBallWindowState) {
+                            const { detailWindow } = window.statusBallWindowState;
+                            if (detailWindow) {
+                                // 强制应用七夕渐变
+                                detailWindow.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                            }
+                        }
+                        updateStatusBallFloatingWindow(queueState, `正在为 ${blesserName} 生成祝福...`);
+                    },
+                    onComplete: (requestId, result) => {
+                        queueState.completedTasks++;
+                        updateStatusBallFloatingWindow(queueState, `已完成 ${blesserName} 的祝福`);
+                        
+                        // 如果所有任务都完成了，显示完成提示
+                        if (queueState.completedTasks >= queueState.totalTasks) {
+                            setTimeout(() => {
+                                // 解锁朋友圈操作
+                                window.momentsLockManager.unlock();
+                                
+                                // 显示完成状态
+                                showStatusBallCompletionState(queueState);
+                                // 通知状态球管理器任务完成
+                                if (queueState.eventType && window.statusBallManager) {
+                                    // 特殊事件完成后自动移除状态，让API队列状态（如果有）可以显示
+                                    setTimeout(() => {
+                                        window.statusBallManager.removeState(`special_event_${queueState.eventType}`);
+                                    }, 3000); // 3秒后自动移除
+                                }
+                            }, 1000);
+                        }
+                    },
+                    onError: (requestId, error) => {
+                        console.error(`为 ${blesserName} 生成朋友圈失败:`, error);
+                        queueState.completedTasks++;
+                        updateStatusBallFloatingWindow(queueState, `${blesserName} 生成失败`);
+                    }
+                }
+            );
+        }
+    }
+}
+
+/**
+ * 显示状态球悬浮窗
+ */
+function showStatusBallFloatingWindow(queueState) {
+    // 先移除可能已存在的悬浮窗
+    hideStatusBallFloatingWindow();
+    
+    // 创建容器
+    const container = document.createElement('div');
+    container.id = 'statusBallFloatingContainer';
+    container.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    
+    // 获取事件配置
+    const config = queueState.config;
+    
+    // 创建详情窗口（默认显示）
+    const detailWindow = document.createElement('div');
+    detailWindow.id = 'statusBallDetailWindow';
+    
+    // 获取渐变样式
+    const gradientStyle = queueState.eventType === 'qixi' 
+        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'  // 强制使用七夕蓝紫渐变
+        : config.theme.gradient;
+    
+    console.log(`显示悬浮窗，事件类型: ${queueState.eventType}, 使用渐变: ${gradientStyle}`);
+    
+    detailWindow.style.cssText = `
+        width: 280px;
+        background: ${gradientStyle};
+        color: white;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        display: block;
+    `;
+    
+    detailWindow.innerHTML = `
+        <div style="display: flex; align-items: center; margin-bottom: 12px;">
+            <div style="font-size: 18px;">${config.emoji}</div>
+            <div style="flex: 1; margin-left: 8px;">
+                <div style="font-weight: bold; font-size: 14px;">${config.titles.processing}</div>
+                <div style="font-size: 11px; opacity: 0.8;">${config.descriptions.processing}</div>
+            </div>
+            <button onclick="collapseStatusBallWindow()" 
+                    style="background: none; border: none; color: white; font-size: 16px; cursor: pointer; opacity: 0.7; padding: 2px 6px; border-radius: 3px;">
+                −
+            </button>
+        </div>
+        
+        <div id="statusBallFloatingProgress" style="font-size: 12px; margin-bottom: 8px; opacity: 0.9;">
+            (${queueState.completedTasks}/${queueState.totalTasks}) 正在处理...
+        </div>
+        
+        <div style="background: rgba(255,255,255,0.2); height: 4px; border-radius: 2px; overflow: hidden;">
+            <div id="statusBallFloatingProgressBar" 
+                 style="height: 100%; background: rgba(255,255,255,0.8); transition: width 0.3s; width: ${Math.round((queueState.completedTasks / queueState.totalTasks) * 100)}%;"></div>
+        </div>
+        
+        <div id="statusBallFloatingStatus" style="font-size: 11px; margin-top: 8px; opacity: 0.8;">
+            正在生成朋友圈...
+        </div>
+    `;
+    
+    // 创建小球（默认隐藏）
+    const floatingBall = document.createElement('div');
+    floatingBall.id = 'statusBallFloatingBall';
+    
+    // 使用相同的渐变样式
+    floatingBall.style.cssText = `
+        width: 50px;
+        height: 50px;
+        background: ${gradientStyle};
+        color: white;
+        border-radius: 50%;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        cursor: pointer;
+        user-select: none;
+        transition: all 0.3s ease;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        position: relative;
+        backdrop-filter: blur(10px);
+    `;
+    
+    floatingBall.innerHTML = `
+        <div style="position: relative;">
+            ${config.emoji}
+            <div id="statusBallBadge" style="
+                position: absolute;
+                top: -8px;
+                right: -8px;
+                background: #ff4757;
+                color: white;
+                border-radius: 10px;
+                padding: 1px 6px;
+                font-size: 10px;
+                font-weight: bold;
+                min-width: 16px;
+                text-align: center;
+            ">${queueState.totalTasks - queueState.completedTasks}</div>
+        </div>
+    `;
+    
+    // 添加到容器
+    container.appendChild(detailWindow);
+    container.appendChild(floatingBall);
+    document.body.appendChild(container);
+    
+    // 添加小球的拖拽功能
+    makeDraggable(floatingBall, container);
+    
+    // 添加小球点击展开功能
+    floatingBall.addEventListener('click', expandStatusBallWindow);
+    
+    // 存储状态
+    window.statusBallWindowState = {
+        container,
+        detailWindow,
+        floatingBall,
+        queueState,
+        isExpanded: true
+    };
+}
+
+/**
+ * 更新状态球悬浮窗
+ */
+function updateStatusBallFloatingWindow(queueState, message = '') {
+    const progressElement = document.getElementById('statusBallFloatingProgress');
+    const progressBar = document.getElementById('statusBallFloatingProgressBar');
+    const statusElement = document.getElementById('statusBallFloatingStatus');
+    const badge = document.getElementById('statusBallBadge');
+    
+    if (progressElement && progressBar && statusElement) {
+        const percentage = Math.round((queueState.completedTasks / queueState.totalTasks) * 100);
+        progressElement.textContent = `(${queueState.completedTasks}/${queueState.totalTasks}) 正在处理...`;
+        progressBar.style.width = percentage + '%';
+        statusElement.textContent = message || '正在生成朋友圈...';
+    }
+    
+    // 更新小球上的徽章数字
+    if (badge) {
+        const remaining = queueState.totalTasks - queueState.completedTasks;
+        badge.textContent = remaining;
+        if (remaining === 0) {
+            badge.style.display = 'none';
+        }
+    }
+    
+    // 更新全局状态
+    if (window.statusBallWindowState) {
+        window.statusBallWindowState.queueState = queueState;
+    }
+}
+
+/**
+ * 隐藏状态球悬浮窗
+ */
+function hideStatusBallFloatingWindow() {
+    const container = document.getElementById('statusBallFloatingContainer');
+    if (container) {
+        container.remove();
+    }
+    window.statusBallWindowState = null;
+}
+
+/**
+ * 收起悬浮窗，显示小球
+ */
+function collapseStatusBallWindow() {
+    if (!window.statusBallWindowState) return;
+    
+    const { detailWindow, floatingBall } = window.statusBallWindowState;
+    
+    // 隐藏详情窗口，显示小球
+    detailWindow.style.display = 'none';
+    floatingBall.style.display = 'flex';
+    
+    window.statusBallWindowState.isExpanded = false;
+    
+    // 添加小球闪烁效果提示用户
+    floatingBall.style.animation = 'statusBallPulse 2s ease-in-out 3';
+    
+    // 添加CSS动画
+    if (!document.getElementById('statusBallAnimations')) {
+        const style = document.createElement('style');
+        style.id = 'statusBallAnimations';
+        style.textContent = `
+            @keyframes statusBallPulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+/**
+ * 展开悬浮窗，隐藏小球
+ */
+function expandStatusBallWindow() {
+    if (!window.statusBallWindowState) return;
+    
+    const { container, detailWindow, floatingBall } = window.statusBallWindowState;
+    
+    // 在展开前调整容器位置，确保详情窗口在屏幕内
+    adjustContainerPosition(container, detailWindow);
+    
+    // 显示详情窗口，隐藏小球
+    floatingBall.style.display = 'none';
+    detailWindow.style.display = 'block';
+    
+    window.statusBallWindowState.isExpanded = true;
+    
+    // 清除小球动画
+    floatingBall.style.animation = '';
+}
+
+/**
+ * 调整容器位置，确保详情窗口在屏幕内
+ */
+function adjustContainerPosition(container, detailWindow) {
+    // 获取当前容器位置
+    const containerRect = container.getBoundingClientRect();
+    
+    // 获取窗口尺寸
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    
+    // 获取详情窗口的实际尺寸
+    // 暂时显示详情窗口以获取准确尺寸
+    const wasVisible = detailWindow.style.display !== 'none';
+    if (!wasVisible) {
+        detailWindow.style.display = 'block';
+        detailWindow.style.visibility = 'hidden'; // 隐藏但占用空间
+    }
+    
+    const detailRect = detailWindow.getBoundingClientRect();
+    const detailWindowWidth = detailRect.width || 280;
+    const detailWindowHeight = detailRect.height || 200;
+    
+    // 恢复原始显示状态
+    if (!wasVisible) {
+        detailWindow.style.display = 'none';
+        detailWindow.style.visibility = 'visible';
+    }
+    
+    // 安全边距
+    const safeMargin = 20;
+    
+    // 计算当前容器位置
+    let currentLeft = containerRect.left;
+    let currentTop = containerRect.top;
+    
+    // 记录是否进行了调整
+    let adjusted = false;
+    
+    // 检查并调整水平位置
+    if (currentLeft + detailWindowWidth + safeMargin > windowWidth) {
+        // 如果右边超出，向左调整
+        currentLeft = windowWidth - detailWindowWidth - safeMargin;
+        adjusted = true;
+    }
+    if (currentLeft < safeMargin) {
+        // 如果左边超出，向右调整
+        currentLeft = safeMargin;
+        adjusted = true;
+    }
+    
+    // 检查并调整垂直位置
+    if (currentTop + detailWindowHeight + safeMargin > windowHeight) {
+        // 如果下边超出，向上调整
+        currentTop = windowHeight - detailWindowHeight - safeMargin;
+        adjusted = true;
+    }
+    if (currentTop < safeMargin) {
+        // 如果上边超出，向下调整
+        currentTop = safeMargin;
+        adjusted = true;
+    }
+    
+    // 只在需要调整时应用新位置
+    if (adjusted) {
+        container.style.left = currentLeft + 'px';
+        container.style.top = currentTop + 'px';
+        container.style.right = 'auto';
+        container.style.bottom = 'auto';
+        
+        console.log(`[悬浮窗] 位置调整: (${Math.round(containerRect.left)}, ${Math.round(containerRect.top)}) -> (${Math.round(currentLeft)}, ${Math.round(currentTop)})`);
+    } else {
+        console.log(`[悬浮窗] 位置无需调整: (${Math.round(containerRect.left)}, ${Math.round(containerRect.top)})`);
+    }
+}
+
+/**
+ * 计算智能边界限制
+ */
+function calculateSmartBounds(proposedLeft, proposedTop, container) {
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    
+    // 详情窗口尺寸
+    const detailWindowWidth = 280;
+    const detailWindowHeight = 200;
+    
+    // 小球尺寸
+    const ballSize = 50;
+    
+    // 安全边距
+    const safeMargin = 20;
+    
+    let newLeft = proposedLeft;
+    let newTop = proposedTop;
+    
+    // 水平边界检查
+    // 确保小球本身不超出屏幕
+    newLeft = Math.max(safeMargin, newLeft);
+    newLeft = Math.min(windowWidth - ballSize - safeMargin, newLeft);
+    
+    // 额外检查：确保从任意位置都能展开详情窗口
+    // 如果小球在屏幕右边缘，但详情窗口无法完全显示，则限制小球位置
+    const maxLeftForExpansion = windowWidth - detailWindowWidth - safeMargin;
+    if (newLeft > maxLeftForExpansion) {
+        // 小球可以在右边缘，但展开时会自动调整位置
+        // 这里不强制限制，让智能定位函数处理
+    }
+    
+    // 垂直边界检查
+    newTop = Math.max(safeMargin, newTop);
+    newTop = Math.min(windowHeight - ballSize - safeMargin, newTop);
+    
+    // 额外检查：确保从任意位置都能展开详情窗口
+    const maxTopForExpansion = windowHeight - detailWindowHeight - safeMargin;
+    if (newTop > maxTopForExpansion) {
+        // 同样，让智能定位函数处理
+    }
+    
+    return { newLeft, newTop };
+}
+
+/**
+ * 使元素可拖拽
+ */
+function makeDraggable(element, container) {
+    let isDragging = false;
+    let startX, startY, startLeft, startTop;
+    let hasMoved = false;
+    
+    function onMouseDown(e) {
+        isDragging = true;
+        hasMoved = false;
+        
+        const rect = container.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        
+        e.preventDefault();
+    }
+    
+    function onMouseMove(e) {
+        if (!isDragging) return;
+        
+        hasMoved = true;
+        
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        let newLeft = startLeft + deltaX;
+        let newTop = startTop + deltaY;
+        
+        // 智能边界限制，考虑详情窗口展开的空间需求
+        const { newLeft: adjustedLeft, newTop: adjustedTop } = calculateSmartBounds(newLeft, newTop, container);
+        
+        container.style.left = adjustedLeft + 'px';
+        container.style.top = adjustedTop + 'px';
+        container.style.right = 'auto';
+        container.style.bottom = 'auto';
+    }
+    
+    function onMouseUp(e) {
+        isDragging = false;
+        
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        
+        // 如果没有移动，则触发点击事件
+        if (!hasMoved) {
+            expandStatusBallWindow();
+        }
+    }
+    
+    // 触摸事件支持
+    function onTouchStart(e) {
+        const touch = e.touches[0];
+        onMouseDown({
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            preventDefault: () => e.preventDefault()
+        });
+    }
+    
+    function onTouchMove(e) {
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        onMouseMove({
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        e.preventDefault();
+    }
+    
+    function onTouchEnd(e) {
+        onMouseUp({});
+        e.preventDefault();
+    }
+    
+    // 绑定事件
+    element.addEventListener('mousedown', onMouseDown);
+    element.addEventListener('touchstart', onTouchStart, { passive: false });
+    element.addEventListener('touchmove', onTouchMove, { passive: false });
+    element.addEventListener('touchend', onTouchEnd, { passive: false });
+}
+
+/**
+ * 显示状态球完成状态
+ */
+function showStatusBallCompletionState(queueState) {
+    if (!window.statusBallWindowState) return;
+    
+    const { detailWindow, floatingBall } = window.statusBallWindowState;
+    const config = queueState.config;
+    
+    // 更新详情窗口内容为完成状态
+    detailWindow.innerHTML = `
+        <div style="display: flex; align-items: center; margin-bottom: 15px;">
+            <div style="font-size: 24px;">${config.completedEmoji}</div>
+            <div style="flex: 1; margin-left: 8px;">
+                <div style="font-weight: bold; font-size: 14px;">${config.titles.completed}</div>
+                <div style="font-size: 11px; opacity: 0.8;">${config.descriptions.completed} ${queueState.totalTasks - 1} 位好友</div>
+            </div>
+            <button onclick="hideStatusBallFloatingWindow()" 
+                    style="background: none; border: none; color: white; font-size: 16px; cursor: pointer; opacity: 0.7; padding: 2px 6px; border-radius: 3px;">
+                ×
+            </button>
+        </div>
+        
+        <div style="text-align: center; margin: 20px 0;">
+            <div style="font-size: 14px; margin-bottom: 15px; line-height: 1.4;">
+                所有朋友圈已生成完毕<br>
+                是否刷新页面查看新内容？
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="refreshMomentsPage()" 
+                        style="background: rgba(255,255,255,0.9); color: ${config.theme.primary}; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">
+                    刷新页面
+                </button>
+                <button onclick="collapseStatusBallWindow()" 
+                        style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                    稍后查看
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // 如果当前是收起状态，则展开显示完成信息
+    if (!window.statusBallWindowState.isExpanded) {
+        // 在展开前调整位置，确保完成界面完全可见
+        adjustContainerPosition(window.statusBallWindowState.container, detailWindow);
+        
+        // 显示详情窗口，隐藏小球
+        window.statusBallWindowState.floatingBall.style.display = 'none';
+        detailWindow.style.display = 'block';
+        window.statusBallWindowState.isExpanded = true;
+    }
+    
+    // 添加完成动画
+    detailWindow.style.animation = 'statusBallComplete 0.5s ease-out';
+    
+    // 更新小球为完成状态
+    floatingBall.innerHTML = `
+        <div style="position: relative;">
+            ${config.completedEmoji}
+        </div>
+    `;
+    
+    // 添加CSS动画
+    if (!document.getElementById('statusBallCompleteAnimations')) {
+        const style = document.createElement('style');
+        style.id = 'statusBallCompleteAnimations';
+        style.textContent = `
+            @keyframes statusBallComplete {
+                0% { transform: scale(0.9); opacity: 0.8; }
+                50% { transform: scale(1.05); }
+                100% { transform: scale(1); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+/**
+ * 刷新朋友圈页面
+ */
+async function refreshMomentsPage() {
+    try {
+        console.log('[特殊事件] 开始刷新朋友圈页面');
+        
+        // 显示加载提示
+        if (window.statusBallWindowState && window.statusBallWindowState.detailWindow) {
+            const detailWindow = window.statusBallWindowState.detailWindow;
+            detailWindow.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 20px; margin-bottom: 10px;">🔄</div>
+                    <div style="font-size: 14px;">正在刷新朋友圈...</div>
+                </div>
+            `;
+        }
+        
+        // 重新从数据库加载数据
+        await loadDataFromDB();
+        
+        // 如果当前在朋友圈页面，刷新显示
+        if (typeof renderMomentsList === 'function') {
+            await renderMomentsList();
+        }
+        
+        // 显示成功提示并关闭悬浮窗
+        showToast('朋友圈已刷新完成！');
+        setTimeout(() => {
+            hideQixiFloatingWindow();
+        }, 1500);
+        
+        console.log('[特殊事件] 朋友圈页面刷新完成');
+        
+    } catch (error) {
+        console.error('[七夕节] 刷新朋友圈页面失败:', error);
+        showToast('刷新失败，请手动刷新页面');
+    }
+}
+
+// 将函数设为全局可访问
+// 向后兼容的别名（如果需要的话）
+window.hideQixiFloatingWindow = hideStatusBallFloatingWindow;
+window.collapseQixiWindow = collapseStatusBallWindow;
+window.expandQixiWindow = expandStatusBallWindow;
+
+// 新的统一命名
+window.hideStatusBallFloatingWindow = hideStatusBallFloatingWindow;
+window.collapseStatusBallWindow = collapseStatusBallWindow;
+window.expandStatusBallWindow = expandStatusBallWindow;
+window.refreshMomentsPage = refreshMomentsPage;
+
+/**
+ * 触发特殊事件状态球
+ * @param {string} eventType - 事件类型 ('qixi', 'birthday', 'holiday')
+ */
+window.triggerSpecialEvent = function(eventType) {
+    if (STATUS_BALL_CONFIGS[eventType]) {
+        console.log(`手动触发${STATUS_BALL_CONFIGS[eventType].name}事件`);
+        startSpecialEventFlow(eventType);
+    } else {
+        console.error(`未知的事件类型: ${eventType}。可用类型:`, Object.keys(STATUS_BALL_CONFIGS));
+    }
+};
+
+// ===== 聊天消息优先级处理 =====
+
+/**
+ * 聊天API调用的队列包装器
+ * 这确保了聊天消息具有更高的优先级
+ */
+async function callChatAPIWithPriority(contact, turnContext = [], isUrgent = true) {
+    return new Promise((resolve, reject) => {
+        const priority = isUrgent ? 
+            window.apiRequestQueue.PRIORITY.URGENT : 
+            window.apiRequestQueue.PRIORITY.HIGH;
+            
+        window.apiRequestQueue.addRequest(
+            async () => {
+                const result = await callAPI(contact, turnContext);
+                if (result === null) {
+                    // callAPI已经处理了错误显示，这里不需要再抛出错误
+                    return { replies: [] }; // 返回空回复列表
+                }
+                return result;
+            },
+            {
+                priority: priority,
+                description: `聊天API调用 - ${contact.name}`,
+                onComplete: (requestId, result) => {
+                    resolve(result);
+                },
+                onError: (requestId, error) => {
+                    // 这里一般不会执行到，因为callAPI已经处理错误了
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
+// 将新的聊天API函数设为全局可访问，替代原有的直接调用
+window.callChatAPIWithPriority = callChatAPIWithPriority;
+
+// ===== 朋友圈操作锁定机制 =====
+
+/**
+ * 朋友圈操作锁定管理器
+ */
+class MomentsLockManager {
+    constructor() {
+        this.isLocked = false;
+        this.lockReason = '';
+        this.lockStartTime = null;
+    }
+    
+    /**
+     * 锁定朋友圈操作
+     */
+    lock(reason = '系统正在处理中') {
+        this.isLocked = true;
+        this.lockReason = reason;
+        this.lockStartTime = Date.now();
+        this.updateUI();
+        console.log(`[朋友圈锁定] ${reason}`);
+    }
+    
+    /**
+     * 解锁朋友圈操作
+     */
+    unlock() {
+        if (this.isLocked) {
+            const lockDuration = Date.now() - this.lockStartTime;
+            console.log(`[朋友圈解锁] 锁定持续时间: ${Math.round(lockDuration / 1000)}秒`);
+        }
+        
+        this.isLocked = false;
+        this.lockReason = '';
+        this.lockStartTime = null;
+        this.updateUI();
+    }
+    
+    /**
+     * 检查是否被锁定
+     */
+    checkLocked(showMessage = true) {
+        if (this.isLocked && showMessage) {
+            showToast(this.lockReason || '朋友圈正在处理中，请稍后再试');
+        }
+        return this.isLocked;
+    }
+    
+    /**
+     * 更新UI状态
+     */
+    updateUI() {
+        // 更新朋友圈相关按钮状态
+        const momentButtons = document.querySelectorAll('.generate-moment-btn, .moment-menu-btn, .moment-like-btn');
+        momentButtons.forEach(btn => {
+            if (this.isLocked) {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            }
+        });
+        
+        // 如果锁定状态，显示锁定提示
+        this.updateLockIndicator();
+    }
+    
+    /**
+     * 更新锁定指示器
+     */
+    updateLockIndicator() {
+        const momentsPage = document.getElementById('momentsPage');
+        const isOnMomentsPage = momentsPage && momentsPage.classList.contains('active');
+        
+        let indicator = document.getElementById('momentsLockIndicator');
+        
+        if (this.isLocked && isOnMomentsPage) {
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'momentsLockIndicator';
+                indicator.style.cssText = `
+                    position: absolute;
+                    top: 70px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(255, 152, 0, 0.9);
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 20px;
+                    font-size: 12px;
+                    z-index: 100;
+                    backdrop-filter: blur(10px);
+                    animation: fadeInOut 2s infinite;
+                    max-width: 80%;
+                    text-align: center;
+                `;
+                momentsPage.appendChild(indicator);
+                
+                // 添加动画样式
+                if (!document.getElementById('lockIndicatorStyles')) {
+                    const style = document.createElement('style');
+                    style.id = 'lockIndicatorStyles';
+                    style.textContent = `
+                        @keyframes fadeInOut {
+                            0%, 100% { opacity: 0.7; }
+                            50% { opacity: 1; }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
+            indicator.textContent = `🔒 ${this.lockReason}`;
+        } else {
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+    }
+}
+
+// 创建全局锁定管理器实例
+window.momentsLockManager = new MomentsLockManager();
+
+// ===== 状态球管理器实用函数 =====
+
+/**
+ * 手动显示API队列状态
+ * 当需要强制显示API队列时调用
+ */
+function showAPIQueueStatusManually() {
+    if (window.statusBallManager) {
+        window.statusBallManager.updateAPIQueueStatus();
+    }
+}
+
+/**
+ * 手动隐藏所有状态球
+ */
+function hideAllStatusBalls() {
+    if (window.statusBallManager) {
+        window.statusBallManager.hideStatusBall();
+    }
+}
+
+/**
+ * 获取当前状态球信息
+ * @returns {Object} 当前状态信息
+ */
+function getCurrentStatusBallInfo() {
+    if (window.statusBallManager) {
+        return {
+            currentState: window.statusBallManager.currentState,
+            activeStates: window.statusBallManager.getActiveStates(),
+            stateDetails: window.statusBallManager.getCurrentState()
+        };
+    }
+    return null;
+}
+
+/**
+ * 强制显示特殊事件状态
+ * @param {string} eventType - 事件类型
+ * @param {Object} queueState - 队列状态
+ */
+function showSpecialEventStatus(eventType, queueState) {
+    if (window.statusBallManager) {
+        window.statusBallManager.showSpecialEvent(eventType, queueState);
+    }
+}
+
+// 将实用函数暴露到全局
+window.showAPIQueueStatusManually = showAPIQueueStatusManually;
+window.hideAllStatusBalls = hideAllStatusBalls;
+window.getCurrentStatusBallInfo = getCurrentStatusBallInfo;
+window.showSpecialEventStatus = showSpecialEventStatus;
+
+/**
+ * 切换事件类型的渐变背景
+ * @param {string} eventType - 事件类型
+ * @param {number} gradientIndex - 渐变索引（0为主渐变，1-4为替代渐变）
+ */
+function switchEventGradient(eventType, gradientIndex = 0) {
+    if (STATUS_BALL_CONFIGS[eventType]) {
+        const config = STATUS_BALL_CONFIGS[eventType];
+        
+        if (gradientIndex === 0) {
+            // 使用主渐变
+            return config.theme.gradient;
+        } else if (config.theme.alternativeGradients && config.theme.alternativeGradients[gradientIndex - 1]) {
+            // 使用替代渐变
+            return config.theme.alternativeGradients[gradientIndex - 1];
+        }
+    }
+    
+    // 默认返回主渐变
+    return STATUS_BALL_CONFIGS[eventType]?.theme.gradient || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+}
+
+/**
+ * 获取事件类型的所有渐变选项
+ * @param {string} eventType - 事件类型
+ */
+function getEventGradients(eventType) {
+    if (STATUS_BALL_CONFIGS[eventType]) {
+        const config = STATUS_BALL_CONFIGS[eventType];
+        const gradients = [config.theme.gradient];
+        
+        if (config.theme.alternativeGradients) {
+            gradients.push(...config.theme.alternativeGradients);
+        }
+        
+        return gradients;
+    }
+    return [];
+}
+
+/**
+ * 应用随机渐变到事件类型
+ * @param {string} eventType - 事件类型
+ */
+function applyRandomGradient(eventType) {
+    const gradients = getEventGradients(eventType);
+    if (gradients.length > 0) {
+        const randomIndex = Math.floor(Math.random() * gradients.length);
+        return gradients[randomIndex];
+    }
+    return null;
+}
+
+// 暴露到全局
+window.switchEventGradient = switchEventGradient;
+window.getEventGradients = getEventGradients;
+window.applyRandomGradient = applyRandomGradient;

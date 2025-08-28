@@ -4745,3 +4745,149 @@ body {
         transform: translateZ(0); /* 开启硬件加速，减少重绘 */
     }
 }
+
+/* 七夕节空回复重试模态框样式 */
+#qixiRetryModal .modal-content {
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fecfef 100%);
+    color: #8b5cf6;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(255, 105, 180, 0.3);
+    animation: qixiModalShow 0.4s ease-out;
+}
+
+#qixiRetryModal .modal-header {
+    background: transparent;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+    padding: 20px 24px 16px;
+}
+
+#qixiRetryModal .modal-title {
+    font-size: 20px;
+    font-weight: bold;
+    text-align: center;
+    color: #8b5cf6;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+#qixiRetryModal .modal-close {
+    background: rgba(255, 255, 255, 0.3);
+    color: #8b5cf6;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+}
+
+#qixiRetryModal .modal-close:hover {
+    background: rgba(255, 255, 255, 0.5);
+    transform: scale(1.1);
+}
+
+.qixi-retry-content {
+    text-align: center;
+    padding: 20px 24px 24px;
+}
+
+.qixi-retry-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    animation: qixiHeartbeat 1.5s ease-in-out infinite;
+}
+
+.qixi-retry-message {
+    color: #8b5cf6;
+    line-height: 1.6;
+}
+
+.qixi-retry-message p {
+    margin-bottom: 12px;
+    font-size: 16px;
+}
+
+.qixi-retry-message strong {
+    color: #7c3aed;
+    font-weight: 600;
+}
+
+.qixi-retry-buttons {
+    display: flex;
+    gap: 12px;
+    padding: 0 24px 24px;
+    flex-direction: column;
+}
+
+.qixi-retry-btn {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 14px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.qixi-retry-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+}
+
+.qixi-cancel-btn {
+    background: rgba(255, 255, 255, 0.7);
+    color: #8b5cf6;
+    border: 2px solid rgba(139, 92, 246, 0.3);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.qixi-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(139, 92, 246, 0.5);
+}
+
+@keyframes qixiModalShow {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes qixiHeartbeat {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+/* 移动端优化 */
+@media (max-width: 480px) {
+    .qixi-retry-buttons {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .qixi-retry-icon {
+        font-size: 40px;
+    }
+    
+    .qixi-retry-message p {
+        font-size: 15px;
+    }
+}
