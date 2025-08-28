@@ -46,6 +46,36 @@ class PromptBuilder {
             }
         }
         
+        // 获取角色最近的朋友圈和论坛内容
+        let recentMomentContent = '';
+        let recentForumContent = '';
+        
+        try {
+            if (window.moments && window.moments.length > 0) {
+                const latestMoment = window.moments.find(moment => moment.authorName === contact.name);
+                if (latestMoment) {
+                    recentMomentContent = `最新朋友圈（${new Date(latestMoment.time).toLocaleDateString()}）: ${latestMoment.content}`;
+                }
+            }
+            
+            if (window.weiboPosts && window.weiboPosts.length > 0) {
+                for (const postGroup of window.weiboPosts) {
+                    if (postGroup.data && postGroup.data.posts) {
+                        const latestForumPost = postGroup.data.posts.find(post => {
+                            // 检查是否是当前角色发布的帖子
+                            return post.author_type === 'Char' && postGroup.contactId === contact.id;
+                        });
+                        if (latestForumPost) {
+                            recentForumContent = `最新论坛帖子（${postGroup.hashtag}）: ${latestForumPost.post_content}`;
+                            break; // 找到第一个就停止
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('获取角色最近动态时出错:', error);
+        }
+        
         let systemPrompt = `你正在进行一次角色扮演。你的所有行为和回复都必须严格遵循以下为你设定的指令。这是最高优先级的指令，在任何情况下都不能违背。\n\n`;
         
         // 按优先级显示记忆：全局记忆 -> 角色记忆 -> 记忆表格
@@ -55,6 +85,18 @@ class PromptBuilder {
         
         if (characterMemory) {
             systemPrompt += `--- 角色记忆 ---\n${characterMemory}\n--- 结束 ---\n\n`;
+        }
+        
+        // 添加角色最近的朋友圈和论坛内容（如果存在）
+        if (recentMomentContent || recentForumContent) {
+            systemPrompt += `--- 角色（你）最新动态 ---\n`;
+            if (recentMomentContent) {
+                systemPrompt += `${recentMomentContent}\n`;
+            }
+            if (recentForumContent) {
+                systemPrompt += `${recentForumContent}\n`;
+            }
+            systemPrompt += `--- 结束 ---\n\n`;
         }
         
         if (memoryInfo) {
@@ -134,6 +176,18 @@ class PromptBuilder {
         if (window.currentMusicInfo && window.currentMusicInfo.isPlaying) {
             systemPrompt += `[系统提示：用户正在听歌，当前歌曲是《${window.currentMusicInfo.songName}》，正在播放的歌词是："${window.currentMusicInfo.lyric}"]\n`;
         }
+        
+        // 特殊事件提醒 - 检查是否为特殊日期
+        let eventMessage = '';
+        if (month === '08' && day === '29') {
+            eventMessage = '今天是中国传统节日【七夕节】。可以视情况提起。';
+        }
+        // 可以在这里添加更多特殊事件检查
+        
+        if (eventMessage) {
+            systemPrompt += `---[节日提醒]---\n${eventMessage}\n---[节日提醒结束]---\n`;
+        }
+        
         systemPrompt += `\n`;
 
         // 添加特殊能力模块

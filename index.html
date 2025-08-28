@@ -220,6 +220,10 @@
                                 style="padding: 5px 10px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;" title="将Base64表情转换为标签格式，减小数据库体积">
                             🚀 数据库优化
                         </button>
+                        <button type="button" class="clear-localStorage-btn" onclick="showClearLocalStorageConfirmation()" 
+                                style="padding: 5px 10px; font-size: 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;" title="清空浏览器本地存储，谨慎操作">
+                            🗑️ 清空LocalStorage
+                        </button>
                     </div>
                 </div>
 
@@ -1407,6 +1411,69 @@
                     <div class="banner-upload-buttons">
                         <button class="btn-secondary" onclick="resetBannerUpload()">重新选择</button>
                         <button class="btn-primary" onclick="saveBannerImage()" data-umami-event="Banner Upload Save">应用背景</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 七夕节AI空回复重试模态框 -->
+    <div class="modal" id="qixiRetryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">🌟 请求失败</div>
+                <div class="modal-close" onclick="closeModal('qixiRetryModal')">✕</div>
+            </div>
+            <div class="modal-body">
+                <div class="qixi-retry-content">
+                    <div class="qixi-retry-icon">❤️‍🩹</div>
+                    <div class="qixi-retry-message">
+                        <p><strong>操作失败</strong></p>
+                        <p>是否要重新尝试？</p>
+                    </div>
+                </div>
+                <div class="qixi-retry-buttons">
+                    <button type="button" class="form-button qixi-retry-btn" onclick="handleQixiRetry()">
+                        重新尝试
+                    </button>
+                    <button type="button" class="form-button qixi-cancel-btn" onclick="closeModal('qixiRetryModal')">
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 清空localStorage确认对话框 -->
+    <div class="modal" id="clearLocalStorageModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">⚠️ 危险操作确认</div>
+                <div class="modal-close" onclick="closeModal('clearLocalStorageModal')">✕</div>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">🗑️</div>
+                    <div style="margin-bottom: 20px;">
+                        <p style="font-size: 16px; font-weight: bold; color: #dc3545; margin-bottom: 10px;">
+                            你即将清空所有localStorage！
+                        </p>
+                        <p style="font-size: 14px; color: #666; margin-bottom: 8px;">
+                            这可能会导致意外的逻辑触发
+                        </p>
+                        <p style="font-size: 14px; color: #dc3545; font-weight: 600;">
+                            除非你知道你在做什么，否则不要确认！
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button data-umami-event="Confirm Clear localStorage" type="button" class="form-button" onclick="executeLocalStorageClear()" 
+                                style="flex: 1; background: #dc3545; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                            确认
+                        </button>
+                        <button type="button" class="form-button" onclick="closeModal('clearLocalStorageModal')" 
+                                style="flex: 1; background: #6c757d; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                            取消
+                        </button>
                     </div>
                 </div>
             </div>
