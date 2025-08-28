@@ -196,8 +196,10 @@ class PromptBuilder {
         systemPrompt += this._buildEmojiInstructions(emojis);
         systemPrompt += this._buildVoiceInstructions(contact, apiSettings);
         
-        // 添加输出格式规则
-        systemPrompt += this._buildOutputFormatInstructions();
+        // 添加输出格式规则（仅私聊需要）
+        if (currentContact.type !== 'group') {
+            systemPrompt += this._buildOutputFormatInstructions();
+        }
 
         return systemPrompt;
     }
