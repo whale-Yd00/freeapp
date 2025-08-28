@@ -6997,7 +6997,16 @@ async function callAPI(contact, turnContext = []) {
             replies = [chatRepliesText.trim()];
         } else {
             // 处理回复分割（仅用于私聊）
-            if (!chatRepliesText.includes('|||')) {
+            // 首先检查是否有 ||| 分隔符
+            if (chatRepliesText.includes('|||')) {
+                replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
+            } 
+            // 如果没有 |||，检查是否有 || 分隔符
+            else if (chatRepliesText.includes('||')) {
+                replies = chatRepliesText.split('||').map(r => r.trim()).filter(r => r);
+            }
+            // 如果都没有，按句子分割
+            else {
                 const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
                 let tempReplies = [];
                 for (let i = 0; i < sentences.length; i += 2) {
@@ -7005,9 +7014,8 @@ async function callAPI(contact, turnContext = []) {
                     let punctuation = sentences[i+1] || '';
                     tempReplies.push(sentence + punctuation);
                 }
-                chatRepliesText = tempReplies.join('|||');
+                replies = tempReplies;
             }
-            replies = chatRepliesText.split('|||').map(r => r.trim()).filter(r => r);
         }
         const processedReplies = [];
         
