@@ -84,14 +84,18 @@ class APIService {
                 if (!response.ok) {
                     // 特殊处理504错误（Gateway Timeout）
                     if (response.status === 504) {
+                        const errorBody = await response.text();
+                        console.error('ERROR: API网关超时 (504) - 完整返回:', errorBody);
                         throw new Error(`请求超时(504): 模型响应时间过长，请稍后重试`);
                     }
                     
                     try {
                         const errorBody = await response.text();
+                        console.error('ERROR: API请求失败 - 完整返回:', errorBody);
                         throw new Error(`API Error: ${errorBody}`);
                     } catch (parseError) {
                         // 如果错误响应也无法解析，返回状态码
+                        console.error('ERROR: API请求失败 - 无法解析错误响应:', response.status, response.statusText);
                         throw new Error(`API请求失败: ${response.status} - ${response.statusText}`);
                     }
                 }
@@ -107,6 +111,7 @@ class APIService {
                     
                     // 检查completion_tokens是否为0
                     if (data.usage && data.usage.completion_tokens === 0) {
+                        console.error('ERROR: API返回空回复 (completion_tokens=0) - 完整返回:', JSON.stringify(data, null, 2));
                         throw new Error('API错误：API响应，但AI空回复了。可能是模型问题、被截断或API提供商问题。请尝试多重试几次，或等待上游解决。');
                     }
                     
@@ -174,6 +179,7 @@ class APIService {
 
             if (!response.ok) {
                 const errorBody = await response.text();
+                console.error('ERROR: API测试连接失败 - 完整返回:', errorBody);
                 throw new Error(`API Error: ${errorBody}`);
             }
             

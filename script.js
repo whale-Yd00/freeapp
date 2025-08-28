@@ -2249,7 +2249,7 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         let rawText = data.choices[0].message.content;
         
         if (!rawText) {
-            console.error('AI返回的内容为空');
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error("AI未返回有效内容");
         }
         
@@ -2258,7 +2258,8 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         try {
             jsonText = window.apiService.extractJSON(rawText);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
 
@@ -2267,8 +2268,9 @@ async function generateWeiboPosts(contactId, relations, relationDescription, has
         try {
             weiboData = JSON.parse(jsonText);
         } catch (parseError) {
-            console.error('JSON解析失败:', parseError);
-            console.error('尝试解析的文本:', jsonText);
+            console.error('ERROR: JSON解析失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON解析失败 - 尝试解析的文本:', jsonText);
+            console.error('ERROR: JSON解析失败 - 错误详情:', parseError);
             throw new Error(`JSON解析失败: ${parseError.message}`);
         }
 
@@ -3148,6 +3150,7 @@ async function getMentionedAIReply(postData, mentioningComment, mentionedContact
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
+        console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
         throw new Error('AI未返回有效回复');
     }
     
@@ -3170,6 +3173,7 @@ async function getAIReply(postData, userReply, contactId) {
     );
 
     if (!data.choices || data.choices.length === 0 || !data.choices[0].message.content) {
+        console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
         throw new Error('AI未返回有效回复');
     }
     
@@ -3713,6 +3717,7 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
         console.log('API返回的原始内容:', rawContent);
         
         if (!rawContent) {
+            console.error('ERROR: API返回空内容 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error('API返回空内容');
         }
         
@@ -3721,7 +3726,8 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
         try {
             cleanedJson = window.apiService.extractJSON(rawContent);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawContent);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
         
@@ -3730,7 +3736,8 @@ async function generateMomentAndComments(character, userProfile, topic = '') {
         try {
             momentData = JSON.parse(cleanedJson);
         } catch (parseError) {
-            console.error('解析JSON失败:', parseError, '原始内容:', rawContent);
+            console.error('ERROR: 解析JSON失败 - API完整返回:', rawContent);
+            console.error('ERROR: 解析JSON失败 - 错误详情:', parseError);
             throw new Error('AI返回的数据格式不正确，无法解析为JSON。');
         }
         
@@ -4231,6 +4238,7 @@ async function generateAIComments(momentContent) {
         
         const rawText = data.choices[0].message.content;
         if (!rawText) {
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error("AI未返回有效的JSON格式");
         }
 
@@ -4239,7 +4247,8 @@ async function generateAIComments(momentContent) {
         try {
             cleanedJson = window.apiService.extractJSON(rawText);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
 
@@ -4274,6 +4283,7 @@ async function generateAICommentsWithCurrentTime(momentContent) {
         
         const rawText = data.choices[0].message.content;
         if (!rawText) {
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error("AI未返回有效的JSON格式");
         }
 
@@ -4282,7 +4292,8 @@ async function generateAICommentsWithCurrentTime(momentContent) {
         try {
             cleanedJson = window.apiService.extractJSON(rawText);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
 
@@ -4322,6 +4333,7 @@ async function generateAICommentsWithTime(momentContent, momentTime) {
         
         const rawText = data.choices[0].message.content;
         if (!rawText) {
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error("AI未返回有效的JSON格式");
         }
 
@@ -4330,7 +4342,8 @@ async function generateAICommentsWithTime(momentContent, momentTime) {
         try {
             cleanedJson = window.apiService.extractJSON(rawText);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
 
@@ -5100,6 +5113,20 @@ function showApiError(prefixOrError, error) {
         // 单参数调用：showApiError(error)
         errorMessage = prefixOrError.message || '未知错误';
     }
+    
+    // 记录ERROR级别的日志，包含完整的错误信息和API返回
+    console.error('ERROR: API调用失败详情:', {
+        errorMessage: errorMessage,
+        error: error,
+        // 如果错误对象包含API响应信息，也记录下来
+        apiResponse: error.response || error.apiResponse || error.data || null,
+        // 记录错误发生的时间
+        timestamp: new Date().toISOString(),
+        // 记录网络状态
+        networkStatus: navigator.onLine ? 'online' : 'offline',
+        // 记录当前页面信息
+        pageUrl: window.location.href
+    });
     
     // 七夕节特殊功能：所有API失败都显示重试确认对话框
     showQixiRetryModal(prefixOrError, error, errorMessage, prefix);
@@ -8004,13 +8031,16 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
         });
 
         if (!response.ok) {
-            throw new Error(`API请求失败: ${response.status} - ${await response.text()}`);
+            const errorText = await response.text();
+            console.error('ERROR: 朋友圈图片生成API失败 - 完整返回:', errorText);
+            throw new Error(`API请求失败: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
         let rawText = data.choices[0].message.content;
         
         if (!rawText) {
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(data, null, 2));
             throw new Error("AI未返回有效内容");
         }
         
@@ -8019,7 +8049,8 @@ async function generateManualPost(authorName, relationTag, postContent, imageDes
         try {
             cleanedJson = window.apiService.extractJSON(rawText);
         } catch (extractError) {
-            console.error('JSON提取失败:', extractError);
+            console.error('ERROR: JSON提取失败 - API完整返回:', rawText);
+            console.error('ERROR: JSON提取失败 - 错误详情:', extractError);
             throw new Error(`JSON提取失败: ${extractError.message}`);
         }
 
@@ -9325,7 +9356,7 @@ async function playVoiceMessage(bubbleElement, text, voiceId) {
                 let errorMsg = `语音服务错误 (状态码: ${response.status})`;
                 try {
                     const errorData = await response.json();
-                    console.error('Minimax TTS API Error Response:', errorData);
+                    console.error('ERROR: Minimax TTS API 返回错误 - 完整返回:', errorData);
                     
                     // 尝试从返回的JSON中获取更具体的错误信息
                     if (errorData && errorData.base_resp && errorData.base_resp.status_msg) {
@@ -9340,7 +9371,7 @@ async function playVoiceMessage(bubbleElement, text, voiceId) {
                 } catch (e) {
                     // 如果解析JSON失败，则直接显示文本响应
                     const errorText = await response.text();
-                    console.error('Minimax TTS API Error Text Response:', errorText);
+                    console.error('ERROR: Minimax TTS API 返回错误 (文本) - 完整返回:', errorText);
                     errorMsg += `: ${errorText}`;
                 }
                 throw new Error(errorMsg);
@@ -14133,6 +14164,7 @@ ${contactsString}
         console.log('AI返回的原始内容:', rawContent);
         
         if (!rawContent) {
+            console.error('ERROR: AI返回的内容为空 - API完整返回:', JSON.stringify(response, null, 2));
             throw new Error('AI返回空内容');
         }
         
