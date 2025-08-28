@@ -7128,9 +7128,21 @@ async function saveApiSettings(event) {
         return element ? parseInt(element.value) || defaultValue : defaultValue;
     };
     
-    apiSettings.url = getElementValue('apiUrl');
-    apiSettings.key = getElementValue('apiKey');
-    apiSettings.model = getElementValue('primaryModelSelect');
+    // 获取表单值
+    const apiUrl = getElementValue('apiUrl');
+    const apiKey = getElementValue('apiKey');
+    const primaryModel = getElementValue('primaryModelSelect');
+    
+    if (apiUrl && apiKey) {
+        if (!primaryModel || primaryModel === '' || primaryModel === '连接中...' || primaryModel === '无可用模型') {
+            showToast('请点击测试链接后选择模型哦~');
+            return;
+        }
+    }
+    
+    apiSettings.url = apiUrl;
+    apiSettings.key = apiKey;
+    apiSettings.model = primaryModel;
     apiSettings.secondaryModel = getElementValue('secondaryModelSelect');
     apiSettings.contextMessageCount = getElementIntValue('contextSlider');
     apiSettings.timeout = getElementIntValue('apiTimeout', 60);
