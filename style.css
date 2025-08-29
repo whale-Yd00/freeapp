@@ -460,8 +460,9 @@ body {
     object-fit: cover;
 }
 
-.message-bubble {
-    max-width: 70%;
+.message-bubble,
+.custom-bubble-container {
+    max-width: calc(100% - 120px);
     position: relative;
 }
 
@@ -472,6 +473,12 @@ body {
     line-height: 1.5;
     word-wrap: break-word;
     position: relative;
+}
+
+/* 为自定义气泡容器内的文本元素添加换行属性 */
+.custom-bubble-container * {
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
 }
 
 .message.received .message-content {
