@@ -1485,6 +1485,216 @@ body.no-has-support.chat-active .bottom-nav {
     color: #666;
 }
 
+/* API Provider Row Styles */
+.api-provider-row {
+    border-left: 3px solid #e1e5e9; /* 默认灰色左边框 */
+    padding-left: 12px;
+    margin-left: 8px;
+    background-color: #f8f9fa; /* 默认灰色背景 */
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+/* 副key启用状态 */
+.api-provider-row.enabled {
+    border-left: 3px solid #28a745; /* 绿色左边框 */
+    background-color: rgba(40, 167, 69, 0.05); /* 淡绿色背景 */
+}
+
+.remove-provider-btn {
+    background: #ff4757;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-left: 8px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.remove-provider-btn:hover {
+    background: #ff3838;
+}
+
+.remove-provider-btn:active {
+    transform: scale(0.95);
+}
+
+/* Model Selection Styles */
+.model-selection-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.model-config-select {
+    flex: 1;
+    min-width: 120px;
+}
+
+.model-select {
+    flex: 2;
+    min-width: 180px;
+}
+
+/* API配置管理页面样式 */
+.config-list {
+    padding: 16px;
+}
+
+.config-list-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.empty-text {
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+.empty-action-btn {
+    background: var(--theme-primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.config-item {
+    background: white;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+}
+
+.config-item:hover {
+    background: #f8f9fa;
+}
+
+.config-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.config-item-name {
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.config-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.config-item-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.config-item-edit {
+    color: #007bff;
+}
+
+.config-item-delete {
+    color: #dc3545;
+}
+
+.config-item-url {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.config-item-status {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    color: white;
+}
+
+.config-item-status.active {
+    background: #28a745;
+}
+
+.config-item-status.inactive {
+    background: #6c757d;
+}
+
+.config-form {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    z-index: 1000;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.config-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e5e5;
+}
+
+.close-form-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.form-button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.form-button.primary {
+    background: var(--theme-primary);
+    color: white;
+}
+
+.form-button.secondary {
+    background: #6c757d;
+    color: white;
+}
+
 .form-submit {
     width: 100%;
     padding: 12px;
@@ -4896,5 +5106,291 @@ body {
     
     .qixi-retry-message p {
         font-size: 15px;
+    }
+}
+
+/* === API配置管理样式 === */
+.config-management-section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.config-selector-row {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+}
+
+.config-selector-group {
+    flex: 1;
+}
+
+.config-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.config-action-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.config-action-btn:hover {
+    background: var(--theme-primary-light);
+    border-color: var(--theme-primary);
+}
+
+.config-delete-btn:hover {
+    background: rgba(255, 77, 79, 0.1);
+    border-color: #ff4d4f;
+    color: #ff4d4f;
+}
+
+.config-section {
+    margin-bottom: 20px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.config-section-title {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.form-actions {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 配置下拉框样式优化 */
+#configSelector {
+    font-weight: 500;
+}
+
+#configSelector option[data-is-default="true"] {
+    font-weight: 600;
+    color: var(--theme-primary);
+}
+
+/* Key头部样式 */
+.key-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.key-header .form-label {
+    margin: 0;
+    flex: 1;
+}
+
+/* 紧凑型API Key行样式 */
+.compact-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid #e1e5e9;
+    border-radius: 6px;
+    background: #f8f9fa;
+    margin-top: 5px;
+    position: relative;
+}
+
+/* 主key行样式 - 根据状态动态设置 */
+.main-key-row {
+    background: #f8f9fa; /* 默认灰色背景 */
+    border-color: #e1e5e9; /* 默认边框 */
+}
+
+/* 主key启用状态 */
+.main-key-row.enabled {
+    background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+    border-color: #28a745;
+}
+
+.additional-key-row {
+    background: #f5f5f5;
+}
+
+.compact-key-input {
+    flex: 1;
+    min-width: 120px;
+    font-size: 14px;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.timeout-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+}
+
+.timeout-input {
+    width: 40px;
+    padding: 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.timeout-unit {
+    font-size: 12px;
+    color: #666;
+    min-width: 8px;
+}
+
+.key-status-btn, 
+.key-enable-btn {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: #6c757d;
+}
+
+.key-enable-btn:hover {
+    opacity: 0.8;
+}
+
+.main-key-status {
+    background: transparent !important; /* 强制透明背景，避免日本国旗效果 */
+    cursor: default;
+}
+
+.key-stats-compact {
+    position: absolute;
+    bottom: 2px;
+    right: 8px;
+    font-size: 10px;
+    color: #666;
+    text-align: right;
+    line-height: 1.2;
+}
+
+.key-masked-compact {
+    font-family: monospace;
+    font-size: 9px;
+    color: #777;
+    margin-bottom: 1px;
+}
+
+.stats-compact {
+    font-size: 9px;
+    color: #888;
+}
+
+.remove-provider-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-left: 6px;
+    padding: 0;
+    line-height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    box-sizing: border-box;
+    /* 确保点击区域精确 */
+    flex-shrink: 0;
+    position: relative;
+    z-index: 10;
+    pointer-events: auto;
+}
+
+.remove-provider-btn:hover {
+    background: #c82333;
+}
+
+.remove-provider-btn:active {
+    transform: scale(0.95);
+}
+
+/* 响应式设计 */
+@media (max-width: 480px) {
+    .config-selector-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    
+    .config-actions {
+        justify-content: center;
+        margin-top: 8px;
+    }
+    
+    .config-section {
+        margin-bottom: 16px;
+        padding: 12px;
+    }
+    
+    .compact-key-row {
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        gap: 6px;
+    }
+    
+    .compact-key-input {
+        min-width: 100px;
+        font-size: 14px;
+    }
+    
+    .timeout-group {
+        order: 3;
+    }
+    
+    .key-status-btn,
+    .key-enable-btn {
+        order: 2;
+    }
+    
+    .key-stats-compact {
+        position: static;
+        order: 4;
+        width: 100%;
+        text-align: left;
+        margin-top: 4px;
+        font-size: 11px;
+    }
+    
+    .timeout-input {
+        width: 35px;
     }
 }

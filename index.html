@@ -38,6 +38,7 @@
     <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
     
     <script src="config/sync-config.js"></script>
+    <script src="utils/apiConfigManager.js"></script>
 
     <!-- Analytics -->
     <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>
@@ -758,6 +759,70 @@
             </div>
         </div>
 
+        <!-- API配置管理页面 -->
+        <div class="page" id="apiConfigManagementPage" style="display: none;">
+            <div class="page-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="page-title">API配置管理</div>
+                <div class="page-actions">
+                    <button class="header-btn" onclick="showNewApiConfigForm()">添加</button>
+                </div>
+            </div>
+            <div class="page-content">
+                <div class="config-list" id="apiConfigList">
+                    <div class="config-list-empty">
+                        <div class="empty-icon">⚙️</div>
+                        <div class="empty-text">暂无API配置</div>
+                        <button class="empty-action-btn" onclick="showNewApiConfigForm()">添加第一个配置</button>
+                    </div>
+                </div>
+                
+                <!-- 配置表单 -->
+                <div class="config-form" id="apiConfigForm" style="display: none;">
+                    <div class="config-form-header">
+                        <h3 id="configFormTitle">新增API配置</h3>
+                        <button class="close-form-btn" onclick="closeApiConfigForm()">✕</button>
+                    </div>
+                    
+                    <form onsubmit="saveApiConfigInPage(event)" id="apiConfigPageForm">
+                        <div class="form-group">
+                            <label class="form-label">配置名称</label>
+                            <input type="text" class="form-input" id="pageConfigName" required placeholder="给这个配置起个名字">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">API URL</label>
+                            <input type="url" class="form-input" id="pageApiUrl" required placeholder="例如: https://api.openai.com/v1">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">API Key</label>
+                            <div class="api-key-row">
+                                <input type="password" class="form-input api-key-input" id="pageApiKey" required>
+                                <div class="timeout-group">
+                                    <label class="timeout-label">超时</label>
+                                    <input type="number" class="timeout-input" id="pageApiTimeout" min="5" max="300" value="60" placeholder="60">
+                                    <span class="timeout-unit">秒</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <button type="button" class="form-submit" onclick="testApiConnectionInPage(event)" style="background-color: #17a2b8; margin-bottom: 10px;">测试连接</button>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="button" class="form-button secondary" onclick="closeApiConfigForm()">取消</button>
+                            <button type="submit" class="form-button primary">保存配置</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-menu" id="settingsMenu">
             <div class="menu-item" onclick="showEditContactModal()">编辑联系人</div>
             <div class="menu-item" onclick="showBackgroundModal()">设置背景</div>
@@ -1020,85 +1085,153 @@
     <div class="modal" id="apiSettingsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="modal-title">API设置</div>
+                <div class="modal-title">API配置管理</div>
                 <div class="modal-close" onclick="closeModal('apiSettingsModal')">取消</div>
             </div>
             <div class="modal-body">
-                <form onsubmit="saveApiSettings(event)">
-                    <div class="form-group">
-                        <label class="form-label">API URL</label>
-                        <input type="url" class="form-input" id="apiUrl" required placeholder="例如: https://api.openai.com/v1">
+                <!-- 配置选择和管理区域 -->
+                <div class="config-management-section">
+                    <div class="config-selector-row">
+                        <div class="config-selector-group">
+                            <label class="form-label">当前配置</label>
+                            <select class="form-input" id="configSelector" onchange="handleConfigSwitch(this.value)">
+                                <option value="">加载中...</option>
+                            </select>
+                        </div>
+                        <div class="config-actions">
+                            <button type="button" class="config-action-btn" onclick="showNewConfigForm()" title="新增配置">➕</button>
+                            <button type="button" class="config-action-btn config-delete-btn" onclick="deleteCurrentConfig()" title="删除配置" id="deleteBtn">🗑️</button>
+                        </div>
                     </div>
+                </div>
+                
+                <!-- API配置表单 -->
+                <form onsubmit="saveApiConfig(event)" id="apiConfigForm">
                     <div class="form-group">
-                        <label class="form-label">API Key</label>
-                        <div class="api-key-row">
-                            <input type="password" class="form-input api-key-input" id="apiKey" required>
-                            <div class="timeout-group">
-                                <label class="timeout-label">超时</label>
-                                <input type="number" class="timeout-input" id="apiTimeout" min="5" max="300" value="60" placeholder="60">
-                                <span class="timeout-unit">秒</span>
+                        <label class="form-label">配置名称</label>
+                        <input type="text" class="form-input" id="configName" required placeholder="给这个配置起个名字">
+                    </div>
+                    
+                    <div class="config-section">
+                        <div class="config-section-title">API配置</div>
+                        <div class="form-group">
+                            <label class="form-label">API URL</label>
+                            <input type="url" class="form-input" id="apiUrl" required placeholder="例如: https://api.openai.com/v1">
+                        </div>
+                        <div class="form-group main-api-key-group">
+                            <label class="form-label">API Key (主Key)</label>
+                            <div class="compact-key-row main-key-row">
+                                <input type="password" class="form-input api-key-input compact-key-input" id="apiKey" required oninput="updateMainKeyStats(this); handleApiKeyInput(this, event)" placeholder="输入主API Key">
+                                <div class="timeout-group">
+                                    <input type="number" class="timeout-input" id="apiTimeout" min="5" max="300" value="60" placeholder="60" title="超时(秒)">
+                                    <span class="timeout-unit">s</span>
+                                </div>
+                                <button type="button" class="key-status-btn main-key-status" data-status="enabled" data-enabled="true" onclick="toggleMainKeyStatus(this)" title="主Key(已启用)">🟢</button>
+                                <div class="key-stats-compact">
+                                    <div class="key-masked-compact" id="mainKeyMask">未设置</div>
+                                    <div class="stats-compact">
+                                        <span id="mainKeyCalls">0次</span>/<span id="mainKeySuccess">0%</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                        
+                        <div class="form-group">
+                            <button type="button" class="form-submit" onclick="addProviderRow()" style="background-color: #28a745; margin-bottom: 10px; font-size: 14px; padding: 8px 16px;">
+                                ➕ 添加API Key
+                            </button>
+                            <div class="context-info" style="margin-top: -5px; font-size: 12px; color: #666;">
+                                可以添加多个API Key，手动选择启用的Key
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
                     </div>
                     
+                    <button type="submit" class="form-submit" data-umami-event="Save API Config">保存API配置</button>
+                </form>
+                
+                <!-- 模型和功能配置 -->
+                <form onsubmit="saveAppSettings(event)" id="appSettingsForm" style="margin-top: 20px;">
+                    <div class="config-section">
+                        <div class="config-section-title">应用设置</div>
+                        
+                        <div class="context-control">
+                            <div class="context-header">
+                                <div class="context-title">上下文长度</div>
+                                <div class="context-value" id="contextValue">10条</div>
+                            </div>
+                            <input 
+                                type="range" 
+                                class="context-slider" 
+                                id="contextSlider" 
+                                min="1" 
+                                max="50" 
+                                value="10"
+                                oninput="updateContextValue(this.value)"
+                            >
+                            <div class="context-info">
+                                控制AI可见的历史消息数量，较长的上下文有助于保持对话连贯性，但可能会增加API成本。
+                            </div>
+                        </div>
+                        
+                        <div class="config-section">
+                            <div class="config-section-title">模型选择</div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">主要模型</label>
+                            <div class="model-selection-row">
+                                <select class="form-input model-config-select" id="primaryConfigSelect" onchange="loadModelsForConfig('primaryConfigSelect', 'primaryModelSelect')">
+                                    <option value="">选择API配置</option>
+                                </select>
+                                <select class="form-input model-select" id="primaryModelSelect" onchange="saveModelSelection('primary')">
+                                    <option value="">请先选择API配置</option>
+                                </select>
+                            </div>
+                            <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">次要模型</label>
+                            <div class="model-selection-row">
+                                <select class="form-input model-config-select" id="secondaryConfigSelect" onchange="loadModelsForConfig('secondaryConfigSelect', 'secondaryModelSelect')">
+                                    <option value="">选择API配置</option>
+                                    <option value="sync_with_primary">与主模型保持一致</option>
+                                </select>
+                                <select class="form-input model-select" id="secondaryModelSelect" onchange="saveModelSelection('secondary')">
+                                    <option value="">请先选择API配置</option>
+                                    <option value="sync_with_primary">与主模型保持一致</option>
+                                </select>
+                            </div>
+                            <div class="context-info" style="margin-top: 4px;">用于总结、填写记忆表格等，建议选择便宜的模型，以节约成本。若不介意成本，可选择与主要模型保持一致。</div>
+                        </div>
+                        </div>
                     
-                    <div class="context-control">
-                        <div class="context-header">
-                            <div class="context-title">上下文长度</div>
-                            <div class="context-value" id="contextValue">10条</div>
+                    <div class="config-section">
+                        <div class="config-section-title">扩展功能</div>
+                        <div class="form-group">
+                            <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
+                            <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
                         </div>
-                        <input 
-                            type="range" 
-                            class="context-slider" 
-                            id="contextSlider" 
-                            min="1" 
-                            max="50" 
-                            value="10"
-                            oninput="updateContextValue(this.value)"
-                        >
-                        <div class="context-info">
-                            控制AI可见的历史消息数量，较长的上下文有助于保持对话连贯性，但可能会增加API成本。
+                        <div class="form-group">
+                            <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
+                            <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
+                            <div class="context-info" style="margin-top: 4px;">
+                                用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
+                            </div>
                         </div>
-                    </div>
-                    
-                    <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
-                    <div class="form-group">
-                        <label class="form-label">主要模型</label>
-                        <select class="form-input" id="primaryModelSelect">
-                            <option value="">请先测试连接</option>
-                        </select>
-                        <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">次要模型</label>
-                        <select class="form-input" id="secondaryModelSelect">
-                            <option value="sync_with_primary">与主模型保持一致</option>
-                        </select>
-                        <div class="context-info" style="margin-top: 4px;">用于总结、填写记忆表格等，建议选择便宜的模型，以节约成本。若不介意成本，可选择与主要模型保持一致。</div>
-                    </div>
 
-                    <div class="form-group">
-                        <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
-                        <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
-                    </div>
-                    <div class="form-group">
-                        <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
-                        <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
-                        <div class="context-info" style="margin-top: 4px;">
-                            用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
+                        <div class="form-group">
+                            <label for="unsplashApiKey" class="form-label">Unsplash API Key（可选）</label>
+                            <input type="password" id="unsplashApiKey" class="form-input" placeholder="输入你的 Unsplash Access Key...">
+                            <div class="context-info" style="margin-top: 4px;">
+                                用于为论坛帖子和朋友圈自动配图。在 <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer">Unsplash Developers</a> 获取API Key。
+                            </div>
+                        </div>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label for="unsplashApiKey" class="form-label">Unsplash API Key（可选）</label>
-                        <input type="password" id="unsplashApiKey" class="form-input" placeholder="输入你的 Unsplash Access Key...">
-                        <div class="context-info" style="margin-top: 4px;">
-                            用于为论坛帖子和朋友圈自动配图。在 <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer">Unsplash Developers</a> 获取API Key。
-                        </div>
-                    </div>
-
-
-                    <button type="submit" class="form-submit">保存</button>
+                    <button type="submit" class="form-submit" data-umami-event="Save App Settings">保存应用设置</button>
                 </form>
             </div>
         </div>
@@ -1474,6 +1607,32 @@
                                 style="flex: 1; background: #6c757d; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
                             取消
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- API模型加载等待提示框 -->
+    <div class="modal" id="apiLoadingModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">正在加载模型信息</div>
+                <div class="modal-close" onclick="cancelApiLoading()">取消</div>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">⏳</div>
+                    <div style="margin-bottom: 20px;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">
+                            正在获取模型列表...
+                        </p>
+                        <p style="font-size: 14px; margin-bottom: 6px;">
+                            此过程取决于您的网速和存储配置的数量。若等待时间过长，建议更换网络重试。
+                        </p>
+                        <p style="font-size: 24px; font-weight: bold; color: var(--theme-primary);" id="loadingCountdown">
+                            0s
+                        </p>
                     </div>
                 </div>
             </div>
