@@ -8429,7 +8429,7 @@ async function saveApiConfigInPage(event) {
     }
 }
 
-async function testApiConnectionInPage() {
+async function testApiConnectionInPage(event) {
     try {
         const url = document.getElementById('pageApiUrl').value.trim();
         const key = document.getElementById('pageApiKey').value.trim();
