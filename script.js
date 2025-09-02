@@ -1,4 +1,4 @@
-// === Console日志捕获系统 ===
+﻿// === Console日志捕获系统 ===
 let consoleLogs = [];
 const maxLogEntries = 500; // 限制日志条目数量避免内存过大
 
@@ -1899,6 +1899,16 @@ async function initializeDatabaseOnce() {
                 console.log('[事件通知] 已发出 databaseReady 事件');
             }
             
+            // 初始化API配置管理器
+            if (window.apiConfigManager) {
+                try {
+                    await window.apiConfigManager.init();
+                    console.log('[DEBUG] API配置管理器初始化完成');
+                } catch (error) {
+                    console.error('[DEBUG] API配置管理器初始化失败:', error);
+                }
+            }
+            
             return db;
             
         } catch (error) {
@@ -1974,7 +1984,7 @@ function formatTime(timestamp) {
 }
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage'];
 
 function showPage(pageIdToShow) {
     // 异步包装函数，用于处理包含异步操作的页面显示
@@ -2040,6 +2050,11 @@ async function showPageAsync(pageIdToShow) {
     if (pageIdToShow === 'momentsPage' && !isMomentsRendered) {
         await renderMomentsList();
         isMomentsRendered = true;
+    }
+    
+    // Load API Config Management page content
+    if (pageIdToShow === 'apiConfigManagementPage') {
+        await loadApiConfigManagementPage();
     }
     
     // 更新朋友圈锁定指示器显示状态
@@ -3784,40 +3799,29 @@ async function analyzeImageContent(imageBase64, prompt = '请描述这张图片�
     }
     
     try {
-        const response = await fetch(`${apiSettings.url}/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiSettings.key}`
-            },
-            body: JSON.stringify({
-                model: apiSettings.model,
-                messages: [{
-                    role: 'user',
-                    content: [
-                        {
-                            type: 'text',
-                            text: prompt
-                        },
-                        {
-                            type: 'image_url',
-                            image_url: {
-                                url: imageBase64
-                            }
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            [{
+                role: 'user',
+                content: [
+                    {
+                        type: 'text',
+                        text: prompt
+                    },
+                    {
+                        type: 'image_url',
+                        image_url: {
+                            url: imageBase64
                         }
-                    ]
-                }],
-                max_tokens: 5000,
-                temperature: 0.7,
-                stream: false
-            })
-        });
+                    }
+                ]
+            }],
+            { max_tokens: 5000, temperature: 0.7 },
+            (apiSettings.timeout || 60) * 1000
+        );
         
-        if (!response.ok) {
-            throw new Error(`图片分析失败: ${response.status}`);
-        }
-        
-        const data = await response.json();
         return data.choices[0]?.message?.content || '无法识别图片内容';
         
     } catch (error) {
@@ -3878,26 +3882,15 @@ async function generateMomentForCharacter(character, topic = '') {
 
 直接返回朋友圈内容，不要有其他说明文字。`;
 
-    const response = await fetch(`${apiSettings.url}/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiSettings.key}`
-        },
-        body: JSON.stringify({
-            model: apiSettings.model,
-            messages: [{ role: 'user', content: prompt }],
-            max_tokens: 5000,
-            temperature: 0.8,
-            stream: false
-        })
-    });
+    const data = await window.apiService.callOpenAIAPI(
+        apiSettings.url,
+        apiSettings.key,
+        apiSettings.model,
+        [{ role: 'user', content: prompt }],
+        { max_tokens: 5000, temperature: 0.8 },
+        (apiSettings.timeout || 60) * 1000
+    );
 
-    if (!response.ok) {
-        throw new Error(`生成失败: ${response.status}`);
-    }
-
-    const data = await response.json();
     return data.choices[0]?.message?.content || '今天心情不错~';
 }
 
@@ -5750,60 +5743,93 @@ function showEditContactModal() {
     toggleSettingsMenu();
 }
 
-function showApiSettingsModal() {
+// API加载等待相关变量
+let apiLoadingTimerId = null;
+let apiLoadingStartTime = null;
+let apiLoadingCancelled = false;
+
+// 显示API加载等待框
+function showApiLoadingModal() {
+    apiLoadingCancelled = false;
+    apiLoadingStartTime = Date.now();
+    showModal('apiLoadingModal');
+    
+    // 开始倒计时
+    apiLoadingTimerId = setInterval(() => {
+        if (apiLoadingCancelled) {
+            clearInterval(apiLoadingTimerId);
+            return;
+        }
+        
+        const elapsed = Math.floor((Date.now() - apiLoadingStartTime) / 1000);
+        const countdownElement = document.getElementById('loadingCountdown');
+        if (countdownElement) {
+            countdownElement.textContent = elapsed + 's';
+        }
+    }, 1000);
+}
+
+// 隐藏API加载等待框
+function hideApiLoadingModal() {
+    if (apiLoadingTimerId) {
+        clearInterval(apiLoadingTimerId);
+        apiLoadingTimerId = null;
+    }
+    closeModal('apiLoadingModal');
+}
+
+// 取消API加载
+function cancelApiLoading() {
+    apiLoadingCancelled = true;
+    hideApiLoadingModal();
+    showToast('已取消模型加载');
+}
+
+async function showApiSettingsModal() {
     try {
-        console.log('显示API设置模态框');
+        console.log('显示API配置管理模态框');
         
-        // 【修改点 3】: 加载 Minimax 的设置
-        const apiUrlElement = document.getElementById('apiUrl');
-        const apiKeyElement = document.getElementById('apiKey'); 
-        const apiTimeoutElement = document.getElementById('apiTimeout');
-        const minimaxGroupIdElement = document.getElementById('minimaxGroupId');
-        const minimaxApiKeyElement = document.getElementById('minimaxApiKey');
-        const unsplashApiKeyElement = document.getElementById('unsplashApiKey');
+        // 显示等待提示框
+        showApiLoadingModal();
         
-        if (apiUrlElement) apiUrlElement.value = apiSettings.url || '';
-        if (apiKeyElement) apiKeyElement.value = apiSettings.key || '';
-        if (apiTimeoutElement) apiTimeoutElement.value = apiSettings.timeout || 60;
-        if (minimaxGroupIdElement) minimaxGroupIdElement.value = apiSettings.minimaxGroupId || '';
-        if (minimaxApiKeyElement) minimaxApiKeyElement.value = apiSettings.minimaxApiKey || '';
-        
-        // 恢复 Unsplash API Key
-        if (unsplashApiKeyElement) {
-            unsplashApiKeyElement.value = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey') || '';
-        }
-
-        const primarySelect = document.getElementById('primaryModelSelect');
-        const secondarySelect = document.getElementById('secondaryModelSelect');
-
-        if (primarySelect && secondarySelect) {
-            // 重置并填充
-            primarySelect.innerHTML = '<option value="">请先测试连接</option>';
-            secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+        try {
+            // 初始化配置选择器
+            await loadConfigSelector();
             
-            // 如果已有设置，则自动尝试获取模型列表
-            if (apiSettings.url && apiSettings.key) {
-                // 临时显示已保存的选项
-                if (apiSettings.model) {
-                    primarySelect.innerHTML = `<option value="${apiSettings.model}">${apiSettings.model}</option>`;
-                }
-                if (apiSettings.secondaryModel && apiSettings.secondaryModel !== 'sync_with_primary') {
-                     secondarySelect.innerHTML = `
-                        <option value="sync_with_primary">与主模型保持一致</option>
-                        <option value="${apiSettings.secondaryModel}">${apiSettings.secondaryModel}</option>`;
-                }
-                testApiConnection(); // 自动测试连接并填充列表
-            }
+            // 检查是否被取消
+            if (apiLoadingCancelled) return;
             
-            // 确保在显示模态框时绑定事件
-            primarySelect.onchange = handlePrimaryModelChange;
+            // 加载当前配置到表单
+            await loadCurrentConfigToForm();
+            
+            // 检查是否被取消
+            if (apiLoadingCancelled) return;
+            
+            // 加载模型选择器的API配置列表
+            await loadApiConfigSelectorsForModels();
+            
+            // 检查是否被取消
+            if (apiLoadingCancelled) return;
+            
+        } finally {
+            // 无论成功还是失败都要隐藏等待框
+            hideApiLoadingModal();
         }
-
-        showModal('apiSettingsModal');
-        console.log('API设置模态框已显示');
+        
+        // 只有在没有被取消时才显示API设置模态框
+        if (!apiLoadingCancelled) {
+            showModal('apiSettingsModal');
+            console.log('API设置模态框已显示');
+            
+            // 确保API key状态正确显示
+            setTimeout(() => {
+                updateAllKeyStates();
+            }, 200); // 延迟确保DOM已完全渲染
+        }
         
     } catch (error) {
         console.error('显示API设置模态框失败:', error);
+        hideApiLoadingModal();
         showToast('打开设置失败: ' + error.message);
     }
 }
@@ -6945,6 +6971,7 @@ async function callAPI(contact, turnContext = []) {
         messages.push(...messageHistory);
 
         // 3. 调用API
+        console.log(`[多key调试] callAPI被调用，当前使用的API Key: ${apiSettings.key ? apiSettings.key.substring(0, 10) + '...' : 'null'}`);
         
         const data = await window.apiService.callOpenAIAPI(
             apiSettings.url,
@@ -7082,60 +7109,94 @@ async function callAPI(contact, turnContext = []) {
 
 
 async function testApiConnection() {
-    const url = document.getElementById('apiUrl').value;
-    const key = document.getElementById('apiKey').value;
-    if (!url || !key) {
-        showToast('请填写完整信息');
-        return;
-    }
-
-    const primarySelect = document.getElementById('primaryModelSelect');
-    const secondarySelect = document.getElementById('secondaryModelSelect');
+    // 声明变量，使其在try-catch块外可访问
+    let enabledKey = '';
+    let keyElement = null; // 存储对应的DOM元素
     
-    primarySelect.innerHTML = '<option>连接中...</option>';
-    secondarySelect.innerHTML = '<option>连接中...</option>';
-    primarySelect.disabled = true;
-    secondarySelect.disabled = true;
-
     try {
-        const data = await window.apiService.testConnection(url, key);
-        const models = data.data ? data.data.map(m => m.id).sort() : [];
-
-        if (models.length === 0) {
-            showToast('连接成功，但未找到可用模型');
-            primarySelect.innerHTML = '<option>无可用模型</option>';
-            secondarySelect.innerHTML = '<option>无可用模型</option>';
+        const url = document.getElementById('apiUrl')?.value?.trim();
+        
+        if (!url) {
+            showToast('请填写API URL');
             return;
         }
-
-        // 填充主要模型
-        primarySelect.innerHTML = '';
-        models.forEach(modelId => {
-            const option = document.createElement('option');
-            option.value = modelId;
-            option.textContent = modelId;
-            primarySelect.appendChild(option);
-        });
-        primarySelect.value = apiSettings.model;
-
-        // 填充次要模型
-        secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
-        models.forEach(modelId => {
-            const option = document.createElement('option');
-            option.value = modelId;
-            option.textContent = modelId;
-            secondarySelect.appendChild(option);
-        });
-        secondarySelect.value = apiSettings.secondaryModel || 'sync_with_primary';
         
-        primarySelect.disabled = false;
-        secondarySelect.disabled = false;
-        showToast('连接成功');
+        // 检查主key是否有值
+        const mainKey = document.getElementById('apiKey')?.value?.trim();
+        if (mainKey) {
+            enabledKey = mainKey; // 默认使用主key
+            keyElement = document.getElementById('apiKey');
+        }
+        
+        // 检查是否有额外key被启用
+        const enabledButtons = document.querySelectorAll('.key-enable-btn[data-enabled="true"]');
+        if (enabledButtons.length > 0) {
+            const enabledButton = enabledButtons[0];
+            const row = enabledButton.closest('.api-provider-row');
+            const keyInput = row?.querySelector('.api-key-input');
+            if (keyInput && keyInput.value.trim()) {
+                enabledKey = keyInput.value.trim();
+                keyElement = keyInput;
+            }
+        }
+        
+        if (!enabledKey) {
+            showToast('请填写至少一个API Key');
+            return;
+        }
+        
+        console.log('测试连接使用的key前8位:', enabledKey.substring(0, 8) + '...');
+
+        // 测试连接
+        console.log(`[测试连接] window.apiService存在: ${!!window.apiService}`);
+        console.log(`[测试连接] window.apiService.testConnection类型: ${typeof window.apiService?.testConnection}`);
+        
+        if (!window.apiService) {
+            // 尝试重新初始化APIService
+            if (typeof APIService !== 'undefined') {
+                console.log('[测试连接] 重新初始化APIService');
+                window.apiService = new APIService();
+            } else {
+                throw new Error('APIService类未定义，请检查api.js是否正确加载');
+            }
+        }
+        
+        if (typeof window.apiService.testConnection !== 'function') {
+            console.error('window.apiService对象:', window.apiService);
+            console.error('可用方法:', Object.getOwnPropertyNames(window.apiService));
+            throw new Error('testConnection方法不存在');
+        }
+        
+        const data = await window.apiService.testConnection(url, enabledKey);
+        const models = data.data ? data.data.map(m => m.id).sort() : [];
+
+        // 连接成功，但不重写模型选择框
+        if (models.length === 0) {
+            showToast('连接成功，但未找到可用模型');
+        } else {
+            showToast(`连接成功，找到 ${models.length} 个可用模型`);
+        }
+        
+        // 只缓存模型列表，不更新UI
+        if (models && models.length > 0 && window.apiConfigManager) {
+            const activeConfig = await window.apiConfigManager.getActiveConfig();
+            if (activeConfig) {
+                window.apiConfigManager.availableModels.set(activeConfig.id, models);
+                console.log(`[测试连接] 已缓存 ${models.length} 个模型到配置 ${activeConfig.id}`);
+            }
+        }
 
     } catch (error) {
-        primarySelect.innerHTML = '<option>连接失败</option>';
-        secondarySelect.innerHTML = '<option>连接失败</option>';
-        showToast(error.message);
+        console.error('测试连接失败:', error);
+        showToast('连接失败: ' + error.message);
+        
+        // 标记测试失败的key为失败状态
+        if (keyElement) {
+            console.log('标记key为失败状态:', keyElement.id || 'secondary key');
+            markKeyAsFailed(keyElement);
+        } else {
+            console.error('无法标记key为失败状态: keyElement为null');
+        }
     }
 }
 
@@ -7143,70 +7204,1270 @@ function handlePrimaryModelChange() {
     const primaryModel = document.getElementById('primaryModelSelect').value;
     const secondarySelect = document.getElementById('secondaryModelSelect');
     
-    // 如果次要模型设置为“同步”，则在数据层面更新它
+    // 立即更新全局设置中的模型
+    if (window.apiSettings) {
+        window.apiSettings.model = primaryModel;
+        console.log('主模型已更新为:', primaryModel);
+    }
+    
+    // 如果次要模型设置为"同步"，则在数据层面更新它
     if (apiSettings.secondaryModel === 'sync_with_primary') {
         // 不需要直接修改UI，保存时会处理
     }
 }
 
-async function saveApiSettings(event) {
+async function saveApiConfig(event) {
     event.preventDefault();
     
-    // 安全获取DOM元素值的辅助函数
-    const getElementValue = (id, defaultValue = '') => {
-        const element = document.getElementById(id);
-        return element ? element.value : defaultValue;
-    };
+    try {
+        if (!window.apiConfigManager) {
+            throw new Error('配置管理器未初始化');
+        }
+        
+        // 获取表单数据
+        const getElementValue = (id, defaultValue = '') => {
+            const element = document.getElementById(id);
+            return element ? element.value.trim() : defaultValue;
+        };
+        
+        const configName = getElementValue('configName');
+        const apiUrl = getElementValue('apiUrl');
+        const apiKey = getElementValue('apiKey');
+        const timeout = parseInt(getElementValue('apiTimeout')) || 60;
+        
+        // 验证必填字段
+        if (!configName) {
+            showToast('请输入配置名称');
+            return;
+        }
+        
+        if (!apiUrl || !apiKey) {
+            showToast('请输入API URL和API Key');
+            return;
+        }
+        
+        // 构建完整的API Keys数组（包括主key和所有副key）
+        const allApiKeys = [];
+        
+        // 首先添加主key（始终在index 0）
+        const mainKeyStatus = document.querySelector('.main-key-status');
+        const mainKeyEnabled = mainKeyStatus ? (mainKeyStatus.dataset.enabled === 'true' && mainKeyStatus.dataset.status === 'enabled') : true;
+        
+        allApiKeys.push({
+            key: apiKey,
+            name: '主Key',
+            enabled: mainKeyEnabled,
+            index: 0
+        });
+        
+        // 然后添加所有副key
+        const providerRows = document.querySelectorAll('.api-provider-row');
+        providerRows.forEach((row, index) => {
+            const keyInput = row.querySelector('.api-key-input');
+            const enableButton = row.querySelector('.key-enable-btn');
+            if (keyInput && keyInput.value.trim()) {
+                allApiKeys.push({
+                    key: keyInput.value.trim(),
+                    name: `Key ${index + 1}`,
+                    enabled: enableButton ? (enableButton.dataset.enabled === 'true' && enableButton.dataset.status === 'enabled') : false,
+                    index: index + 1
+                });
+            }
+        });
+        
+        // 获取模型选择
+        const primaryModel = getElementValue('primaryModelSelect');
+        const secondaryModel = getElementValue('secondaryModelSelect');
+        
+        // 获取上下文消息数量
+        const contextMessageCount = parseInt(getElementValue('contextSlider')) || 10;
+        
+        // 检查是否为新配置（通过按钮状态或其他标识判断）
+        const isNewConfig = window.currentConfigState === 'new';
+        const configSelector = document.getElementById('configSelector');
+        const currentConfigId = isNewConfig ? null : configSelector?.value || null;
+        
+        // 构建配置数据 - 保持原有key结构，只更新启用状态
+        const configData = {
+            configId: currentConfigId,
+            configName,
+            url: apiUrl,
+            key: apiKey, // 保持主key不变
+            model: primaryModel,
+            secondaryModel: secondaryModel,
+            contextMessageCount,
+            timeout,
+            apiKeys: allApiKeys // 使用完整的apiKeys结构
+        };
+        
+        console.log('[API配置保存] 准备保存的配置数据:', {
+            key: apiKey.substring(0, 10) + '...',
+            apiKeysCount: allApiKeys.length,
+            enabledKeys: allApiKeys.filter(k => k.enabled).map(k => ({
+                index: k.index, 
+                keyPrefix: k.key.substring(0, 10) + '...'
+            }))
+        });
+        
+        // 保存配置
+        const savedConfig = await window.apiConfigManager.saveConfig(configData);
+        
+        // 如果是新配置，切换到新配置
+        if (!currentConfigId || currentConfigId === '') {
+            await window.apiConfigManager.switchToConfig(savedConfig.id);
+        }
+        
+        // 重新加载配置选择器
+        await loadConfigSelector();
+        
+        // 设置选中的配置
+        if (configSelector) {
+            configSelector.value = savedConfig.id;
+        }
+        
+        // 重置新配置状态
+        window.currentConfigState = null;
+        
+        showToast('API配置保存成功');
+        
+        // 立即更新全局API设置
+        await ensureApiConfigIsUpdated();
+        
+    } catch (error) {
+        console.error('保存API配置失败:', error);
+        showToast('保存API配置失败: ' + error.message);
+    }
+}
+
+async function saveAppSettings(event) {
+    event.preventDefault();
     
-    const getElementIntValue = (id, defaultValue = 0) => {
-        const element = document.getElementById(id);
-        return element ? parseInt(element.value) || defaultValue : defaultValue;
-    };
+    try {
+        // 获取表单数据
+        const getElementValue = (id, defaultValue = '') => {
+            const element = document.getElementById(id);
+            return element ? element.value.trim() : defaultValue;
+        };
+        
+        const primaryConfig = getElementValue('primaryConfigSelect');
+        const primaryModel = getElementValue('primaryModelSelect');
+        const secondaryConfig = getElementValue('secondaryConfigSelect', 'sync_with_primary');
+        const secondaryModel = getElementValue('secondaryModelSelect', 'sync_with_primary');
+        const contextMessageCount = parseInt(getElementValue('contextSlider')) || 10;
+        const minimaxGroupId = getElementValue('minimaxGroupId');
+        const minimaxApiKey = getElementValue('minimaxApiKey');
+        const unsplashKey = getElementValue('unsplashApiKey');
+        
+        // 保存应用设置到localStorage（这些不属于API配置）
+        localStorage.setItem('primaryModelConfig', primaryConfig);
+        localStorage.setItem('primaryModel', primaryModel);
+        localStorage.setItem('secondaryModelConfig', secondaryConfig);
+        localStorage.setItem('secondaryModel', secondaryModel);
+        localStorage.setItem('contextMessageCount', contextMessageCount.toString());
+        localStorage.setItem('minimaxGroupId', minimaxGroupId);
+        localStorage.setItem('minimaxApiKey', minimaxApiKey);
+        
+        // 保存 Unsplash API Key
+        if (unsplashKey) {
+            localStorage.setItem('forumUnsplashApiKey', unsplashKey);
+            localStorage.setItem('unsplashApiKey', unsplashKey);
+        } else {
+            localStorage.removeItem('forumUnsplashApiKey');
+            localStorage.removeItem('unsplashApiKey');
+        }
+        
+        // 重新初始化图片关键词生成器
+        if (window.imageKeywordGenerator && window.apiService) {
+            window.imageKeywordGenerator.init(window.apiSettings, window.apiService);
+            console.log('图片关键词生成器已更新配置');
+        }
+        
+        updateContextIndicator();
+        showToast('应用设置保存成功');
+        
+    } catch (error) {
+        console.error('保存应用设置失败:', error);
+        showToast('保存应用设置失败: ' + error.message);
+    }
+}
+
+async function loadApiConfigSelectorsForModels() {
+    try {
+        if (!window.apiConfigManager) return;
+        
+        const configs = await window.apiConfigManager.getAllConfigs();
+        
+        // 为主要模型和次要模型的配置选择器添加选项
+        const primaryConfigSelect = document.getElementById('primaryConfigSelect');
+        const secondaryConfigSelect = document.getElementById('secondaryConfigSelect');
+        
+        if (primaryConfigSelect) {
+            primaryConfigSelect.innerHTML = '<option value="">选择API配置</option>';
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = config.configName;
+                primaryConfigSelect.appendChild(option);
+            });
+        }
+        
+        if (secondaryConfigSelect) {
+            secondaryConfigSelect.innerHTML = '<option value="">选择API配置</option><option value="sync_with_primary">与主模型保持一致</option>';
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = config.configName;
+                secondaryConfigSelect.appendChild(option);
+            });
+        }
+        
+        // 加载保存的选择
+        const savedPrimaryConfig = localStorage.getItem('primaryModelConfig');
+        const savedPrimaryModel = localStorage.getItem('primaryModel');
+        const savedSecondaryConfig = localStorage.getItem('secondaryModelConfig');
+        const savedSecondaryModel = localStorage.getItem('secondaryModel');
+        
+        if (savedPrimaryConfig && primaryConfigSelect) {
+            primaryConfigSelect.value = savedPrimaryConfig;
+            await loadModelsForConfig('primaryConfigSelect', 'primaryModelSelect');
+            if (savedPrimaryModel) {
+                const primaryModelSelect = document.getElementById('primaryModelSelect');
+                if (primaryModelSelect) {
+                    primaryModelSelect.value = savedPrimaryModel;
+                }
+            }
+        }
+        
+        if (savedSecondaryConfig && secondaryConfigSelect) {
+            secondaryConfigSelect.value = savedSecondaryConfig;
+            if (savedSecondaryConfig !== 'sync_with_primary') {
+                await loadModelsForConfig('secondaryConfigSelect', 'secondaryModelSelect');
+                if (savedSecondaryModel) {
+                    const secondaryModelSelect = document.getElementById('secondaryModelSelect');
+                    if (secondaryModelSelect) {
+                        secondaryModelSelect.value = savedSecondaryModel;
+                    }
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('加载API配置选择器失败:', error);
+    }
+}
+
+// 检查API Key是否重复
+function checkKeyDuplicate(keyValue, excludeInput = null) {
+    // 获取主key
+    const mainKeyInput = document.getElementById('apiKey');
+    if (mainKeyInput !== excludeInput && mainKeyInput.value.trim() === keyValue) {
+        return true;
+    }
     
-    // 获取表单值
-    const apiUrl = getElementValue('apiUrl');
-    const apiKey = getElementValue('apiKey');
-    const primaryModel = getElementValue('primaryModelSelect');
+    // 获取所有副key
+    const secondaryKeyInputs = document.querySelectorAll('.api-provider-row .api-key-input');
+    for (const input of secondaryKeyInputs) {
+        if (input !== excludeInput && input.value.trim() === keyValue) {
+            return true;
+        }
+    }
     
-    if (apiUrl && apiKey) {
-        if (!primaryModel || primaryModel === '' || primaryModel === '连接中...' || primaryModel === '无可用模型') {
-            showToast('请点击测试链接后选择模型哦~');
+    return false;
+}
+
+// 处理API Key输入，检查重复
+function handleApiKeyInput(input, event) {
+    const keyValue = input.value.trim();
+    
+    if (keyValue && checkKeyDuplicate(keyValue, input)) {
+        // 如果有重复，显示警告
+        input.style.borderColor = '#dc3545';
+        showToast('API Key不能重复！', 'warning');
+        
+        // 可选：清除重复的值
+        // input.value = '';
+    } else {
+        // 没有重复，恢复正常边框
+        input.style.borderColor = '';
+    }
+}
+
+// 检查所有API Key是否有重复
+function checkAllApiKeysForDuplicates() {
+    const allKeyInputs = document.querySelectorAll('.api-key-input');
+    const keyMap = new Map(); // 存储key值和对应的输入框
+    
+    // 重置所有边框
+    allKeyInputs.forEach(input => {
+        input.style.borderColor = '';
+    });
+    
+    // 检查重复
+    let hasDuplicates = false;
+    allKeyInputs.forEach(input => {
+        const keyValue = input.value.trim();
+        if (!keyValue) return;
+        
+        if (keyMap.has(keyValue)) {
+            // 发现重复
+            hasDuplicates = true;
+            input.style.borderColor = '#dc3545';
+            keyMap.get(keyValue).style.borderColor = '#dc3545';
+        } else {
+            keyMap.set(keyValue, input);
+        }
+    });
+    
+    if (hasDuplicates) {
+        showToast('检测到重复的API Keys，请检查！', 'warning');
+    }
+}
+
+function addProviderRow() {
+    try {
+        console.log('添加新的API Key行');
+        
+        // 找到API配置表单中的基本设置部分
+        const configSection = document.querySelector('.config-section');
+        if (!configSection) {
+            console.error('未找到配置部分容器');
+            showToast('无法添加新行：未找到配置容器');
+            return;
+        }
+        
+        // 计算这是第几个Key（从1开始，0是主Key）
+        const existingRows = document.querySelectorAll('.api-provider-row').length;
+        const keyIndex = existingRows + 1;
+        
+        // 创建新的API Key行
+        const newKeyRow = document.createElement('div');
+        newKeyRow.className = 'form-group api-provider-row';
+        newKeyRow.innerHTML = `
+            <div class="key-header">
+                <label class="form-label">API Key ${keyIndex}</label>
+                <button type="button" class="remove-provider-btn" onclick="removeProviderRow(this, event)" title="移除此Key">×</button>
+            </div>
+            <div class="compact-key-row additional-key-row">
+                <input type="password" class="form-input api-key-input compact-key-input" placeholder="输入API Key" oninput="updateKeyStats(this); handleApiKeyInput(this, event)">
+                <button type="button" class="key-enable-btn" onclick="toggleKeyEnable(this)" data-enabled="false" data-status="disabled" title="点击启用此Key">⚪</button>
+                <div class="key-stats-compact">
+                    <div class="key-masked-compact">未设置</div>
+                    <div class="stats-compact">
+                        <span class="calls-count">0次</span>/<span class="success-rate">0%</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 找到现有API Key输入框的父容器，在其后插入新行
+        const apiKeyGroup = document.querySelector('#apiKey').closest('.form-group');
+        if (apiKeyGroup && apiKeyGroup.parentNode) {
+            apiKeyGroup.parentNode.insertBefore(newKeyRow, apiKeyGroup.nextSibling);
+            console.log('成功添加新的API Key行');
+        } else {
+            console.error('未找到API Key输入框容器');
+            showToast('无法添加新行：未找到API Key容器');
+        }
+        
+    } catch (error) {
+        console.error('添加API Key行失败:', error);
+        showToast('添加新行失败: ' + error.message);
+    }
+}
+
+function removeProviderRow(button, event) {
+    try {
+        // 阻止事件冒泡
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        const row = button.closest('.api-provider-row');
+        if (row) {
+            row.remove();
+            console.log('移除API Key行成功');
+            showToast('已移除API Key行');
+        }
+    } catch (error) {
+        console.error('移除API Key行失败:', error);
+        showToast('移除行失败: ' + error.message);
+    }
+}
+
+// 标记API Key为失败状态
+async function markKeyAsFailed(keyElement) {
+    try {
+        if (!keyElement) {
+            console.error('markKeyAsFailed: keyElement为null');
+            return;
+        }
+        
+        console.log('markKeyAsFailed: 开始处理key', keyElement.id || 'secondary key');
+        
+        // 判断是主key还是额外key
+        if (keyElement.id === 'apiKey') {
+            // 主key - 使用主key状态按钮
+            const mainKeyStatusBtn = document.querySelector('.main-key-status');
+            if (mainKeyStatusBtn) {
+                console.log('markKeyAsFailed: 找到主key状态按钮，设置为失败状态');
+                mainKeyStatusBtn.dataset.status = 'failed';
+                mainKeyStatusBtn.dataset.enabled = 'false';
+                mainKeyStatusBtn.style.backgroundColor = 'white'; // 白色背景
+                mainKeyStatusBtn.textContent = '🔴'; // 红色圆圈
+                // 更新全局设置
+                if (window.apiConfigManager) {
+                    await window.apiConfigManager.setKeyEnabled('', false); // 清除启用的key
+                }
+            } else {
+                console.error('markKeyAsFailed: 未找到主key状态按钮(.main-key-status)');
+            }
+        } else {
+            // 额外key - 找到对应的状态按钮
+            const row = keyElement.closest('.api-provider-row');
+            if (row) {
+                const statusBtn = row.querySelector('.key-enable-btn');
+                if (statusBtn) {
+                    console.log('markKeyAsFailed: 找到副key状态按钮，设置为失败状态');
+                    statusBtn.dataset.status = 'failed';
+                    statusBtn.dataset.enabled = 'false';
+                    statusBtn.style.backgroundColor = 'white'; // 白色背景
+                    statusBtn.textContent = '🔴'; // 红色圆圈
+                    // 如果这个key是启用状态，需要更新配置
+                    const keyValue = keyElement.value.trim();
+                    if (keyValue && window.apiConfigManager) {
+                        try {
+                            // 获取当前配置
+                            const currentConfig = await window.apiConfigManager.getActiveConfig();
+                            if (currentConfig) {
+                                const currentEnabled = window.apiConfigManager.getEnabledKey(currentConfig);
+                                if (currentEnabled === keyValue) {
+                                    // 如果被标记失败的是当前启用的key，清除启用状态
+                                    if (keyElement.id === 'apiKey') {
+                                        // 主key，不需要特殊处理
+                                    } else {
+                                        // 副key，禁用它
+                                        statusBtn.dataset.enabled = 'false';
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.warn('更新配置状态失败:', error);
+                        }
+                    }
+                } else {
+                    console.error('markKeyAsFailed: 在row中未找到.key-enable-btn按钮');
+                }
+            } else {
+                console.error('markKeyAsFailed: 未找到key的父行(.api-provider-row)');
+            }
+        }
+        
+        showToast('Key已标记为失败状态');
+        
+    } catch (error) {
+        console.error('标记Key失败状态出错:', error);
+    }
+}
+
+async function toggleKeyEnable(button) {
+    try {
+        const currentStatus = button.dataset.status || 'disabled';
+        const row = button.closest('.api-provider-row');
+        const keyInput = row.querySelector('.api-key-input');
+        const keyValue = keyInput ? keyInput.value.trim() : '';
+        
+        if (!keyValue) {
+            showToast('请先填写API Key');
+            return;
+        }
+        
+        // 状态切换逻辑：disabled -> enabled -> disabled -> failed -> enabled
+        let newStatus, newIcon, newTitle, newColor;
+        
+        console.log(`[多key调试] toggleKeyEnable被调用: 当前状态=${currentStatus}, key前缀=${keyValue.substring(0, 10)}...`);
+        
+        switch (currentStatus) {
+            case 'disabled':
+                // 禁用 -> 启用
+                newStatus = 'enabled';
+                newIcon = '🟢';
+                newTitle = '已启用 (点击禁用)';
+                newColor = '#28a745';
+                
+                // 禁用所有其他key
+                await disableAllOtherKeys();
+                
+                // 启用这个key
+                button.dataset.enabled = 'true';
+                await updateGlobalApiKey(keyValue);
+                showToast('已启用此API Key');
+                break;
+                
+            case 'enabled':
+                // 启用 -> 禁用
+                newStatus = 'disabled';
+                newIcon = '⚪';
+                newTitle = '已禁用 (点击启用)';
+                newColor = '#6c757d';
+                button.dataset.enabled = 'false';
+                
+                // 回退到主key
+                await enableMainKey();
+                showToast('已禁用此API Key');
+                break;
+                
+            case 'failed':
+                // 失败 -> 启用
+                newStatus = 'enabled';
+                newIcon = '🟢';
+                newTitle = '已启用 (点击禁用)';
+                newColor = '#28a745';
+                
+                // 禁用所有其他key
+                await disableAllOtherKeys();
+                
+                // 启用这个key
+                button.dataset.enabled = 'true';
+                await updateGlobalApiKey(keyValue);
+                showToast('已重新启用此API Key');
+                break;
+        }
+        
+        // 更新按钮状态
+        button.dataset.status = newStatus;
+        button.innerHTML = newIcon;
+        button.title = newTitle;
+        button.style.backgroundColor = newColor;
+        
+        // 更新对应行的样式
+        if (newStatus === 'enabled') {
+            row.classList.add('enabled');
+        } else {
+            row.classList.remove('enabled');
+        }
+        
+        // 统一更新所有key的状态
+        setTimeout(() => {
+            updateAllKeyStates();
+        }, 100);
+        
+    } catch (error) {
+        console.error('切换Key状态失败:', error);
+        showToast('操作失败: ' + error.message);
+    }
+}
+
+async function toggleMainKeyStatus(button) {
+    try {
+        const currentStatus = button.dataset.status || 'enabled';
+        const keyInput = document.getElementById('apiKey');
+        const keyValue = keyInput ? keyInput.value.trim() : '';
+        
+        if (!keyValue) {
+            showToast('请先填写主API Key');
+            return;
+        }
+        
+        let newStatus, newIcon, newTitle, newColor;
+        
+        switch (currentStatus) {
+            case 'enabled':
+                // 启用 -> 禁用（用户点击只能禁用，不能直接标记为失败）
+                newStatus = 'disabled';
+                newIcon = '⚪';
+                newTitle = '主Key未启用 (点击启用)';
+                newColor = '#6c757d';
+                button.dataset.enabled = 'false';
+                showToast('已禁用主API Key');
+                break;
+                
+            case 'failed':
+                // 失败 -> 启用
+                newStatus = 'enabled';
+                newIcon = '🟢';
+                newTitle = '主Key已启用 (点击禁用)';
+                newColor = '#28a745';
+                
+                // 禁用所有副key
+                await disableAllOtherKeys();
+                
+                // 启用主key
+                button.dataset.enabled = 'true';
+                await updateGlobalApiKey(keyValue);
+                showToast('已重新启用主API Key');
+                break;
+                
+            case 'disabled':
+                // 禁用 -> 启用（当副key被启用时主key会变为禁用状态）
+                newStatus = 'enabled';
+                newIcon = '🟢';
+                newTitle = '主Key已启用 (点击禁用)';
+                newColor = '#28a745';
+                
+                // 禁用所有副key
+                await disableAllOtherKeys();
+                
+                // 启用主key
+                button.dataset.enabled = 'true';
+                await updateGlobalApiKey(keyValue);
+                showToast('已启用主API Key');
+                break;
+        }
+        
+        // 更新按钮状态
+        button.dataset.status = newStatus;
+        button.innerHTML = newIcon;
+        button.title = newTitle;
+        // 主key按钮不设置背景色，保持透明
+        
+        // 更新主key行的样式
+        const mainKeyRow = document.querySelector('.main-key-row');
+        if (mainKeyRow) {
+            if (newStatus === 'enabled') {
+                mainKeyRow.classList.add('enabled');
+            } else {
+                mainKeyRow.classList.remove('enabled');
+            }
+        }
+        
+        // 统一更新所有key的状态
+        setTimeout(() => {
+            updateAllKeyStates();
+        }, 100);
+        
+    } catch (error) {
+        console.error('切换主Key状态失败:', error);
+        showToast('操作失败: ' + error.message);
+    }
+}
+
+// 辅助函数：启用第一个可用的副key
+async function enableFirstAvailableSecondaryKey() {
+    const allSecondaryButtons = document.querySelectorAll('.key-enable-btn');
+    for (const btn of allSecondaryButtons) {
+        const row = btn.closest('.api-provider-row');
+        const keyInput = row.querySelector('.api-key-input');
+        const keyValue = keyInput ? keyInput.value.trim() : '';
+        
+        if (keyValue && btn.dataset.status !== 'failed') {
+            // 启用这个key
+            btn.dataset.status = 'enabled';
+            btn.dataset.enabled = 'true';
+            btn.innerHTML = '🟢';
+            btn.style.backgroundColor = '#28a745';
+            btn.title = '已启用 (点击禁用)';
+            
+            await updateGlobalApiKey(keyValue);
+            console.log('已自动启用副key:', keyValue.substring(0, 10) + '...');
             return;
         }
     }
     
-    apiSettings.url = apiUrl;
-    apiSettings.key = apiKey;
-    apiSettings.model = primaryModel;
-    apiSettings.secondaryModel = getElementValue('secondaryModelSelect');
-    apiSettings.contextMessageCount = getElementIntValue('contextSlider');
-    apiSettings.timeout = getElementIntValue('apiTimeout', 60);
+    // 如果没有可用的副key，提示用户
+    showToast('没有可用的备用Key');
+}
+
+// 辅助函数：禁用所有其他key
+async function disableAllOtherKeys() {
+    // 禁用所有副key
+    const allSecondaryButtons = document.querySelectorAll('.key-enable-btn');
+    allSecondaryButtons.forEach(btn => {
+        btn.dataset.enabled = 'false';
+        btn.dataset.status = btn.dataset.status === 'failed' ? 'failed' : 'disabled';
+        btn.innerHTML = btn.dataset.status === 'failed' ? '🔴' : '⚪';
+        btn.style.backgroundColor = btn.dataset.status === 'failed' ? 'white' : '#6c757d';
+        btn.title = btn.dataset.status === 'failed' ? '标记失败 (点击重新启用)' : '点击启用此Key';
+    });
     
-    // 【修改点 4】: 保存 Minimax 的设置
-    apiSettings.minimaxGroupId = getElementValue('minimaxGroupId').trim();
-    apiSettings.minimaxApiKey = getElementValue('minimaxApiKey').trim();
-    
-    // 保存 Unsplash API Key
-    const unsplashKey = getElementValue('unsplashApiKey').trim();
-    if (unsplashKey) {
-        localStorage.setItem('forumUnsplashApiKey', unsplashKey);
-        localStorage.setItem('unsplashApiKey', unsplashKey); // 保持向后兼容
-    } else {
-        localStorage.removeItem('forumUnsplashApiKey');
-        localStorage.removeItem('unsplashApiKey');
+    // 仅在副key被启用时，才将主key设为视觉上的禁用状态
+    const mainKeyStatus = document.querySelector('.main-key-status');
+    if (mainKeyStatus) {
+        mainKeyStatus.dataset.enabled = 'false';
+        mainKeyStatus.dataset.status = mainKeyStatus.dataset.status === 'failed' ? 'failed' : 'disabled';
+        mainKeyStatus.innerHTML = mainKeyStatus.dataset.status === 'failed' ? '🔴' : '⚪';
+        mainKeyStatus.style.backgroundColor = mainKeyStatus.dataset.status === 'failed' ? 'white' : '#6c757d';
+        mainKeyStatus.title = mainKeyStatus.dataset.status === 'failed' ? '主Key标记失败 (点击重新启用)' : '主Key (点击启用)';
     }
+}
+
+// 辅助函数：启用主key
+async function enableMainKey() {
+    const mainKeyStatus = document.querySelector('.main-key-status');
+    const mainKeyInput = document.getElementById('apiKey');
+    const mainKeyRow = document.querySelector('.main-key-row');
     
-    await saveDataToDB();
-    
-    // 重新初始化图片关键词生成器
-    if (window.imageKeywordGenerator && window.apiService) {
-        window.imageKeywordGenerator.init(apiSettings, window.apiService);
-        console.log('图片关键词生成器已更新配置');
+    if (mainKeyStatus && mainKeyInput && mainKeyRow) {
+        const keyValue = mainKeyInput.value.trim();
+        if (keyValue) {
+            // 禁用所有副key
+            await disableAllSecondaryKeys();
+            
+            mainKeyStatus.dataset.enabled = 'true';
+            mainKeyStatus.dataset.status = 'enabled';
+            mainKeyStatus.innerHTML = '🟢';
+            mainKeyStatus.title = '主Key已启用 (点击设为失败)';
+            mainKeyRow.classList.add('enabled');
+            
+            await updateGlobalApiKey(keyValue);
+        }
     }
+}
+
+// 新增：仅禁用副key的函数
+async function disableAllSecondaryKeys() {
+    const allSecondaryButtons = document.querySelectorAll('.key-enable-btn');
+    allSecondaryButtons.forEach(btn => {
+        btn.dataset.enabled = 'false';
+        btn.dataset.status = btn.dataset.status === 'failed' ? 'failed' : 'disabled';
+        btn.innerHTML = btn.dataset.status === 'failed' ? '🔴' : '⚪';
+        btn.style.backgroundColor = btn.dataset.status === 'failed' ? 'white' : '#6c757d';
+        btn.title = btn.dataset.status === 'failed' ? '标记失败 (点击重新启用)' : '点击启用此Key';
+    });
+}
+
+// 新增：统一更新所有key的视觉状态
+function updateAllKeyStates() {
+    // 检查哪个key当前是启用的
+    const mainKeyStatus = document.querySelector('.main-key-status');
+    const mainKeyRow = document.querySelector('.main-key-row');
+    const allSecondaryButtons = document.querySelectorAll('.key-enable-btn');
+    const allSecondaryRows = document.querySelectorAll('.api-provider-row');
     
-    closeModal('apiSettingsModal');
-    updateContextIndicator();
-    showToast('设置已保存');
+    let hasEnabledSecondaryKey = false;
+    
+    // 首先重置所有副key行的样式
+    allSecondaryRows.forEach(row => {
+        row.classList.remove('enabled');
+    });
+    
+    // 检查是否有副key被启用，并设置对应行的样式
+    allSecondaryButtons.forEach(btn => {
+        const row = btn.closest('.api-provider-row');
+        if (btn.dataset.enabled === 'true' && btn.dataset.status === 'enabled') {
+            hasEnabledSecondaryKey = true;
+            if (row) {
+                row.classList.add('enabled');
+            }
+        }
+    });
+    
+    // 处理主key的状态和样式
+    if (mainKeyStatus && mainKeyRow) {
+        const mainKeyInput = document.getElementById('apiKey');
+        const keyValue = mainKeyInput ? mainKeyInput.value.trim() : '';
+        
+        // 如果没有副key被启用，且主key不是失败状态，则主key应该是启用的
+        if (!hasEnabledSecondaryKey && keyValue && mainKeyStatus.dataset.status !== 'failed') {
+            mainKeyStatus.dataset.enabled = 'true';
+            mainKeyStatus.dataset.status = 'enabled';
+            mainKeyStatus.innerHTML = '🟢';
+            mainKeyStatus.title = '主Key已启用 (点击设为失败)';
+            mainKeyRow.classList.add('enabled');
+        } else {
+            // 主key未启用，移除启用样式
+            mainKeyRow.classList.remove('enabled');
+        }
+    }
+}
+
+
+// 辅助函数：更新全局API Key
+async function updateGlobalApiKey(keyValue) {
+    if (keyValue && window.apiSettings) {
+        const oldKey = window.apiSettings.key;
+        window.apiSettings.key = keyValue;
+        console.log(`[多key调试] 已更新全局API Key: ${oldKey ? oldKey.substring(0, 8) + '...' : 'empty'} -> ${keyValue.substring(0, 8) + '...'}`);
+        
+        try {
+            if (window.apiConfigManager && window.apiConfigManager.activeConfigId) {
+                const config = await window.apiConfigManager.getConfigById(window.apiConfigManager.activeConfigId);
+                if (config && config.apiKeys) {
+                    const keyIndex = config.apiKeys.findIndex(k => k.key === keyValue);
+                    if (keyIndex !== -1) {
+                        await window.apiConfigManager.setKeyEnabled(window.apiConfigManager.activeConfigId, keyIndex, true);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('更新配置管理器状态失败:', error);
+        }
+    }
+}
+
+async function updateConfigKeyInDB(newKey) {
+    try {
+        if (!window.apiConfigManager || !window.apiConfigManager.activeConfigId) {
+            console.error('无法更新配置：配置管理器未初始化或无激活配置');
+            return;
+        }
+        
+        // 获取当前激活的配置
+        const configId = window.apiConfigManager.activeConfigId;
+        const config = await window.apiConfigManager.getConfigById(configId);
+        
+        if (!config) {
+            console.error('无法获取当前配置');
+            return;
+        }
+        
+        // 更新配置中的主key字段
+        config.key = newKey;
+        config.updatedAt = Date.now();
+        
+        // 如果有apiKeys数组，也要更新对应key的启用状态
+        if (config.apiKeys && Array.isArray(config.apiKeys)) {
+            // 将所有key设为未启用
+            config.apiKeys.forEach(keyObj => {
+                keyObj.enabled = false;
+            });
+            
+            // 找到新启用的key并设为启用状态
+            const enabledKeyObj = config.apiKeys.find(keyObj => keyObj.key === newKey);
+            if (enabledKeyObj) {
+                enabledKeyObj.enabled = true;
+            }
+        }
+        
+        // 保存配置到IndexedDB
+        await window.apiConfigManager.saveConfig(config);
+        
+        console.log('已更新IndexedDB中的配置key:', newKey.substring(0, 8) + '...');
+        
+    } catch (error) {
+        console.error('更新IndexedDB配置失败:', error);
+        showToast('更新配置失败: ' + error.message);
+    }
+}
+
+function updateKeyStats(input) {
+    try {
+        let keyValue = input.value;
+        
+        // 确保keyValue是字符串
+        if (typeof keyValue === 'object') {
+            keyValue = keyValue.key || keyValue.toString();
+        }
+        
+        keyValue = keyValue ? keyValue.trim() : '';
+        
+        const row = input.closest('.api-provider-row');
+        const maskedDisplay = row.querySelector('.key-masked-compact');
+        const callsCount = row.querySelector('.calls-count');
+        const successRate = row.querySelector('.success-rate');
+        
+        if (!keyValue) {
+            if (maskedDisplay) maskedDisplay.textContent = '未设置';
+            if (callsCount) callsCount.textContent = '0次';
+            if (successRate) successRate.textContent = '0%';
+            return;
+        }
+        
+        // 显示掩码Key
+        if (window.apiConfigManager) {
+            if (maskedDisplay) {
+                maskedDisplay.textContent = window.apiConfigManager.maskKey(keyValue);
+            }
+            
+            // 获取统计信息
+            const configId = window.apiConfigManager.activeConfigId || 'unknown';
+            const keyIndex = Array.from(document.querySelectorAll('.api-provider-row')).indexOf(row) + 1;
+            const stats = window.apiConfigManager.getKeyStats(configId, keyIndex, keyValue);
+            
+            if (callsCount) callsCount.textContent = `${stats.recentCalls}次`;
+            if (successRate) successRate.textContent = `${stats.successRate}%`;
+        }
+        
+    } catch (error) {
+        console.error('更新Key统计失败:', error);
+    }
+}
+
+function updateMainKeyStats(input) {
+    try {
+        const keyValue = input.value.trim();
+        const maskedDisplay = document.getElementById('mainKeyMask');
+        const callsCount = document.getElementById('mainKeyCalls');
+        const successRate = document.getElementById('mainKeySuccess');
+        
+        if (!maskedDisplay || !callsCount || !successRate) return;
+        
+        if (!keyValue) {
+            maskedDisplay.textContent = '未设置';
+            callsCount.textContent = '0次';
+            successRate.textContent = '0%';
+            return;
+        }
+        
+        // 显示掩码Key
+        if (window.apiConfigManager) {
+            maskedDisplay.textContent = window.apiConfigManager.maskKey(keyValue);
+            
+            // 获取统计信息（主key的索引是0）
+            const configId = window.apiConfigManager.activeConfigId || 'unknown';
+            const stats = window.apiConfigManager.getKeyStats(configId, 0, keyValue);
+            
+            callsCount.textContent = `${stats.recentCalls}次`;
+            successRate.textContent = `${stats.successRate}%`;
+        }
+        
+    } catch (error) {
+        console.error('更新主Key统计失败:', error);
+    }
+}
+
+async function loadModelsForConfig(configSelectId, modelSelectId) {
+    try {
+        const configSelect = document.getElementById(configSelectId);
+        const modelSelect = document.getElementById(modelSelectId);
+        
+        if (!configSelect || !modelSelect) return;
+        
+        const configId = configSelect.value;
+        
+        // 清空模型选择器
+        modelSelect.innerHTML = '';
+        
+        if (!configId) {
+            modelSelect.innerHTML = '<option value="">请先选择API配置</option>';
+            return;
+        }
+        
+        if (configId === 'sync_with_primary') {
+            modelSelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+            return;
+        }
+        
+        // 获取指定配置的模型列表
+        if (!window.apiConfigManager) {
+            modelSelect.innerHTML = '<option value="">配置管理器未初始化</option>';
+            return;
+        }
+        
+        const config = await window.apiConfigManager.getConfigById(configId);
+        if (!config) {
+            modelSelect.innerHTML = '<option value="">配置不存在</option>';
+            return;
+        }
+        
+        // 创建临时的API连接来获取模型列表
+        modelSelect.innerHTML = '<option value="">加载中...</option>';
+        
+        const tempApiService = {
+            baseURL: config.url,
+            apiKey: config.key,
+            timeout: config.timeout
+        };
+        
+        try {
+            const response = await fetch(`${config.url}/models`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${config.key}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: config.timeout * 1000
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            const models = data.data || [];
+            
+            modelSelect.innerHTML = '';
+            
+            if (models.length === 0) {
+                modelSelect.innerHTML = '<option value="">无可用模型</option>';
+                return;
+            }
+            
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.id;
+                modelSelect.appendChild(option);
+            });
+            
+            // 保存配置选择
+            const type = configSelectId.includes('primary') ? 'primary' : 'secondary';
+            if (type === 'primary') {
+                localStorage.setItem('primaryModelConfig', configId);
+                console.log(`[模型配置] 已保存主要配置选择: ${configId}`);
+            } else {
+                localStorage.setItem('secondaryModelConfig', configId);
+                console.log(`[模型配置] 已保存次要配置选择: ${configId}`);
+            }
+            
+        } catch (error) {
+            console.error('获取模型列表失败:', error);
+            modelSelect.innerHTML = '<option value="">获取模型失败</option>';
+        }
+        
+    } catch (error) {
+        console.error('loadModelsForConfig 失败:', error);
+    }
+}
+
+/**
+ * 保存模型选择到localStorage
+ * @param {string} type - 'primary' 或 'secondary'
+ */
+function saveModelSelection(type) {
+    try {
+        const configSelectId = type === 'primary' ? 'primaryConfigSelect' : 'secondaryConfigSelect';
+        const modelSelectId = type === 'primary' ? 'primaryModelSelect' : 'secondaryModelSelect';
+        
+        const configSelect = document.getElementById(configSelectId);
+        const modelSelect = document.getElementById(modelSelectId);
+        
+        if (configSelect && modelSelect) {
+            const configId = configSelect.value;
+            const modelId = modelSelect.value;
+            
+            if (type === 'primary') {
+                localStorage.setItem('primaryModelConfig', configId);
+                localStorage.setItem('primaryModel', modelId);
+                console.log(`[模型选择] 已保存主要模型: 配置=${configId}, 模型=${modelId}`);
+            } else {
+                localStorage.setItem('secondaryModelConfig', configId);
+                localStorage.setItem('secondaryModel', modelId);
+                console.log(`[模型选择] 已保存次要模型: 配置=${configId}, 模型=${modelId}`);
+            }
+        }
+    } catch (error) {
+        console.error('保存模型选择失败:', error);
+    }
+}
+
+async function getApiConnectionForModel(modelType) {
+    try {
+        if (modelType === 'primary') {
+            const configId = localStorage.getItem('primaryModelConfig');
+            const modelId = localStorage.getItem('primaryModel');
+            
+            if (!configId || !modelId) {
+                throw new Error('主要模型配置未设置');
+            }
+            
+            const config = await window.apiConfigManager.getConfigById(configId);
+            if (!config) {
+                throw new Error('API配置不存在');
+            }
+            
+            return {
+                baseURL: config.url,
+                apiKey: config.key,
+                timeout: config.timeout,
+                model: modelId,
+                configId: configId
+            };
+            
+        } else if (modelType === 'secondary') {
+            const configId = localStorage.getItem('secondaryModelConfig');
+            const modelId = localStorage.getItem('secondaryModel');
+            
+            if (!configId || configId === 'sync_with_primary' || !modelId || modelId === 'sync_with_primary') {
+                // 使用主要模型的配置
+                return await getApiConnectionForModel('primary');
+            }
+            
+            const config = await window.apiConfigManager.getConfigById(configId);
+            if (!config) {
+                throw new Error('次要模型API配置不存在');
+            }
+            
+            return {
+                baseURL: config.url,
+                apiKey: config.key,
+                timeout: config.timeout,
+                model: modelId,
+                configId: configId
+            };
+        }
+        
+        throw new Error('未知的模型类型');
+        
+    } catch (error) {
+        console.error('获取API连接信息失败:', error);
+        throw error;
+    }
+}
+
+// API配置管理页面函数
+async function loadApiConfigManagementPage() {
+    try {
+        if (!window.apiConfigManager) return;
+        
+        const configs = await window.apiConfigManager.getAllConfigs();
+        const configList = document.getElementById('apiConfigList');
+        
+        if (!configList) return;
+        
+        if (configs.length === 0) {
+            configList.innerHTML = `
+                <div class="config-list-empty">
+                    <div class="empty-icon">⚙️</div>
+                    <div class="empty-text">暂无API配置</div>
+                    <button class="empty-action-btn" onclick="showNewApiConfigForm()">添加第一个配置</button>
+                </div>
+            `;
+        } else {
+            configList.innerHTML = configs.map(config => `
+                <div class="config-item" onclick="editApiConfigInPage('${config.id}')">
+                    <div class="config-item-header">
+                        <div class="config-item-name">${config.configName}</div>
+                        <div class="config-item-actions">
+                            <button class="config-item-btn config-item-edit" onclick="event.stopPropagation(); editApiConfigInPage('${config.id}')" title="编辑">✏️</button>
+                            <button class="config-item-btn config-item-delete" onclick="event.stopPropagation(); deleteApiConfigInPage('${config.id}')" title="删除">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="config-item-url">${config.url}</div>
+                    <div class="config-item-status active">已配置</div>
+                </div>
+            `).join('');
+        }
+        
+    } catch (error) {
+        console.error('加载API配置列表失败:', error);
+    }
+}
+
+function showNewApiConfigForm() {
+    // 清空表单
+    document.getElementById('pageConfigName').value = '新配置 ' + Date.now().toString().slice(-6);
+    document.getElementById('pageApiUrl').value = '';
+    document.getElementById('pageApiKey').value = '';
+    document.getElementById('pageApiTimeout').value = '60';
+    
+    // 设置表单标题和状态
+    document.getElementById('configFormTitle').textContent = '新增API配置';
+    window.currentEditingConfigId = null;
+    
+    // 显示表单
+    document.getElementById('apiConfigForm').style.display = 'block';
+}
+
+function closeApiConfigForm() {
+    document.getElementById('apiConfigForm').style.display = 'none';
+    window.currentEditingConfigId = null;
+}
+
+async function editApiConfigInPage(configId) {
+    try {
+        const config = await window.apiConfigManager.getConfigById(configId);
+        if (!config) return;
+        
+        // 填充表单
+        document.getElementById('pageConfigName').value = config.configName || '';
+        document.getElementById('pageApiUrl').value = config.url || '';
+        document.getElementById('pageApiKey').value = config.key || '';
+        document.getElementById('pageApiTimeout').value = config.timeout || 60;
+        
+        // 设置表单标题和状态
+        document.getElementById('configFormTitle').textContent = '编辑API配置';
+        window.currentEditingConfigId = configId;
+        
+        // 显示表单
+        document.getElementById('apiConfigForm').style.display = 'block';
+        
+    } catch (error) {
+        console.error('加载配置失败:', error);
+        showToast('加载配置失败: ' + error.message);
+    }
+}
+
+async function deleteApiConfigInPage(configId) {
+    try {
+        if (!confirm('确定要删除这个API配置吗？')) return;
+        
+        await window.apiConfigManager.deleteConfig(configId);
+        showToast('配置删除成功');
+        
+        // 重新加载列表
+        await loadApiConfigManagementPage();
+        
+    } catch (error) {
+        console.error('删除配置失败:', error);
+        showToast('删除配置失败: ' + error.message);
+    }
+}
+
+async function saveApiConfigInPage(event) {
+    event.preventDefault();
+    
+    try {
+        const configData = {
+            configId: window.currentEditingConfigId,
+            configName: document.getElementById('pageConfigName').value.trim(),
+            url: document.getElementById('pageApiUrl').value.trim(),
+            key: document.getElementById('pageApiKey').value.trim(),
+            timeout: parseInt(document.getElementById('pageApiTimeout').value) || 60
+        };
+        
+        if (!configData.configName || !configData.url || !configData.key) {
+            showToast('请填写完整的配置信息');
+            return;
+        }
+        
+        await window.apiConfigManager.saveConfig(configData);
+        showToast(window.currentEditingConfigId ? '配置更新成功' : '配置保存成功');
+        
+        // 关闭表单并重新加载列表
+        closeApiConfigForm();
+        await loadApiConfigManagementPage();
+        
+        // 自动关闭API配置管理页面，返回到我的界面
+        setTimeout(() => {
+            showPage('profilePage');
+        }, 1000); // 延迟1秒让用户看到成功提示
+        
+    } catch (error) {
+        console.error('保存配置失败:', error);
+        showToast('保存配置失败: ' + error.message);
+    }
+}
+
+async function testApiConnectionInPage() {
+    try {
+        const url = document.getElementById('pageApiUrl').value.trim();
+        const key = document.getElementById('pageApiKey').value.trim();
+        const timeout = parseInt(document.getElementById('pageApiTimeout').value) || 60;
+        
+        if (!url || !key) {
+            showToast('请先填写API URL和API Key');
+            return;
+        }
+        
+        const button = event.target;
+        button.disabled = true;
+        button.textContent = '测试中...';
+        
+        const response = await fetch(`${url}/models`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: timeout * 1000
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            showToast(`连接成功！找到 ${data.data?.length || 0} 个模型`);
+        } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+    } catch (error) {
+        console.error('测试连接失败:', error);
+        showToast('连接测试失败: ' + error.message);
+    } finally {
+        const button = event.target;
+        button.disabled = false;
+        button.textContent = '测试连接';
+    }
 }
 
 async function setBackground(event) {
@@ -7832,6 +9093,19 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // 验证和初始化APIService
+    console.log('=== 页面初始化开始 ===');
+    console.log('APIService状态:', !!window.apiService);
+    
+    if (!window.apiService && typeof APIService !== 'undefined') {
+        console.log('重新初始化APIService...');
+        window.apiService = new APIService();
+        console.log('APIService重新初始化完成');
+    }
+    
+    console.log('最终APIService状态:', !!window.apiService);
+    console.log('========================');
+    
     // 优先初始化主题管理器，避免主题闪烁
     window.themeManager.init();
     
@@ -15211,3 +16485,478 @@ function applyRandomGradient(eventType) {
 window.switchEventGradient = switchEventGradient;
 window.getEventGradients = getEventGradients;
 window.applyRandomGradient = applyRandomGradient;
+
+// === API配置管理相关函数 ===
+
+/**
+ * 加载配置选择器
+ */
+async function loadConfigSelector() {
+    try {
+        const configSelector = document.getElementById('configSelector');
+        if (!configSelector || !window.apiConfigManager) {
+            return;
+        }
+
+        // 获取所有配置
+        const configs = await window.apiConfigManager.getAllConfigs();
+        const activeConfig = await window.apiConfigManager.getActiveConfig();
+        
+        // 清空并重新填充选择器
+        configSelector.innerHTML = '';
+        
+        if (configs.length === 0) {
+            configSelector.innerHTML = '<option value="">没有可用配置</option>';
+            return;
+        }
+        
+        configs.forEach(config => {
+            const option = document.createElement('option');
+            option.value = config.id;
+            option.textContent = config.configName || '未命名配置';
+            if (config.id === window.apiConfigManager.defaultConfigKey) {
+                option.textContent += ' (默认)';
+                option.setAttribute('data-is-default', 'true');
+            }
+            if (activeConfig && config.id === activeConfig.id) {
+                option.selected = true;
+            }
+            configSelector.appendChild(option);
+        });
+        
+        // 更新按钮状态
+        updateConfigActionButtons();
+        
+    } catch (error) {
+        console.error('加载配置选择器失败:', error);
+    }
+}
+
+/**
+ * 加载当前配置到表单
+ */
+async function loadCurrentConfigToForm() {
+    try {
+        if (!window.apiConfigManager) {
+            return;
+        }
+
+        const activeConfig = await window.apiConfigManager.getActiveConfig();
+        if (!activeConfig) {
+            // 如果没有配置，显示空表单
+            clearConfigForm();
+            return;
+        }
+
+        // 填充表单字段
+        const fillField = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) element.value = value || '';
+        };
+
+        fillField('configName', activeConfig.configName);
+        fillField('apiUrl', activeConfig.url);
+        fillField('apiKey', activeConfig.key);
+        fillField('apiTimeout', activeConfig.timeout || 60);
+        fillField('minimaxGroupId', activeConfig.minimaxGroupId);
+        fillField('minimaxApiKey', activeConfig.minimaxApiKey);
+        
+        // 上下文滑块
+        const contextSlider = document.getElementById('contextSlider');
+        const contextValue = document.getElementById('contextValue');
+        if (contextSlider && contextValue) {
+            contextSlider.value = activeConfig.contextMessageCount || 10;
+            contextValue.textContent = `${activeConfig.contextMessageCount || 10}条`;
+        }
+        
+        // 保存模型值，等模型列表加载后再设置
+        window.pendingModelSelection = {
+            primary: activeConfig.model || '',
+            secondary: activeConfig.secondaryModel || 'sync_with_primary'
+        };
+        
+        // 更新主Key统计
+        const mainKeyInput = document.getElementById('apiKey');
+        if (mainKeyInput && mainKeyInput.value) {
+            updateMainKeyStats(mainKeyInput);
+        }
+        
+        // 验证和刷新全局API配置状态
+        await ensureApiConfigIsUpdated();
+        
+        // 加载额外的API Keys
+        // 先清除现有的额外key行
+        const existingRows = document.querySelectorAll('.api-provider-row');
+        existingRows.forEach(row => row.remove());
+        
+        // 如果有apiKeys数组，加载它们
+        if (activeConfig.apiKeys && activeConfig.apiKeys.length > 1) {
+            // 跳过第一个key（主key），从第二个开始
+            for (let i = 1; i < activeConfig.apiKeys.length; i++) {
+                const keyData = activeConfig.apiKeys[i];
+                addProviderRow();
+                
+                // 填充key值
+                const rows = document.querySelectorAll('.api-provider-row');
+                const lastRow = rows[rows.length - 1];
+                const keyInput = lastRow.querySelector('.api-key-input');
+                const enableButton = lastRow.querySelector('.key-enable-btn');
+                
+                if (keyInput) {
+                    // 确保keyData.key是字符串
+                    let keyValue = keyData.key || keyData || '';
+                    if (typeof keyValue === 'object') {
+                        keyValue = keyValue.key || keyValue.toString();
+                    }
+                    keyInput.value = keyValue;
+                    // 更新统计信息
+                    updateKeyStats(keyInput);
+                }
+                
+                if (enableButton) {
+                    if (keyData.enabled) {
+                        enableButton.dataset.enabled = 'true';
+                        enableButton.dataset.status = 'enabled';
+                        enableButton.innerHTML = '🟢';
+                        enableButton.style.backgroundColor = '#28a745';
+                        // 为启用的副key添加CSS类
+                        lastRow.classList.add('enabled');
+                    } else {
+                        enableButton.dataset.enabled = 'false';
+                        enableButton.dataset.status = 'disabled';
+                        enableButton.innerHTML = '⚪';
+                        enableButton.style.backgroundColor = '#6c757d';
+                        // 确保未启用的副key没有启用类
+                        lastRow.classList.remove('enabled');
+                    }
+                }
+            }
+        }
+        
+        // 加载Unsplash API Key (仍然从localStorage读取)
+        const unsplashApiKeyElement = document.getElementById('unsplashApiKey');
+        if (unsplashApiKeyElement) {
+            unsplashApiKeyElement.value = localStorage.getItem('forumUnsplashApiKey') || localStorage.getItem('unsplashApiKey') || '';
+        }
+
+        // 检查是否有重复的API Keys
+        checkAllApiKeysForDuplicates();
+        
+        // 确保所有API key状态正确显示
+        setTimeout(() => {
+            updateAllKeyStates();
+        }, 100);
+        
+    } catch (error) {
+        console.error('加载配置到表单失败:', error);
+    }
+}
+
+/**
+ * 为当前配置加载模型列表
+ */
+async function loadModelsForCurrentConfig() {
+    try {
+        const primarySelect = document.getElementById('primaryModelSelect');
+        const secondarySelect = document.getElementById('secondaryModelSelect');
+        
+        if (!primarySelect || !secondarySelect) return;
+        
+        const activeConfig = await window.apiConfigManager.getActiveConfig();
+        if (!activeConfig || !activeConfig.url || !activeConfig.key) {
+            primarySelect.innerHTML = '<option value="">请先配置API</option>';
+            secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+            return;
+        }
+        
+        // 重置模型选择器，显示当前选择的模型
+        const primaryModel = window.pendingModelSelection?.primary || activeConfig.model || '';
+        const secondaryModel = window.pendingModelSelection?.secondary || activeConfig.secondaryModel || 'sync_with_primary';
+        
+        // 如果有主模型，直接显示它
+        if (primaryModel) {
+            primarySelect.innerHTML = `<option value="${primaryModel}">${primaryModel}</option>`;
+        } else {
+            primarySelect.innerHTML = '<option value="">请选择模型</option>';
+        }
+        
+        secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+        if (secondaryModel && secondaryModel !== 'sync_with_primary') {
+            secondarySelect.innerHTML += `<option value="${secondaryModel}">${secondaryModel}</option>`;
+        }
+        
+        // 尝试从缓存获取模型列表（不发起网络请求）
+        const cachedModels = window.apiConfigManager?.availableModels?.get(activeConfig.id);
+        if (cachedModels && cachedModels.length > 0) {
+            // 有缓存，填充所有模型选项
+            if (primarySelect.options.length === 1 && primarySelect.options[0].value === primaryModel) {
+                // 只有当前模型，添加其他模型选项
+                cachedModels.forEach(modelId => {
+                    if (modelId !== primaryModel) {
+                        const option = document.createElement('option');
+                        option.value = modelId;
+                        option.textContent = modelId;
+                        primarySelect.appendChild(option);
+                    }
+                });
+            }
+            
+            if (secondarySelect.options.length === 1) {
+                cachedModels.forEach(modelId => {
+                    if (modelId !== secondaryModel) {
+                        const option = document.createElement('option');
+                        option.value = modelId;
+                        option.textContent = modelId;
+                        secondarySelect.appendChild(option);
+                    }
+                });
+            }
+            
+            // 设置正确的选中值
+            primarySelect.value = primaryModel;
+            secondarySelect.value = secondaryModel;
+        }
+        
+        // 绑定事件
+        primarySelect.onchange = handlePrimaryModelChange;
+        
+        // 清除临时保存的值
+        window.pendingModelSelection = null;
+        
+    } catch (error) {
+        console.error('加载模型列表失败:', error);
+    }
+}
+
+/**
+ * 清空配置表单
+ */
+function clearConfigForm() {
+    const fields = ['configName', 'apiUrl', 'apiKey', 'apiTimeout', 'minimaxGroupId', 'minimaxApiKey'];
+    fields.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.value = '';
+    });
+    
+    const contextSlider = document.getElementById('contextSlider');
+    const contextValue = document.getElementById('contextValue');
+    if (contextSlider && contextValue) {
+        contextSlider.value = 10;
+        contextValue.textContent = '10条';
+    }
+    
+    const primarySelect = document.getElementById('primaryModelSelect');
+    const secondarySelect = document.getElementById('secondaryModelSelect');
+    if (primarySelect) primarySelect.innerHTML = '<option value="">请先测试连接</option>';
+    if (secondarySelect) secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
+}
+
+/**
+ * 处理配置切换
+ */
+async function handleConfigSwitch(configId) {
+    try {
+        if (!configId || !window.apiConfigManager) return;
+        
+        // 清除新配置状态
+        window.currentConfigState = null;
+        
+        // 切换到选中的配置
+        await window.apiConfigManager.switchToConfig(configId);
+        
+        // 重新加载表单
+        await loadCurrentConfigToForm();
+        
+        // 更新按钮状态
+        updateConfigActionButtons();
+        
+        showToast('配置已切换');
+        
+    } catch (error) {
+        console.error('切换配置失败:', error);
+        showToast('切换配置失败: ' + error.message);
+    }
+}
+
+/**
+ * 显示新配置表单
+ */
+function showNewConfigForm() {
+    // 清空表单
+    clearConfigForm();
+    
+    // 设置新配置状态标识
+    window.currentConfigState = 'new';
+    
+    // 清除配置选择器的选择
+    const configSelector = document.getElementById('configSelector');
+    if (configSelector) {
+        configSelector.value = '';
+    }
+    
+    // 设置默认值
+    const configNameField = document.getElementById('configName');
+    if (configNameField) {
+        configNameField.value = '新配置 ' + Date.now().toString().slice(-6);
+    }
+    
+    const timeoutField = document.getElementById('apiTimeout');
+    if (timeoutField) {
+        timeoutField.value = 60;
+    }
+    
+    showToast('请填写新配置信息');
+}
+
+/**
+ * 复制当前配置
+ */
+async function duplicateCurrentConfig() {
+    try {
+        if (!window.apiConfigManager) return;
+        
+        const activeConfig = await window.apiConfigManager.getActiveConfig();
+        if (!activeConfig) {
+            showToast('没有可复制的配置');
+            return;
+        }
+        
+        const duplicated = await window.apiConfigManager.duplicateConfig(activeConfig.id);
+        
+        // 重新加载配置选择器
+        await loadConfigSelector();
+        
+        // 切换到新配置
+        const configSelector = document.getElementById('configSelector');
+        if (configSelector) {
+            configSelector.value = duplicated.id;
+            await handleConfigSwitch(duplicated.id);
+        }
+        
+        showToast('配置已复制');
+        
+    } catch (error) {
+        console.error('复制配置失败:', error);
+        showToast('复制配置失败: ' + error.message);
+    }
+}
+
+/**
+ * 删除当前配置
+ */
+async function deleteCurrentConfig() {
+    try {
+        if (!window.apiConfigManager) return;
+        
+        const configSelector = document.getElementById('configSelector');
+        if (!configSelector || !configSelector.value) {
+            showToast('没有选中要删除的配置');
+            return;
+        }
+        
+        const configId = configSelector.value;
+        const activeConfig = await window.apiConfigManager.getConfigById(configId);
+        
+        if (!activeConfig) {
+            showToast('配置不存在');
+            return;
+        }
+        
+        if (configId === window.apiConfigManager.defaultConfigKey) {
+            showToast('不能删除默认配置');
+            return;
+        }
+        
+        if (!confirm(`确定要删除配置"${activeConfig.configName}"吗？此操作不可撤销。`)) {
+            return;
+        }
+        
+        await window.apiConfigManager.deleteConfig(configId);
+        
+        // 重新加载配置选择器
+        await loadConfigSelector();
+        
+        // 加载当前配置到表单
+        await loadCurrentConfigToForm();
+        
+        showToast('配置已删除');
+        
+    } catch (error) {
+        console.error('删除配置失败:', error);
+        showToast('删除配置失败: ' + error.message);
+    }
+}
+
+/**
+ * 更新配置操作按钮的状态
+ */
+function updateConfigActionButtons() {
+    const configSelector = document.getElementById('configSelector');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const duplicateBtn = document.getElementById('duplicateBtn');
+    
+    if (!configSelector || !deleteBtn || !duplicateBtn) return;
+    
+    const selectedConfigId = configSelector.value;
+    const isDefaultConfig = selectedConfigId === (window.apiConfigManager?.defaultConfigKey || 'settings');
+    
+    // 默认配置不能删除
+    deleteBtn.disabled = isDefaultConfig || !selectedConfigId;
+    deleteBtn.style.opacity = deleteBtn.disabled ? '0.5' : '1';
+    deleteBtn.style.cursor = deleteBtn.disabled ? 'not-allowed' : 'pointer';
+    
+    // 没有配置时不能复制
+    duplicateBtn.disabled = !selectedConfigId;
+    duplicateBtn.style.opacity = duplicateBtn.disabled ? '0.5' : '1';
+    duplicateBtn.style.cursor = duplicateBtn.disabled ? 'not-allowed' : 'pointer';
+}
+
+/**
+ * 确保全局API配置与配置管理器保持同步
+ */
+async function ensureApiConfigIsUpdated() {
+    try {
+        if (!window.apiConfigManager) return;
+        
+        const activeConfig = await window.apiConfigManager.getActiveConfig();
+        if (!activeConfig) return;
+        
+        // 获取当前启用的key
+        const enabledKey = window.apiConfigManager.getEnabledKey(activeConfig);
+        
+        // 更新全局apiSettings，确保包含所有必要字段
+        if (enabledKey && window.apiSettings) {
+            Object.assign(window.apiSettings, {
+                url: activeConfig.url || '',
+                key: enabledKey,
+                model: activeConfig.model || '',
+                secondaryModel: activeConfig.secondaryModel || 'sync_with_primary',
+                contextMessageCount: activeConfig.contextMessageCount || 10,
+                timeout: activeConfig.timeout || 60,
+                minimaxGroupId: activeConfig.minimaxGroupId || '',
+                minimaxApiKey: activeConfig.minimaxApiKey || ''
+            });
+            
+            console.log('全局API配置已更新:', {
+                url: window.apiSettings.url,
+                keyPrefix: window.apiSettings.key ? window.apiSettings.key.substring(0, 8) + '...' : 'empty',
+                model: window.apiSettings.model
+            });
+        }
+        
+    } catch (error) {
+        console.error('更新全局API配置失败:', error);
+    }
+}
+
+// 暴露配置管理函数到全局
+window.loadConfigSelector = loadConfigSelector;
+window.loadCurrentConfigToForm = loadCurrentConfigToForm;
+window.handleConfigSwitch = handleConfigSwitch;
+window.showNewConfigForm = showNewConfigForm;
+window.duplicateCurrentConfig = duplicateCurrentConfig;
+window.deleteCurrentConfig = deleteCurrentConfig;
+window.updateConfigActionButtons = updateConfigActionButtons;
+window.ensureApiConfigIsUpdated = ensureApiConfigIsUpdated;
+window.loadModelsForConfig = loadModelsForConfig;
+window.saveModelSelection = saveModelSelection;
