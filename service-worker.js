@@ -1,23 +1,31 @@
-const CACHE_NAME = 'whale-llt-v3';
+const CACHE_NAME = 'whale-llt-v4';
 const CACHE_VERSION = Date.now(); // 添加时间戳确保版本唯一性
 const urlsToCache = [
   '/',
   '/index.html',
   '/style.css',
   '/script.js',
+  '/bubble.html',
+  '/manifest.json',
   '/js/api.js',
   '/lib/db.js',
   '/config/sync-config.js',
-  '/utils/promptBuilder.js',
-  '/utils/memoryTable.js',
-  '/utils/fileStorageManager.js',
-  '/utils/imageStorageAPI.js',
-  '/utils/imageDisplayHelper.js',
-  '/utils/imageMigrationManager.js',
+  '/utils/apiConfigManager.js',
+  '/utils/characterMemory.js',
   '/utils/chatEmojiMigrationManager.js',
   '/utils/dataMigrator.js',
-  '/utils/announcementManager.js',
-  '/utils/characterMemory.js',
+  '/utils/fileStorageExporter.js',
+  '/utils/fileStorageImporter.js',
+  '/utils/fileStorageManager.js',
+  '/utils/imageDisplayHelper.js',
+  '/utils/imageKeywordGenerator.js',
+  '/utils/imageMigrationManager.js',
+  '/utils/imageStorageAPI.js',
+  '/utils/memoryTable.js',
+  '/utils/promptBuilder.js',
+  '/utils/systemUtilities.js',
+  '/utils/uiManager.js',
+  '/utils/voiceStorageAPI.js',
   'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 ];
 
