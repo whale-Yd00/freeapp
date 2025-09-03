@@ -456,6 +456,7 @@ ${characterMemory}
     5. 为每篇帖子提供一个简短的图片内容描述文字。
     6. 必须以一个JSON对象格式输出，回答**只包含JSON**，不要包含任何其他文字或markdown标记。
     7. 对于每一条评论，都必须包含 "commenter_name", "commenter_type", 和 "comment_content" 三个字段。 "commenter_type" 应该准确反映评论者的角色（例如："CP头子", "乐子人", "好友"）。
+    8. 内容要求：每条评论必须包含实际的文字内容（至少10字），不能只是单独的emoji或表情符号
 
     # 输出格式 (必须严格遵守此JSON结构)
     {
@@ -544,6 +545,7 @@ ${characterMemory}
 6. 每条评论10-50字之间
 7. 根据角色性格和朋友圈内容，决定是否点赞（like: true/false）
 8. 必须以JSON格式输出，不要包含任何其他解释性文字或markdown标记
+9. 内容要求：每条评论必须包含实际的文字内容（至少10字），不能只是单独的emoji或表情符号
 
 输出格式 (必须严格遵守此JSON结构):
 {
@@ -608,7 +610,7 @@ ${userReply}
     }
 
     /**
-     * 构建当AI被@时生成回复的提示词
+     * 构建当AI被 @ 时生成回复的提示词
      */
     buildMentionReplyPrompt(postData, mentioningComment, mentionedContact, contacts, userProfile) {
         const allComments = postData.comments.map(c => `${c.commenter_name}: ${c.comment_content}`).join('\n');
@@ -715,6 +717,7 @@ ${userReply}
 4. 每条评论至少10字，最多50字。
 5. 必须以一个JSON对象格式输出，回答**只包含JSON**，不要包含任何其他文字或markdown标记。
 6. 对于每一条评论，都必须包含 "commenter_name"、"commenter_type" 和 "comment_content" 三个字段。
+7. 内容要求：每条评论必须包含实际的文字内容（至少10字），不能只是单独的emoji或表情符号
 
 # 输出格式 (必须严格遵守此JSON结构)
 {
@@ -819,6 +822,7 @@ ${chatContext || '暂无聊天记录'}
 8. 根据角色性格和朋友圈内容，决定是否点赞（like: true/false）
 9. 图片关键词应该是英文，简洁明确，适合搜索配图
 10. 必须以JSON格式输出，不要包含任何其他解释性文字或markdown标记
+11. 内容要求：每条评论必须包含实际的文字内容（至少10字），不能只是单独的emoji或表情符号
 
 # 输出格式 (必须严格遵守此JSON结构)
 {
