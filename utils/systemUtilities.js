@@ -453,5 +453,6 @@ window.SystemUtils = {
 };
 
 // 为了向后兼容，保留一些关键的全局引用
+// TODO: Remove these global assignments once all code is updated to use SystemUtils.
 window.announcementManager = announcementManager;
 window.escapeHtml = escapeHtml;
