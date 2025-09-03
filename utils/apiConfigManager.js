@@ -33,9 +33,9 @@ class APIConfigManager {
         
         // API Key统计功能
         this.statsStorageKey = 'apiKeyUsageStats';
-        console.log(`[API统计调试] APIConfigManager构造函数被调用，statsStorageKey=${this.statsStorageKey}`);
+        // console.log(`[API统计调试] APIConfigManager构造函数被调用，statsStorageKey=${this.statsStorageKey}`);
         this.stats = this.loadStats();
-        console.log(`[API统计调试] 构造函数中加载的stats:`, JSON.stringify(this.stats, null, 2));
+        // console.log(`[API统计调试] 构造函数中加载的stats:`, JSON.stringify(this.stats, null, 2));
         this.cleanupInterval = null;
     }
 
@@ -562,12 +562,12 @@ class APIConfigManager {
      */
     loadStats() {
         try {
-            console.log(`[API统计调试] 从localStorage加载统计数据，storageKey=${this.statsStorageKey}`);
+            // console.log(`[API统计调试] 从localStorage加载统计数据，storageKey=${this.statsStorageKey}`);
             const stored = localStorage.getItem(this.statsStorageKey);
-            console.log(`[API统计调试] localStorage中的原始数据:`, stored);
+            // console.log(`[API统计调试] localStorage中的原始数据:`, stored);
             if (stored) {
                 const parsed = JSON.parse(stored);
-                console.log(`[API统计调试] 解析后的统计数据:`, JSON.stringify(parsed, null, 2));
+                // console.log(`[API统计调试] 解析后的统计数据:`, JSON.stringify(parsed, null, 2));
                 return parsed;
             } else {
                 console.log(`[API统计调试] localStorage中没有找到统计数据`);
@@ -595,9 +595,9 @@ class APIConfigManager {
      */
     saveStats() {
         try {
-            console.log(`[API统计调试] 保存统计数据到localStorage:`, JSON.stringify(this.stats, null, 2));
+            // console.log(`[API统计调试] 保存统计数据到localStorage:`, JSON.stringify(this.stats, null, 2));
             localStorage.setItem(this.statsStorageKey, JSON.stringify(this.stats));
-            console.log(`[API统计调试] 保存成功，localStorage大小:`, localStorage.getItem(this.statsStorageKey).length);
+            console.log(`[API统计调试] 保存成功`);
         } catch (error) {
             console.error('保存API Key统计失败:', error);
         }
@@ -607,17 +607,13 @@ class APIConfigManager {
      * 记录一次API调用
      */
     recordCall(configId, keyIndex, keyValue, success = true) {
-        console.log(`[API统计调试] 记录API调用: configId=${configId}, keyIndex=${keyIndex}, success=${success}`);
+        // console.log(`[API统计调试] 记录API调用: configId=${configId}, keyIndex=${keyIndex}, success=${success}`);
         console.log(`[API统计调试] API Key前缀: ${keyValue.substring(0, 10)}...`);
         
         const keyId = this.generateKeyId(configId, keyIndex, keyValue);
         const now = Date.now();
-        
-        console.log(`[API统计调试] 生成的keyId: ${keyId}`);
-        console.log(`[API统计调试] 当前stats.keyStats包含的keys:`, Object.keys(this.stats.keyStats));
-        
+                
         if (!this.stats.keyStats[keyId]) {
-            console.log(`[API统计调试] 创建新的key统计记录`);
             this.stats.keyStats[keyId] = {
                 configId,
                 keyIndex,
@@ -639,11 +635,8 @@ class APIConfigManager {
         if (success) {
             keyStat.successCalls++;
         }
-        
-        console.log(`[API统计调试] 更新后的统计: totalCalls=${keyStat.totalCalls}, successCalls=${keyStat.successCalls}`);
-        
+                
         this.saveStats();
-        console.log(`[API统计调试] 统计数据已保存到localStorage，storageKey=${this.statsStorageKey}`);
         
         window.dispatchEvent(new CustomEvent('apiKeyStatsUpdated', {
             detail: { keyId, stats: keyStat }
@@ -674,14 +667,10 @@ class APIConfigManager {
      * 获取指定key在近24小时内的调用统计
      */
     getKeyStats(configId, keyIndex, keyValue) {
-        console.log(`[API统计调试] getKeyStats被调用: configId=${configId}, keyIndex=${keyIndex}`);
-        console.log(`[API统计调试] 当前所有stats.keyStats:`, Object.keys(this.stats.keyStats));
         
         const keyId = this.generateKeyId(configId, keyIndex, keyValue);
-        console.log(`[API统计调试] 查询的keyId: ${keyId}`);
         
         const keyStat = this.stats.keyStats[keyId];
-        console.log(`[API统计调试] 找到的keyStat:`, keyStat ? JSON.stringify(keyStat, null, 2) : 'null');
         
         if (!keyStat) {
             console.log(`[API统计调试] 未找到统计记录，返回默认值`);
@@ -704,7 +693,7 @@ class APIConfigManager {
             lastUsed: recentCalls.length > 0 ? recentCalls[recentCalls.length - 1].timestamp : null
         };
         
-        console.log(`[API统计调试] 返回的统计结果:`, result);
+        // console.log(`[API统计调试] 返回的统计结果:`, result);
         return result;
     }
 

@@ -5253,7 +5253,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
             
             // 清理 HTML 中的转义换行符，避免显示 \n
             bubbleHtml = bubbleHtml.replace(/\\n/g, '');
-            console.log('生成的自定义气泡 HTML:', bubbleHtml);
+            // console.log('生成的自定义气泡 HTML:', bubbleHtml);
         } else {
             // 使用默认气泡样式
             console.log('使用默认气泡样式，自定义样式状态:', {
@@ -5799,7 +5799,7 @@ async function addSingleMessage(message, isNewMessage = false) {
         
         // 清理 HTML 中的转义换行符，避免显示 \n
         bubbleHtml = bubbleHtml.replace(/\\n/g, '');
-        console.log('生成的自定义气泡 HTML:', bubbleHtml);
+        // console.log('生成的自定义气泡 HTML:', bubbleHtml);
     } else {
         // 使用默认气泡样式
         console.log('使用默认气泡样式，自定义样式状态:', {
@@ -12751,8 +12751,8 @@ async function loadCustomBubbleStyle() {
         const styleDataKare = bubbleStyleKare || directBubbleStyleKare;
         const styleDataSelf = bubbleStyleSelf || directBubbleStyleSelf;
         
-        console.log('加载的对方气泡样式配置:', styleDataKare);
-        console.log('加载的我的气泡样式配置:', styleDataSelf);
+        // console.log('加载的对方气泡样式配置:', styleDataKare);
+        // console.log('加载的我的气泡样式配置:', styleDataSelf);
         
         // 处理对方气泡样式
         const isEnabledKare = styleDataKare?.enabled || styleDataKare?.data?.enabled;
