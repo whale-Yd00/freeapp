@@ -31,7 +31,7 @@ function safeFocus(element, options = {}) {
             if (!preventScroll && window.viewportManager) {
                 // 延迟一下，让focus事件先完成
                 setTimeout(() => {
-                    window.viewportManager.scrollToActiveInput();
+                    window.UIManager.viewportManager.scrollToActiveInput();
                 }, 50);
             }
         } catch (error) {
@@ -4605,8 +4605,8 @@ function closeModal(modalId) {
 function cleanupEmojiUploadData() {
     try {
         // 清理临时文件
-        if (tempEmojiFile) {
-            tempEmojiFile = null;
+        if (window.ImageUploadHandlers.tempEmojiFile) {
+            window.ImageUploadHandlers.tempEmojiFile = null;
         }
         
         // 清理临时URL
@@ -7455,15 +7455,15 @@ async function addEmoji(event) {
     const imageUrl = document.getElementById('emojiUrl').value;
     
     // 处理临时URL的情况：如果是临时URL但还有临时文件，先转换存储
-    if (imageUrl.startsWith('temp:') && tempEmojiFile) {
+    if (imageUrl.startsWith('temp:') && window.ImageUploadHandlers.tempEmojiFile) {
         try {
             const statusElement = document.getElementById('emojiUploadStatus');
-            await window.ImageUploadHandlers.storeEmojiWithMeaning(tempEmojiFile, meaning, statusElement);
+            await window.ImageUploadHandlers.storeEmojiWithMeaning(window.ImageUploadHandlers.tempEmojiFile, meaning, statusElement);
             
             // 清理临时数据
             const tempUrl = imageUrl.substring(5);
             URL.revokeObjectURL(tempUrl);
-            tempEmojiFile = null;
+            window.ImageUploadHandlers.tempEmojiFile = null;
             
             // 获取新的fileId URL
             const newImageUrl = document.getElementById('emojiUrl').value;

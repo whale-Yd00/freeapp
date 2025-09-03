@@ -3098,17 +3098,25 @@ function formatTime(timestamp) {
     }
 }
 
-// 暴露辅助函数到全局
-window.showDatabaseErrorDialog = showDatabaseErrorDialog;
-window.retryWithBackoff = retryWithBackoff;
-window.waitForIndexedDBReady = waitForIndexedDBReady;
-window.startConnectionMonitoring = startConnectionMonitoring;
-window.handleConnectionLoss = handleConnectionLoss;
-window.promisifyRequest = promisifyRequest;
-window.promisifyTransaction = promisifyTransaction;
-window.executeWithRetry = executeWithRetry;
+// 创建数据库工具命名空间 - 核心辅助函数
+window.DatabaseUtils = {
+    showDatabaseErrorDialog,
+    retryWithBackoff,
+    waitForIndexedDBReady,
+    startConnectionMonitoring,
+    handleConnectionLoss,
+    promisifyRequest,
+    promisifyTransaction,
+    executeWithRetry,
+    ensureDBReady,
+    formatTime
+};
+
+// 为了向后兼容，保留一些关键的全局引用
 window.ensureDBReady = ensureDBReady;
-window.formatTime = formatTime;
+window.promisifyRequest = promisifyRequest;
+window.executeWithRetry = executeWithRetry;
+window.waitForIndexedDBReady = waitForIndexedDBReady;
 
 // 自动启动连接监控
 if (typeof window !== 'undefined' && window.isIndexedDBReady) {

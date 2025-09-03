@@ -339,7 +339,7 @@ function safeFocus(element, options = {}) {
             if (!preventScroll && window.viewportManager) {
                 // 延迟一下，让focus事件先完成
                 setTimeout(() => {
-                    window.viewportManager.scrollToActiveInput();
+                    window.UIManager.viewportManager.scrollToActiveInput();
                 }, 50);
             }
         } catch (error) {
@@ -477,7 +477,7 @@ function initializeLongPressBlocking() {
 
 // 主题切换函数（全局函数）
 function switchTheme(theme) {
-    window.themeManager.setTheme(theme);
+    window.UIManager.themeManager.setTheme(theme);
     
     // 提供用户反馈
     const themeNames = {
@@ -492,29 +492,39 @@ function switchTheme(theme) {
 
 // 获取当前主题（全局函数）
 function getCurrentTheme() {
-    return window.themeManager.getCurrentTheme();
+    return window.UIManager.themeManager.getCurrentTheme();
 }
 
 // 初始化UI管理器
 if (typeof window !== 'undefined') {
-    window.viewportManager = new ViewportManager();
-    window.themeManager = new ThemeManager();
+    // 创建统一的UI管理器命名空间
+    window.UIManager = {
+        // 管理器实例
+        viewportManager: new ViewportManager(),
+        themeManager: new ThemeManager(),
+        
+        // 工具函数
+        safeFocus,
+        switchTheme,
+        getCurrentTheme,
+        checkBrowserCompatibility,
+        initializeLongPressBlocking
+    };
     
-    // 暴露全局函数
-    window.safeFocus = safeFocus;
+    // 为了向后兼容，保留一些关键的全局引用
+    window.viewportManager = window.UIManager.viewportManager;
+    window.themeManager = window.UIManager.themeManager;
     window.switchTheme = switchTheme;
     window.getCurrentTheme = getCurrentTheme;
-    window.checkBrowserCompatibility = checkBrowserCompatibility;
-    window.initializeLongPressBlocking = initializeLongPressBlocking;
     
     // 自动初始化
-    window.themeManager.init();
-    window.checkBrowserCompatibility();
+    window.UIManager.themeManager.init();
+    window.UIManager.checkBrowserCompatibility();
     
     // 在页面加载完成后初始化长按屏蔽
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeLongPressBlocking);
+        document.addEventListener('DOMContentLoaded', window.UIManager.initializeLongPressBlocking);
     } else {
-        initializeLongPressBlocking();
+        window.UIManager.initializeLongPressBlocking();
     }
 }

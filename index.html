@@ -496,21 +496,21 @@
                     <p class="appearance-section-desc">选择你喜欢的主题模式，支持跟随系统设置</p>
                     
                     <div class="theme-mode-grid">
-                        <div class="theme-mode-option active" data-theme="system" onclick="switchTheme('system')">
+                        <div class="theme-mode-option active" data-theme="system" onclick="window.UIManager.switchTheme('system')">
                             <div class="theme-mode-icon">🔄</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">跟随系统</div>
                                 <div class="theme-mode-desc">自动跟随系统暗色模式</div>
                             </div>
                         </div>
-                        <div class="theme-mode-option" data-theme="light" onclick="switchTheme('light')">
+                        <div class="theme-mode-option" data-theme="light" onclick="window.UIManager.switchTheme('light')">
                             <div class="theme-mode-icon">☀️</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">亮色模式</div>
                                 <div class="theme-mode-desc">始终使用亮色主题</div>
                             </div>
                         </div>
-                        <div class="theme-mode-option" data-theme="dark" onclick="switchTheme('dark')">
+                        <div class="theme-mode-option" data-theme="dark" onclick="window.UIManager.switchTheme('dark')">
                             <div class="theme-mode-icon">🌙</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">暗黑模式</div>
