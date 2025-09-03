@@ -512,10 +512,11 @@ if (typeof window !== 'undefined') {
     };
     
     // 为了向后兼容，保留一些关键的全局引用
-    window.viewportManager = window.UIManager.viewportManager;
-    window.themeManager = window.UIManager.themeManager;
-    window.switchTheme = switchTheme;
-    window.getCurrentTheme = getCurrentTheme;
+// TODO: Remove these global assignments once all code is updated to use UIManager.
+window.viewportManager = window.UIManager.viewportManager;
+window.themeManager = window.UIManager.themeManager;
+window.switchTheme = switchTheme;
+window.getCurrentTheme = getCurrentTheme;
     
     // 自动初始化
     window.UIManager.themeManager.init();
