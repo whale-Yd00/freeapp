@@ -22,8 +22,6 @@ class APIConfigManager {
             secondaryModel: 'sync_with_primary',
             contextMessageCount: 10,
             timeout: 60,
-            minimaxGroupId: '',
-            minimaxApiKey: '',
             isDefault: false,
             createdAt: Date.now(),
             updatedAt: Date.now()
@@ -277,9 +275,7 @@ class APIConfigManager {
             model: config.model || '',
             secondaryModel: config.secondaryModel || 'sync_with_primary',
             contextMessageCount: config.contextMessageCount || 10,
-            timeout: config.timeout || 60,
-            minimaxGroupId: config.minimaxGroupId || '',
-            minimaxApiKey: config.minimaxApiKey || ''
+            timeout: config.timeout || 60
         });
 
         // 触发配置切换事件

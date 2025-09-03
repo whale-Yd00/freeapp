@@ -931,9 +931,13 @@ ${replierName}在你的朋友圈"${momentContent}"下评论或回复了："${rep
 
     // 私有方法：构建语音指令
     _buildVoiceInstructions(contact, apiSettings) {
+        // 直接从localStorage读取minimax配置
+        const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
+        const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
+        
         // 如果没有语音ID或者没有正确配置Minimax的凭证，则不提供语音能力
-         if (!contact?.voiceId || !apiSettings?.minimaxGroupId || !apiSettings?.minimaxApiKey) {
-             return '';
+        if (!contact?.voiceId || !minimaxGroupId || !minimaxApiKey) {
+            return '';
         }
         
         return `\n\n**能力三：发送语音**\n`
