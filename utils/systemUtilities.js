@@ -396,20 +396,40 @@ function registerServiceWorker() {
  * 特殊事件检查（如节日特殊处理）
  */
 async function checkSpecialEvents() {
-    // 七夕节特殊处理 - 检查是否为8月29日且第一次打开
-    const today = new Date();
-    const isSpecialDate = (today.getMonth() === 7 && today.getDate() === 29); // 8月29日
-    
-    if (isSpecialDate) {
-        const hasSeenSpecialEvent = localStorage.getItem('special-event-2025-qixi');
-        if (!hasSeenSpecialEvent) {
-            console.log('检测到特殊日期：七夕节');
-            localStorage.setItem('special-event-2025-qixi', 'true');
-            // 可以在这里添加特殊的UI效果或提示
-            if (typeof showToast === 'function') {
-                showToast('🌟 七夕节快乐！愿你在这个特别的日子里收获美好的回忆 💕', 'success');
+    try {
+        const today = new Date();
+        const month = (today.getMonth() + 1).toString().padStart(2, '0');
+        const day = today.getDate().toString().padStart(2, '0');
+        const dateString = `${month}-${day}`;
+        
+        console.log('当前日期检查:', dateString);
+        
+        // 检查是否为8月29日
+        if (month === '08' && day === '29') {
+            console.log('今天是七夕节！'); // 保持原有日志，因为这是具体的日期判断
+            
+            // 检查是否为今日第一次打开应用
+            const lastSpecialEventVisit = localStorage.getItem('lastSpecialEventVisit');
+            const todayString = today.toDateString();
+            
+            if (lastSpecialEventVisit !== todayString) {
+                console.log('今日第一次打开应用，开始特殊事件流程');
+                
+                // 记录今日已访问
+                localStorage.setItem('lastSpecialEventVisit', todayString);
+                
+                // 启动特殊事件流程（七夕节）
+                if (window.startSpecialEventFlow && typeof window.startSpecialEventFlow === 'function') {
+                    await window.startSpecialEventFlow('qixi');
+                } else {
+                    console.warn('startSpecialEventFlow 函数未找到');
+                }
+            } else {
+                console.log('今日已处理过特殊事件流程');
             }
         }
+    } catch (error) {
+        console.error('特殊事件检查出错:', error);
     }
 }
 
@@ -417,15 +437,21 @@ async function checkSpecialEvents() {
 setupConsoleCapture();
 initializeGlobalErrorHandling();
 
-// 暴露到全局
+// 创建命名空间并暴露系统工具函数
+window.SystemUtils = {
+    announcementManager,
+    consoleLogs,
+    exportConsoleLogs,
+    showDebugLogPage,
+    updateDebugLogDisplay,
+    clearDebugLogs,
+    copyDebugLogs,
+    escapeHtml,
+    setupConsoleCapture,
+    checkSpecialEvents,
+    registerServiceWorker
+};
+
+// 为了向后兼容，保留一些关键的全局引用
 window.announcementManager = announcementManager;
-window.consoleLogs = consoleLogs;
-window.exportConsoleLogs = exportConsoleLogs;
-window.showDebugLogPage = showDebugLogPage;
-window.updateDebugLogDisplay = updateDebugLogDisplay;
-window.clearDebugLogs = clearDebugLogs;
-window.copyDebugLogs = copyDebugLogs;
 window.escapeHtml = escapeHtml;
-window.setupConsoleCapture = setupConsoleCapture;
-window.checkSpecialEvents = checkSpecialEvents;
-window.registerServiceWorker = registerServiceWorker;

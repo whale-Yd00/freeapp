@@ -1016,10 +1016,9 @@ async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
 /**
  * 特定的上传处理函数 - 联系人头像
  */
-async function handleContactAvatarUpload(event) {
+async function handleContactAvatarUpload(event, editingContact) {
     try {
-        // 从全局变量获取editingContact，如果不存在使用临时ID
-        const editingContact = window.editingContact;
+        // 如果正在编辑联系人，使用联系人ID；否则为新联系人生成临时ID
         const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
         const fileId = await handleAvatarUpload('avatarUploadInput', 'contact', contactId, 'avatarUploadStatus');
         
@@ -1106,16 +1105,22 @@ const imageStorageAPI = new ImageStorageAPI();
 // 导出到window对象
 window.ImageStorageAPI = imageStorageAPI;
 
-// 暴露上传处理函数到全局
-window.handleFileUpload = handleFileUpload;
-window.handleAvatarUpload = handleAvatarUpload;
-window.handleBackgroundUpload = handleBackgroundUpload;
-window.handleEmojiUpload = handleEmojiUpload;
-window.handleEmojiFileUpload = handleEmojiFileUpload;
-window.storeEmojiWithMeaning = storeEmojiWithMeaning;
+// 创建命名空间并暴露上传处理函数
+window.ImageUploadHandlers = {
+    handleFileUpload,
+    handleAvatarUpload,
+    handleBackgroundUpload,
+    handleEmojiUpload,
+    handleEmojiFileUpload,
+    storeEmojiWithMeaning,
+    handleContactAvatarUpload,
+    handleProfileAvatarUpload,
+    handleBgUpload,
+    tempEmojiFile
+};
+
+// 为了向后兼容，保留主要的全局引用
 window.handleContactAvatarUpload = handleContactAvatarUpload;
 window.handleProfileAvatarUpload = handleProfileAvatarUpload;
-window.handleBgUpload = handleBgUpload;
-window.tempEmojiFile = tempEmojiFile;
 
 // 图片存储API已加载

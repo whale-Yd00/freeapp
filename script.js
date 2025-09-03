@@ -346,7 +346,7 @@ async function init() {
         }
         
         // 七夕节特殊处理 - 检查是否为8月29日且第一次打开
-        await checkSpecialEvents();
+        await window.SystemUtils.checkSpecialEvents();
         
     } catch (error) {
         console.error('应用初始化失败:', error);
@@ -7458,7 +7458,7 @@ async function addEmoji(event) {
     if (imageUrl.startsWith('temp:') && tempEmojiFile) {
         try {
             const statusElement = document.getElementById('emojiUploadStatus');
-            await storeEmojiWithMeaning(tempEmojiFile, meaning, statusElement);
+            await window.ImageUploadHandlers.storeEmojiWithMeaning(tempEmojiFile, meaning, statusElement);
             
             // 清理临时数据
             const tempUrl = imageUrl.substring(5);
@@ -13989,43 +13989,6 @@ window.statusBallManager = new StatusBallManager();
 
 
 /**
- * 检查特殊事件并处理相关逻辑
- */
-async function checkSpecialEvents() {
-    try {
-        const today = new Date();
-        const month = (today.getMonth() + 1).toString().padStart(2, '0');
-        const day = today.getDate().toString().padStart(2, '0');
-        const dateString = `${month}-${day}`;
-        
-        console.log('当前日期检查:', dateString);
-        
-        // 检查是否为8月29日
-        if (month === '08' && day === '29') {
-            console.log('今天是七夕节！'); // 保持原有日志，因为这是具体的日期判断
-            
-            // 检查是否为今日第一次打开应用
-            const lastSpecialEventVisit = localStorage.getItem('lastSpecialEventVisit');
-            const todayString = today.toDateString();
-            
-            if (lastSpecialEventVisit !== todayString) {
-                console.log('今日第一次打开应用，开始特殊事件流程');
-                
-                // 记录今日已访问
-                localStorage.setItem('lastSpecialEventVisit', todayString);
-                
-                // 启动特殊事件流程（七夕节）
-                await startSpecialEventFlow('qixi');
-            } else {
-                console.log('今日已处理过特殊事件流程');
-            }
-        }
-    } catch (error) {
-        console.error('特殊事件检查出错:', error);
-    }
-}
-
-/**
  * 开始特殊事件流程
  * @param {string} eventType - 事件类型 ('qixi', 'birthday', 'holiday' 等)
  */
@@ -14099,6 +14062,9 @@ async function startSpecialEventFlow(eventType = 'qixi') {
         showApiError(error);
     }
 }
+
+// 暴露特殊事件流程函数到全局
+window.startSpecialEventFlow = startSpecialEventFlow;
 
 /**
  * 显示状态球加载弹窗
