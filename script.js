@@ -31,15 +31,18 @@ function parseVoiceMessage(messageContent) {
         return { content: messageContent, isVoice: false };
     }
     
+    const NEW_VOICE_PREFIX = '[V]';
+    const OLD_VOICE_PREFIX = '[语音]:';
+    
     // 检查新格式：[V]内容
-    if (messageContent.startsWith('[V]')) {
-        const content = messageContent.substring(3);
+    if (messageContent.startsWith(NEW_VOICE_PREFIX)) {
+        const content = messageContent.substring(NEW_VOICE_PREFIX.length);
         return { content: content, isVoice: true };
     }
     
     // 检查旧格式：[语音]:内容
-    if (messageContent.startsWith('[语音]:')) {
-        const content = messageContent.substring(4).trim();
+    if (messageContent.startsWith(OLD_VOICE_PREFIX)) {
+        const content = messageContent.substring(OLD_VOICE_PREFIX.length).trim();
         return { content: content, isVoice: true };
     }
     
@@ -47,8 +50,59 @@ function parseVoiceMessage(messageContent) {
     return { content: messageContent, isVoice: false };
 }
 
-
-  
+/**
+ * 为语音消息设置UI，包括添加语音图标和点击事件
+ * @param {HTMLElement} msgDiv - 消息div元素
+ * @param {Object} message - 消息对象，包含content、isVoice等属性
+ * @param {Object} currentContact - 当前联系人对象
+ */
+function setupVoiceMessageUI(msgDiv, message, currentContact) {
+    const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
+    const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
+    
+    if (!message.isVoice || !currentContact.voiceId || !minimaxGroupId || !minimaxApiKey) {
+        return;
+    }
+    
+    // 兼容自定义气泡和默认气泡
+    const bubble = msgDiv.querySelector('.message-bubble') || 
+                  msgDiv.querySelector('.custom-bubble-container') || 
+                  msgDiv.querySelector('.chat-bubble');
+    if (!bubble) {
+        return;
+    }
+    
+    const messageUniqueId = `${currentContact.id}-${message.time}`;
+    
+    // 给气泡添加语音消息标识
+    bubble.classList.add('voice-message');
+    bubble.dataset.voiceMessageId = `voice-${messageUniqueId}`;
+    
+    // 在消息内容前添加语音符号
+    const textContentDiv = bubble.querySelector('.message-content') || bubble;
+    if (textContentDiv && !textContentDiv.querySelector('.voice-icon')) {
+        const voiceIcon = document.createElement('span');
+        voiceIcon.className = 'voice-icon';
+        voiceIcon.innerHTML = createVoiceIcon();
+        
+        // 确定插入点并插入语音符号
+        let insertionPoint = textContentDiv.firstChild;
+        if (textContentDiv === bubble) {
+            const firstTextNode = Array.from(textContentDiv.childNodes).find(node => 
+                node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ''
+            );
+            if (firstTextNode) {
+                insertionPoint = firstTextNode;
+            }
+        }
+        textContentDiv.insertBefore(voiceIcon, insertionPoint);
+        
+        // 添加点击事件监听器
+        bubble.addEventListener('click', () => {
+            playVoiceMessage(bubble, message.content, message.senderId || currentContact.id);
+        });
+    }
+}
 
 // --- 全局状态 ---
 let contacts = [];
@@ -5861,50 +5915,8 @@ async function addSingleMessage(message, isNewMessage = false) {
     // 添加到聊天界面
     chatMessages.appendChild(msgDiv);
 
-    // 处理语音消息标识和图标
-    const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
-    const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
-    
-    if (message.isVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
-        // 兼容自定义气泡和默认气泡
-        const bubble = msgDiv.querySelector('.message-bubble') || 
-                      msgDiv.querySelector('.custom-bubble-container') || 
-                      msgDiv.querySelector('.chat-bubble');
-        if (bubble) {
-            const messageUniqueId = `${currentContact.id}-${message.time}`;
-            
-            // 给气泡添加语音消息标识
-            bubble.classList.add('voice-message');
-            bubble.dataset.voiceMessageId = `voice-${messageUniqueId}`;
-            
-            // 在消息内容前添加语音符号
-            const textContentDiv = bubble.querySelector('.message-content') || bubble;
-            if (textContentDiv && !textContentDiv.querySelector('.voice-icon')) {
-                const voiceIcon = document.createElement('span');
-                voiceIcon.className = 'voice-icon';
-                voiceIcon.innerHTML = createVoiceIcon();
-                
-                // 将语音符号插入到文本内容的最前面
-                if (textContentDiv === bubble) {
-                    const firstTextNode = Array.from(textContentDiv.childNodes).find(node => 
-                        node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ''
-                    );
-                    if (firstTextNode) {
-                        textContentDiv.insertBefore(voiceIcon, firstTextNode);
-                    } else {
-                        textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
-                    }
-                } else {
-                    textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
-                }
-                
-                // 添加点击事件监听器
-                bubble.addEventListener('click', () => {
-                    playVoiceMessage(bubble, message.content, message.senderId || currentContact.id);
-                });
-            }
-        }
-    }
+    // 处理语音消息UI
+    setupVoiceMessageUI(msgDiv, message, currentContact);
 
     // 只有新消息才滚动到底部，避免每次添加消息都重新滚动
     if (isNewMessage) {
