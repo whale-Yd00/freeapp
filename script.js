@@ -4897,6 +4897,9 @@ async function saveContact(event) {
     }
     await saveDataToDB(); // 使用IndexedDB保存
     await renderContactList();
+    if (editingContact && currentContact && editingContact.id === currentContact.id) {
+        await renderMessages(false);
+    }
     closeModal('addContactModal');
     
     // 清理自定义状态提示
