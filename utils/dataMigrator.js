@@ -2779,3 +2779,338 @@ window.getFileStorageStats = async function() {
         };
     }
 };
+
+// === 从 script.js 提取的数据库管理增强功能 ===
+
+// 数据库重试配置
+const DB_RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelay: 1000,
+    maxDelay: 5000,
+    connectionRetries: 10,
+    connectionRetryInterval: 5000
+};
+
+// 数据库状态跟踪
+let dbConnectionAttempts = 0;
+let dbConnectionTimer = null;
+let dbReadinessCheckInterval = null;
+
+/**
+ * 用户友好的错误对话框
+ */
+function showDatabaseErrorDialog(error, isRetrying = false) {
+    const title = isRetrying ? '数据库重试中...' : '数据库连接失败';
+    const message = isRetrying 
+        ? `数据库连接异常，正在自动重试... (${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries})\n\n错误信息: ${error.message}`
+        : `数据库连接失败，所有重试都已用尽。\n\n错误信息: ${error.message}\n\n建议:\n1. 刷新页面重试\n2. 清除浏览器缓存\n3. 检查浏览器是否支持IndexedDB`;
+    
+    // 创建自定义对话框
+    if (!document.getElementById('db-error-dialog')) {
+        const dialog = document.createElement('div');
+        dialog.id = 'db-error-dialog';
+        dialog.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); display: flex; align-items: center; 
+            justify-content: center; z-index: 10000; font-family: Arial, sans-serif;
+        `;
+        
+        const dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background: white; padding: 30px; border-radius: 12px; 
+            max-width: 500px; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        dialog.appendChild(dialogContent);
+        document.body.appendChild(dialog);
+    }
+    
+    const dialog = document.getElementById('db-error-dialog');
+    const content = dialog.querySelector('div');
+    content.innerHTML = `
+        <h3 style="color: ${isRetrying ? '#ffa500' : '#dc3545'}; margin-top: 0;">${title}</h3>
+        <p style="margin: 15px 0; line-height: 1.6; white-space: pre-line;">${message}</p>
+        ${!isRetrying ? `
+            <div style="text-align: right; margin-top: 20px;">
+                <button onclick="location.reload()" style="
+                    background: #007bff; color: white; border: none; 
+                    padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                ">刷新页面</button>
+            </div>
+        ` : ''}
+    `;
+    
+    dialog.style.display = 'flex';
+    
+    if (isRetrying) {
+        setTimeout(() => {
+            if (dialog && dialog.parentNode) {
+                dialog.style.display = 'none';
+            }
+        }, 3000);
+    }
+}
+
+/**
+ * 带递增等待时间的重试机制
+ */
+async function retryWithBackoff(operation, context = '', retries = DB_RETRY_CONFIG.maxRetries) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`${context} - 尝试第 ${attempt}/${retries} 次`);
+            const result = await operation();
+            if (attempt > 1) {
+                console.log(`${context} - 第 ${attempt} 次尝试成功`);
+                if (typeof showToast === 'function') showToast('数据库连接已恢复', 'success');
+            }
+            return result;
+        } catch (error) {
+            console.error(`${context} - 第 ${attempt}/${retries} 次尝试失败:`, error);
+            
+            if (attempt === retries) {
+                console.error(`${context} - 所有重试都已失败，抛出最终错误`);
+                throw error;
+            }
+            
+            // 计算递增等待时间
+            const delay = Math.min(
+                DB_RETRY_CONFIG.baseDelay * Math.pow(2, attempt - 1),
+                DB_RETRY_CONFIG.maxDelay
+            );
+            
+            console.log(`${context} - 等待 ${delay}ms 后重试...`);
+            if (typeof showToast === 'function') showToast(`${context}失败，${delay/1000}秒后重试 (${attempt}/${retries})`, 'warning');
+            
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
+/**
+ * IndexedDB就绪状态检查
+ */
+function waitForIndexedDBReady(timeout = 30000) {
+    return new Promise((resolve, reject) => {
+        const startTime = Date.now();
+        
+        function checkReady() {
+            console.log(`[DEBUG-FIXED] checkReady检查: window.isIndexedDBReady=${window.isIndexedDBReady}, window.db=${!!window.db}`);
+            if (window.isIndexedDBReady && window.db) {
+                console.log('IndexedDB就绪状态检查: 已就绪 [FIXED]');
+                resolve(true);
+                return;
+            }
+            
+            if (Date.now() - startTime > timeout) {
+                console.error('IndexedDB就绪状态检查: 超时');
+                reject(new Error(`IndexedDB就绪检查超时 (${timeout}ms)`));
+                return;
+            }
+            
+            setTimeout(checkReady, 100);
+        }
+        
+        checkReady();
+    });
+}
+
+/**
+ * 增强版数据库连接监控
+ */
+function startConnectionMonitoring() {
+    if (dbReadinessCheckInterval) {
+        clearInterval(dbReadinessCheckInterval);
+    }
+    
+    dbReadinessCheckInterval = setInterval(() => {
+        if (!window.isIndexedDBReady || !window.db) {
+            console.warn('检测到数据库连接断开，准备自动重连...');
+            clearInterval(dbReadinessCheckInterval);
+            handleConnectionLoss();
+        }
+    }, 30000); // 每30秒检查一次连接状态
+}
+
+/**
+ * 数据库连接断开处理
+ */
+async function handleConnectionLoss() {
+    dbConnectionAttempts = 0;
+    
+    const attemptReconnection = async () => {
+        dbConnectionAttempts++;
+        console.log(`数据库自动重连 - 第 ${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries} 次尝试`);
+        
+        try {
+            const result = await window.DatabaseManager.init();
+            if (!result.success) {
+            // 如果标准的初始化流程都失败了，那重连也就失败了
+            throw new Error(result.error || 'DatabaseManager 重新初始化失败');
+        }
+
+        console.log('数据库自动重连成功');
+        if (typeof showToast === 'function') showToast('数据库连接已自动恢复', 'success');
+        startConnectionMonitoring();
+
+        } catch (error) {
+            console.error(`数据库重连第 ${dbConnectionAttempts} 次失败:`, error);
+            
+            if (dbConnectionAttempts >= DB_RETRY_CONFIG.connectionRetries) {
+                console.error('数据库自动重连失败，所有重试都已用尽');
+                showDatabaseErrorDialog(new Error('数据库连接失败，请手动刷新页面'), false);
+                return;
+            }
+            
+            // 继续重试
+            dbConnectionTimer = setTimeout(
+                attemptReconnection, 
+                DB_RETRY_CONFIG.connectionRetryInterval
+            );
+        }
+    };
+    
+    // 开始重连
+    attemptReconnection();
+}
+
+/**
+ * 增强版IndexedDB请求辅助函数 - 带重试机制
+ */
+function promisifyRequest(request, context = '数据库操作') {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => {
+            console.log(`${context} - 请求成功`);
+            resolve(request.result);
+        };
+        
+        request.onerror = () => {
+            const error = request.error || new Error(`${context}失败`);
+            console.error(`${context} - 请求失败:`, {
+                errorName: error.name,
+                errorMessage: error.message,
+                errorCode: error.code,
+                timestamp: new Date().toISOString()
+            });
+            reject(error);
+        };
+        
+        request.onblocked = () => {
+            const error = new Error(`${context} - 请求被阻塞，可能有其他标签页正在使用数据库`);
+            console.warn(error.message);
+            reject(error);
+        };
+    });
+}
+
+/**
+ * 增强版IndexedDB事务辅助函数 - 带重试机制
+ */
+function promisifyTransaction(transaction, context = '数据库事务') {
+    return new Promise((resolve, reject) => {
+        transaction.oncomplete = () => {
+            console.log(`${context} - 事务完成`);
+            resolve();
+        };
+        
+        transaction.onerror = () => {
+            const error = transaction.error || new Error(`${context}失败`);
+            console.error(`${context} - 事务失败:`, {
+                errorName: error.name,
+                errorMessage: error.message,
+                errorCode: error.code,
+                timestamp: new Date().toISOString()
+            });
+            reject(error);
+        };
+        
+        transaction.onabort = () => {
+            const error = new Error(`${context} - 事务被中止`);
+            console.error(error.message);
+            reject(error);
+        };
+    });
+}
+
+/**
+ * 带重试的数据库操作包装器
+ */
+async function executeWithRetry(operation, context = '数据库操作') {
+    return await retryWithBackoff(operation, context);
+}
+
+/**
+ * 增强版数据库就绪检查 - 在执行操作前确保数据库可用
+ */
+async function ensureDBReady(operation, context = '数据库操作') {
+    try {
+        // 首先等待数据库就绪
+        await waitForIndexedDBReady();
+        
+        // 然后执行操作，带重试机制
+        return await executeWithRetry(operation, context);
+        
+    } catch (error) {
+        console.error(`${context} - 确保数据库就绪失败:`, error);
+        
+        // 如果是连接问题，尝试重新连接
+        if (error.message.includes('超时') || error.message.includes('连接')) {
+            console.log(`${context} - 检测到连接问题，触发重连...`);
+            handleConnectionLoss();
+        }
+        
+        throw error;
+    }
+}
+
+/**
+ * 时间格式化函数
+ */
+function formatTime(timestamp) {
+    if (!timestamp) return '';
+
+    const now = new Date();
+    const postTime = new Date(timestamp);
+    const diff = now.getTime() - postTime.getTime();
+
+    const diffMinutes = Math.floor(diff / (1000 * 60));
+    const diffHours = Math.floor(diff / (1000 * 60 * 60));
+    const diffDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 1) {
+        if (diffHours < 1) {
+            return `${Math.max(1, diffMinutes)}分钟前`;
+        }
+        return `${diffHours}小时前`;
+    } else if (diffDays < 2) {
+        return '1天前';
+    } else {
+        const isSameYear = now.getFullYear() === postTime.getFullYear();
+        const month = (postTime.getMonth() + 1).toString().padStart(2, '0');
+        const day = postTime.getDate().toString().padStart(2, '0');
+        
+        if (isSameYear) {
+            const hours = postTime.getHours().toString().padStart(2, '0');
+            const minutes = postTime.getMinutes().toString().padStart(2, '0');
+            return `${month}-${day} ${hours}:${minutes}`;
+        } else {
+            return `${postTime.getFullYear()}-${month}-${day}`;
+        }
+    }
+}
+
+// 暴露辅助函数到全局
+window.showDatabaseErrorDialog = showDatabaseErrorDialog;
+window.retryWithBackoff = retryWithBackoff;
+window.waitForIndexedDBReady = waitForIndexedDBReady;
+window.startConnectionMonitoring = startConnectionMonitoring;
+window.handleConnectionLoss = handleConnectionLoss;
+window.promisifyRequest = promisifyRequest;
+window.promisifyTransaction = promisifyTransaction;
+window.executeWithRetry = executeWithRetry;
+window.ensureDBReady = ensureDBReady;
+window.formatTime = formatTime;
+
+// 自动启动连接监控
+if (typeof window !== 'undefined' && window.isIndexedDBReady) {
+    startConnectionMonitoring();
+}

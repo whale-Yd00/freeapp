@@ -746,6 +746,358 @@ class ImageStorageAPI {
             return null;
         }
     }
+
+    /**
+     * 将base64转换为Blob
+     * @private
+     */
+    async _base64ToBlob(base64) {
+        try {
+            const [header, data] = base64.split(',');
+            const mimeType = header.match(/data:(.+?);/)[1];
+            const byteCharacters = atob(data);
+            const byteNumbers = new Array(byteCharacters.length);
+            
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: mimeType });
+        } catch (error) {
+            console.error('base64转Blob失败:', error);
+            throw new Error('base64数据格式错误');
+        }
+    }
+}
+
+// === 文件上传处理函数 ===
+
+/**
+ * 通用文件上传函数
+ */
+async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+    const targetUrlInput = document.getElementById(targetUrlInputId);
+
+    if (!file) {
+        if (typeof showToast === 'function') showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        if (typeof showToast === 'function') showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    // 使用 FileReader 将图片转为 Base64
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+        targetUrlInput.value = reader.result;
+        if (statusElement) statusElement.textContent = '上传成功！';
+        if (typeof showToast === 'function') showToast('图片已加载');
+    };
+    reader.onerror = (error) => {
+        console.error('文件读取失败:', error);
+        if (statusElement) statusElement.textContent = '读取失败';
+        if (typeof showToast === 'function') showToast(`读取失败: ${error.message}`);
+    };
+}
+
+/**
+ * 处理头像上传
+ */
+async function handleAvatarUpload(inputId, entityType, entityId, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        if (typeof showToast === 'function') showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        if (typeof showToast === 'function') showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储头像
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeAvatar(file, entityType, entityId);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        if (typeof showToast === 'function') showToast('头像已保存', 'success');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('头像上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        if (typeof showUploadError === 'function') showUploadError(error);
+        throw error;
+    }
+}
+
+/**
+ * 处理背景图片上传
+ */
+async function handleBackgroundUpload(inputId, contactId, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        if (typeof showToast === 'function') showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        if (typeof showToast === 'function') showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储背景图片
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeBackground(file, contactId);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        if (typeof showToast === 'function') showToast('背景图片已保存', 'success');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('背景图片上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        if (typeof showUploadError === 'function') showUploadError(error);
+        throw error;
+    }
+}
+
+/**
+ * 处理表情包上传
+ */
+async function handleEmojiUpload(inputId, emojiTag, statusElementId) {
+    const fileInput = document.getElementById(inputId);
+    const file = fileInput.files[0];
+    const statusElement = document.getElementById(statusElementId);
+
+    if (!file) {
+        if (typeof showToast === 'function') showToast('请先选择一个文件');
+        return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+        if (typeof showToast === 'function') showToast('请上传图片文件');
+        fileInput.value = '';
+        return;
+    }
+
+    if (statusElement) statusElement.textContent = '上传中...';
+    
+    try {
+        // 使用新的文件系统存储表情包
+        if (!window.ImageStorageAPI) {
+            throw new Error('ImageStorageAPI 未初始化');
+        }
+        
+        await window.ImageStorageAPI.init();
+        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
+        
+        if (statusElement) statusElement.textContent = '上传成功！';
+        if (typeof showToast === 'function') showToast('表情包已保存', 'success');
+        
+        // 返回文件ID用于后续处理
+        return fileId;
+    } catch (error) {
+        console.error('表情包上传失败:', error);
+        if (statusElement) statusElement.textContent = '上传失败';
+        if (typeof showUploadError === 'function') showUploadError(error);
+        throw error;
+    }
+}
+
+// 全局变量存储临时上传的表情包文件
+let tempEmojiFile = null;
+
+/**
+ * 处理表情包文件上传
+ */
+async function handleEmojiFileUpload(event) {
+    try {
+        const fileInput = document.getElementById('emojiUploadInput');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+            if (typeof showToast === 'function') showToast('请先选择一个文件');
+            return;
+        }
+        
+        if (!file.type.startsWith('image/')) {
+            if (typeof showToast === 'function') showToast('请上传图片文件');
+            return;
+        }
+        
+        // 简单存储文件对象，等待保存时处理
+        tempEmojiFile = file;
+        
+        const statusElement = document.getElementById('emojiUploadStatus');
+        if (statusElement) {
+            statusElement.textContent = '图片已选择';
+            statusElement.style.color = '#07c160';
+        }
+        
+        // 生成临时URL用于预览
+        const tempUrl = URL.createObjectURL(file);
+        document.getElementById('emojiUrl').value = `temp:${tempUrl}`;
+        
+        if (typeof showToast === 'function') showToast('图片已选择，填写意思后点击添加');
+        
+    } catch (error) {
+        console.error('表情包文件选择失败:', error);
+        if (typeof showToast === 'function') showToast('文件选择失败，请重试');
+    }
+}
+
+/**
+ * 使用文件系统存储表情包的辅助函数
+ */
+async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
+    try {
+        if (statusElement) statusElement.textContent = '正在存储...';
+        
+        // 直接传递File对象给ImageStorageAPI，让它处理数据类型转换
+        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
+        
+        if (fileId) {
+            document.getElementById('emojiUrl').value = `file:${fileId}`;
+            
+            if (statusElement) {
+                statusElement.textContent = '存储成功';
+                statusElement.style.color = '#07c160';
+            }
+            
+            console.log('表情包存储成功，文件ID:', fileId);
+            return fileId;
+        }
+    } catch (error) {
+        console.error('表情包存储失败:', error);
+        if (statusElement) {
+            statusElement.textContent = '存储失败';
+            statusElement.style.color = '#ff3b30';
+        }
+        if (typeof showToast === 'function') showToast('存储失败: ' + error.message);
+        throw error;
+    }
+}
+
+/**
+ * 特定的上传处理函数 - 联系人头像
+ */
+async function handleContactAvatarUpload(event) {
+    try {
+        // 从全局变量获取editingContact，如果不存在使用临时ID
+        const editingContact = window.editingContact;
+        const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
+        const fileId = await handleAvatarUpload('avatarUploadInput', 'contact', contactId, 'avatarUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('contactAvatar').value = `file:${fileId}`;
+            
+            // 清理联系人头像缓存
+            if (window.ImageDisplayHelper) {
+                window.ImageDisplayHelper.clearCacheByType(`avatar_contact_${contactId}`);
+            }
+            
+            // 设置持久状态提示
+            const statusElement = document.getElementById('avatarUploadStatus');
+            if (statusElement) {
+                statusElement.textContent = '已上传';
+                statusElement.style.color = '#07c160';
+            }
+        }
+    } catch (error) {
+        console.error('联系人头像上传失败:', error);
+    }
+}
+
+/**
+ * 特定的上传处理函数 - 用户头像
+ */
+async function handleProfileAvatarUpload(event) {
+    try {
+        const fileId = await handleAvatarUpload('profileUploadInput', 'user', 'profile', 'profileUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('profileAvatarInput').value = `file:${fileId}`;
+            
+            // 清理头像缓存
+            if (window.ImageDisplayHelper) {
+                window.ImageDisplayHelper.clearCacheByType('avatar_user_');
+            }
+            
+            // 设置持久状态提示
+            const statusElement = document.getElementById('profileUploadStatus');
+            if (statusElement) {
+                statusElement.textContent = '已上传';
+                statusElement.style.color = '#07c160';
+            }
+            
+            // 立即更新UI
+            if (typeof updateUserProfileUI === 'function') {
+                await updateUserProfileUI();
+            }
+        }
+    } catch (error) {
+        console.error('个人头像上传失败:', error);
+    }
+}
+
+/**
+ * 特定的上传处理函数 - 背景图片
+ */
+async function handleBgUpload(event) {
+    try {
+        // 从全局变量获取currentContact
+        const currentContact = window.currentContact;
+        if (!currentContact) {
+            if (typeof showToast === 'function') showToast('请先选择联系人');
+            return;
+        }
+        
+        const fileId = await handleBackgroundUpload('bgUploadInput', currentContact.id, 'bgUploadStatus');
+        
+        if (fileId) {
+            // 更新隐藏的URL输入框为文件ID引用
+            document.getElementById('backgroundUrl').value = `file:${fileId}`;
+        }
+    } catch (error) {
+        console.error('背景图片上传失败:', error);
+    }
 }
 
 // 创建全局实例
@@ -753,5 +1105,17 @@ const imageStorageAPI = new ImageStorageAPI();
 
 // 导出到window对象
 window.ImageStorageAPI = imageStorageAPI;
+
+// 暴露上传处理函数到全局
+window.handleFileUpload = handleFileUpload;
+window.handleAvatarUpload = handleAvatarUpload;
+window.handleBackgroundUpload = handleBackgroundUpload;
+window.handleEmojiUpload = handleEmojiUpload;
+window.handleEmojiFileUpload = handleEmojiFileUpload;
+window.storeEmojiWithMeaning = storeEmojiWithMeaning;
+window.handleContactAvatarUpload = handleContactAvatarUpload;
+window.handleProfileAvatarUpload = handleProfileAvatarUpload;
+window.handleBgUpload = handleBgUpload;
+window.tempEmojiFile = tempEmojiFile;
 
 // 图片存储API已加载
