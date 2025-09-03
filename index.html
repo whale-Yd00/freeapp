@@ -214,10 +214,10 @@
                             <div id="persistentStatusIndicator" style="font-size: 13px; font-weight: bold;">
                                 ⏳ 检查中...
                             </div>
-                            <button type="button" onclick="StorageManager.showPersistentStorageInfo()" 
-                                    style="width: 18px; height: 18px; border-radius: 50%; background: #007bff; color: white; border: none; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"
+                            <button type="button" class="info-button" 
+                                    onclick="StorageManager.showPersistentStorageInfo()" 
                                     title="点击查看持久化存储说明">
-                                !
+                                ?
                             </button>
                         </div>
                     </div>
@@ -229,8 +229,9 @@
                                 style="padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
                             刷新统计
                         </button>
-                        <button type="button" class="request-persistent-btn" onclick="StorageManager.requestPersistentStorageAndRefresh()" 
-                                style="padding: 5px 10px; font-size: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;" title="申请将数据库设为持久化存储，防止被浏览器清理">
+                        <button type="button" class="request-persistent-btn" 
+                                onclick="StorageManager.requestPersistentStorageAndRefresh()" 
+                                title="申请将数据库设为持久化存储，防止被浏览器清理">
                             💾 申请持久化数据库
                         </button>
                         <button type="button" class="optimize-db-btn" onclick="optimizeEmojiDatabase()" 
