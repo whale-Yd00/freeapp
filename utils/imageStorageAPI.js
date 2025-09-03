@@ -276,15 +276,6 @@ class ImageStorageAPI {
         await this.init();
 
         try {
-            console.log('ImageStorageAPI.storeEmoji 开始执行:', {
-                imageData: imageData ? {
-                    type: imageData.constructor.name,
-                    size: imageData instanceof File || imageData instanceof Blob ? imageData.size : 'unknown',
-                    mimeType: imageData instanceof File || imageData instanceof Blob ? imageData.type : 'unknown'
-                } : 'null',
-                emojiTag: emojiTag
-            });
-            
             // 验证输入参数
             if (!imageData) {
                 throw new DetailedError('FILE_MISSING', '没有选择表情包图片');
@@ -305,18 +296,11 @@ class ImageStorageAPI {
                 }
             }
 
-            console.log('开始存储文件到文件系统...');
             const result = await this.fileManager.storeFile(imageData, {
                 type: 'emoji',
                 tag: emojiTag
             });
-            console.log('文件存储结果:', result);
 
-            console.log('开始创建文件引用:', {
-                fileId: result.fileId,
-                category: 'emoji',
-                referenceKey: emojiTag
-            });
             await this.fileManager.createFileReference(
                 result.fileId,
                 'emoji',
@@ -325,10 +309,8 @@ class ImageStorageAPI {
                     storedAt: new Date().toISOString()
                 }
             );
-            console.log('文件引用创建完成');
 
             // 表情包存储成功
-            console.log('ImageStorageAPI.storeEmoji 成功完成，返回fileId:', result.fileId);
             return result.fileId;
 
         } catch (error) {
@@ -1053,31 +1035,21 @@ async function handleEmojiFileUpload(event) {
  */
 async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
     try {
-        console.log('storeEmojiWithMeaning 开始执行:', {
-            file: file ? {name: file.name, size: file.size, type: file.type} : 'null',
-            emojiTag: emojiTag,
-            hasImageStorageAPI: !!window.ImageStorageAPI
-        });
-        
         if (statusElement) statusElement.textContent = '正在存储...';
         
         // 直接传递File对象给ImageStorageAPI，让它处理数据类型转换
         const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
-        console.log('ImageStorageAPI.storeEmoji 返回的 fileId:', fileId);
         
         if (fileId) {
             document.getElementById('emojiUrl').value = `file:${fileId}`;
-            console.log('已更新 emojiUrl 输入框为:', `file:${fileId}`);
             
             if (statusElement) {
                 statusElement.textContent = '存储成功';
                 statusElement.style.color = '#07c160';
             }
             
-            console.log('表情包存储成功，文件ID:', fileId);
             return fileId;
         } else {
-            console.warn('storeEmoji 返回了空的 fileId');
             throw new Error('存储返回空的文件ID');
         }
     } catch (error) {
@@ -1098,12 +1070,10 @@ async function handleContactAvatarUpload(event, editingContact) {
     try {
         // 如果正在编辑联系人，使用联系人ID；否则为新联系人生成临时ID
         const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
-        console.log('handleContactAvatarUpload - 使用的联系人ID:', contactId, '编辑中的联系人:', editingContact);
         
         // 如果是编辑现有联系人且之前有头像，先删除旧的文件引用
         if (editingContact && editingContact.avatarFileId) {
             try {
-                console.log('删除旧的头像引用，联系人ID:', contactId, '旧的fileId:', editingContact.avatarFileId);
                 if (window.ImageStorageAPI) {
                     await window.ImageStorageAPI.deleteImage(`avatar_contact`, contactId);
                 }
@@ -1128,6 +1098,28 @@ async function handleContactAvatarUpload(event, editingContact) {
             if (statusElement) {
                 statusElement.textContent = '已上传';
                 statusElement.style.color = '#07c160';
+            }
+            
+            // 立即刷新相关UI显示
+            if (editingContact) {
+                // 更新当前联系人对象的avatarFileId（用于保存时）
+                editingContact.avatarFileId = fileId;
+                editingContact.avatar = ''; // 清除旧的avatar字段
+                
+                // 如果当前正在聊天页面，同步更新当前联系人对象
+                if (window.currentContact && window.currentContact.id === contactId) {
+                    window.currentContact.avatarFileId = fileId;
+                    window.currentContact.avatar = '';
+                }
+                
+                // 立即刷新联系人列表中的头像显示
+                if (typeof renderContactList === 'function') {
+                    try {
+                        await renderContactList();
+                    } catch (error) {
+                        console.warn('刷新联系人列表失败:', error);
+                    }
+                }
             }
         }
     } catch (error) {

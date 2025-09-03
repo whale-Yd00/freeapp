@@ -7422,27 +7422,8 @@ async function addEmoji(event) {
     
     const imageUrl = document.getElementById('emojiUrl').value;
     
-    console.log('addEmoji: 检查条件:', {
-        imageUrl: imageUrl,
-        imageUrlStartsWithTemp: imageUrl.startsWith('temp:'),
-        hasTempEmojiFile: !!window.ImageUploadHandlers.tempEmojiFile,
-        tempEmojiFile: window.ImageUploadHandlers.tempEmojiFile ? {
-            name: window.ImageUploadHandlers.tempEmojiFile.name,
-            size: window.ImageUploadHandlers.tempEmojiFile.size
-        } : 'null'
-    });
-    
     // 处理临时URL的情况：如果是临时URL但还有临时文件，先转换存储
     if (imageUrl.startsWith('temp:') && window.ImageUploadHandlers.tempEmojiFile) {
-        console.log('addEmoji: 检测到临时文件，开始转换存储:', {
-            imageUrl: imageUrl,
-            tempEmojiFile: window.ImageUploadHandlers.tempEmojiFile ? {
-                name: window.ImageUploadHandlers.tempEmojiFile.name,
-                size: window.ImageUploadHandlers.tempEmojiFile.size
-            } : 'null',
-            meaning: meaning
-        });
-        
         try {
             const statusElement = document.getElementById('emojiUploadStatus');
             await window.ImageUploadHandlers.storeEmojiWithMeaning(window.ImageUploadHandlers.tempEmojiFile, meaning, statusElement);
@@ -7454,10 +7435,8 @@ async function addEmoji(event) {
             
             // 获取新的fileId URL
             const newImageUrl = document.getElementById('emojiUrl').value;
-            console.log('addEmoji: 存储完成后的新URL:', newImageUrl);
             
             if (!newImageUrl.startsWith('file:')) {
-                console.error('addEmoji: 新URL不是file:格式:', newImageUrl);
                 showToast('文件存储失败，请重试');
                 return;
             }
@@ -7469,7 +7448,6 @@ async function addEmoji(event) {
     }
     
     const finalImageUrl = document.getElementById('emojiUrl').value;
-    console.log('addEmoji: 最终检查的图片URL:', finalImageUrl);
     
     // 处理不同格式的图片
     let imageData = finalImageUrl;
