@@ -4,22 +4,24 @@
 // - 文件上传处理 → imageStorageAPI.js  
 // - 数据库管理 → dataMigrator.js
 // - 日志系统 → systemUtilities.js
+// - 颜色工具函数 → colorUtils.js
+// - UI交互工具函数 → uiUtils.js
+// - 格式化工具函数 → formatUtils.js
+
+// 工具函数现在通过全局对象访问：
+// - window.ColorUtils.* (颜色工具函数)
+// - window.UIUtils.* (UI交互工具函数) 
+// - window.FormatUtils.* (格式化工具函数)
+// - window.DBUtils.* (数据库工具函数)
+// 
+// 同时为向后兼容，所有函数也直接挂载在window对象上
 
 // 主题管理已迁移到 utils/uiManager.js
 
 // 长按屏蔽系统已迁移到 utils/uiManager.js
 
 
-function escapeHtml(text) {
-    const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
-}
+// escapeHtml function moved to utils/formatUtils.js
 
 /**
  * 解析语音消息格式，支持新的[V]格式和兼容旧的[语音]:格式
@@ -948,38 +950,7 @@ async function initializeDatabaseOnce() {
 
 // --- 论坛功能 ---
 
-function formatTime(timestamp) {
-    if (!timestamp) return '';
-
-    const now = new Date();
-    const postTime = new Date(timestamp);
-    const diff = now.getTime() - postTime.getTime();
-
-    const diffMinutes = Math.floor(diff / (1000 * 60));
-    const diffHours = Math.floor(diff / (1000 * 60 * 60));
-    const diffDays = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 1) {
-        if (diffHours < 1) {
-            return `${Math.max(1, diffMinutes)}分钟前`;
-        }
-        return `${diffHours}小时前`;
-    } else if (diffDays < 2) {
-        return '1天前';
-    } else {
-        const isSameYear = now.getFullYear() === postTime.getFullYear();
-        const month = (postTime.getMonth() + 1).toString().padStart(2, '0');
-        const day = postTime.getDate().toString().padStart(2, '0');
-        
-        if (isSameYear) {
-            const hours = postTime.getHours().toString().padStart(2, '0');
-            const minutes = postTime.getMinutes().toString().padStart(2, '0');
-            return `${month}-${day} ${hours}:${minutes}`;
-        } else {
-            return `${postTime.getFullYear()}-${month}-${day}`;
-        }
-    }
-}
+// formatTime function moved to utils/formatUtils.js
 
 // --- 页面导航 ---
 const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage'];
@@ -2929,14 +2900,14 @@ function renderMomentImagesPreview() {
         item.className = 'moment-image-item';
         item.innerHTML = `
             <img src="${imageItem.previewUrl}" alt="预览图">
-            <div class="moment-image-remove" onclick="removeMomentImage(${index})">×</div>
+            <div class="moment-image-remove" onclick="removeMomentUploadImage(${index})">×</div>
         `;
         preview.appendChild(item);
     });
 }
 
 // 删除图片
-function removeMomentImage(index) {
+function removeMomentUploadImage(index) {
     momentUploadedImages.splice(index, 1);
     renderMomentImagesPreview();
 }
@@ -3978,43 +3949,7 @@ function clearAddForm() {
     document.getElementById('lrcFile').value = '';
 }
 
-function formatMusicTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function formatTime(timestamp) {
-    if (!timestamp) return '';
-    const now = new Date();
-    const postTime = new Date(timestamp);
-    const diffInSeconds = (now - postTime) / 1000;
-    const diffInMinutes = diffInSeconds / 60;
-    const diffInHours = diffInMinutes / 60;
-
-    const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfPostTime = new Date(postTime.getFullYear(), postTime.getMonth(), postTime.getDate());
-    const diffInDays = (startOfNow - startOfPostTime) / (1000 * 60 * 60 * 24);
-
-    if (diffInDays < 1) { // Today
-        if (diffInMinutes < 1) return "刚刚";
-        if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)}分钟前`;
-        return `${Math.floor(diffInHours)}小时前`;
-    } else if (diffInDays < 2) { // Yesterday
-        return "1天前";
-    } else { // 2 days ago or more
-        const isThisYear = now.getFullYear() === postTime.getFullYear();
-        const month = (postTime.getMonth() + 1).toString().padStart(2, '0');
-        const day = postTime.getDate().toString().padStart(2, '0');
-        if (isThisYear) {
-            const hours = postTime.getHours().toString().padStart(2, '0');
-            const minutes = postTime.getMinutes().toString().padStart(2, '0');
-            return `${month}-${day} ${hours}:${minutes}`;
-        } else {
-            return `${postTime.getFullYear()}-${month}-${day}`;
-        }
-    }
-}
+// formatMusicTime and formatTime functions moved to utils/formatUtils.js
 
 // --- UI 更新 & 交互 ---
 function updateContextIndicator() {
@@ -4026,102 +3961,12 @@ function updateContextValue(value) {
     document.getElementById('contextValue').textContent = value + '条';
 }
 
-function showToast(message, type = 'info', duration = 3000) {
-    const toast = document.getElementById('toast');
-    if (!toast) {
-        console.warn('Toast元素不存在');
-        return;
-    }
-    
-    toast.textContent = message;
-    
-    // 移除之前的类型类
-    toast.classList.remove('toast-error', 'toast-success', 'toast-warning', 'toast-info');
-    
-    // 添加新的类型类
-    switch(type) {
-        case 'error':
-            toast.classList.add('toast-error');
-            duration = Math.max(duration, 4000); // 错误消息显示时间稍长
-            break;
-        case 'success':
-            toast.classList.add('toast-success');
-            break;
-        case 'warning':
-            toast.classList.add('toast-warning');
-            break;
-        default:
-            toast.classList.add('toast-info');
-            break;
-    }
-    
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), duration);
-}
 
 // 专门用于显示上传错误的函数
-function showUploadError(error) {
-    if (error && error.name === 'DetailedError') {
-        // 根据错误代码显示不同类型的toast
-        switch(error.code) {
-            case 'FILE_MISSING':
-            case 'PARAM_MISSING':
-                showToast(error.message, 'warning');
-                break;
-            case 'FILE_TOO_LARGE':
-            case 'INVALID_FILE_TYPE':
-                showToast(error.message, 'error');
-                break;
-            case 'STORAGE_FULL':
-                showToast(error.message, 'error', 5000); // 存储满显示更久
-                break;
-            case 'DATABASE_ERROR':
-                showToast(error.message, 'error');
-                break;
-            case 'SYSTEM_ERROR':
-                showToast(error.message, 'warning');
-                break;
-            default:
-                showToast(error.message, 'error');
-                break;
-        }
-    } else {
-        showToast(`上传失败: ${error.message || '未知错误'}`, 'error');
-    }
-}
+// showUploadError function moved to utils/uiUtils.js
 
 // 处理API错误的专用函数，七夕节特殊功能：所有API失败都显示重试确认对话框
-function showApiError(prefixOrError, error) {
-    let errorMessage;
-    let prefix = '';
-    
-    // 支持单参数和双参数调用
-    if (typeof prefixOrError === 'string' && error) {
-        // 双参数调用：showApiError('前缀', error)
-        prefix = prefixOrError + ': ';
-        errorMessage = error.message || '未知错误';
-    } else {
-        // 单参数调用：showApiError(error)
-        errorMessage = prefixOrError.message || '未知错误';
-    }
-    
-    // 记录ERROR级别的日志，包含完整的错误信息和API返回
-    console.error('ERROR: API调用失败详情:', {
-        errorMessage: errorMessage,
-        error: error,
-        // 如果错误对象包含API响应信息，也记录下来
-        apiResponse: error.response || error.apiResponse || error.data || null,
-        // 记录错误发生的时间
-        timestamp: new Date().toISOString(),
-        // 记录网络状态
-        networkStatus: navigator.onLine ? 'online' : 'offline',
-        // 记录当前页面信息
-        pageUrl: window.location.href
-    });
-    
-    // 七夕节特殊功能：所有API失败都显示重试确认对话框
-    showQixiRetryModal(prefixOrError, error, errorMessage, prefix);
-}
+// showApiError function moved to utils/uiUtils.js
 
 // === localStorage清空功能 ===
 function showClearLocalStorageConfirmation() {
@@ -4336,10 +4181,7 @@ async function renderEmojiContent(emojiContent, isInline = false) {
 }
 
 // 删除AI回复中的思维链标签
-function removeThinkingChain(text) {
-    // 删除 <think> ... </think> 标签及其内容
-    return text.replace(/<think\s*>[\s\S]*?<\/think\s*>/gi, '').trim();
-}
+// removeThinkingChain function moved to utils/formatUtils.js
 
 async function processTextWithInlineEmojis(textContent) {
     const emojiTagRegex = /\[(?:emoji|发送了表情)[:：]([^\]]+)\]/g;
@@ -4593,48 +4435,9 @@ async function optimizeEmojiDatabase() {
     }
 }
 
-function showTopNotification(message) {
-    const notification = document.getElementById('topNotification');
-    notification.textContent = message;
-    notification.classList.add('show');
-    setTimeout(() => notification.classList.remove('show'), 1500);
-}
+// showTopNotification function moved to utils/uiUtils.js
 
-function showModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) {
-        console.error('模态框不存在:', modalId);
-        return;
-    }
-    modal.style.display = 'block';
-    if (modalId === 'apiSettingsModal') {
-        document.getElementById('contextSlider').value = apiSettings.contextMessageCount;
-        document.getElementById('contextValue').textContent = apiSettings.contextMessageCount + '条';
-    }
-}
 
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) {
-        console.error('要关闭的模态框不存在:', modalId);
-        return;
-    }
-    modal.style.display = 'none';
-    if (modalId === 'addContactModal') {
-        editingContact = null;
-        window.editingContact = null;
-        document.getElementById('contactModalTitle').textContent = '添加AI助手';
-        document.getElementById('contactName').value = '';
-        document.getElementById('contactAvatar').value = '';
-        document.getElementById('contactPersonality').value = '';
-        document.getElementById('customPrompts').value = '';
-        // 重置语音ID输入框
-        document.getElementById('contactVoiceId').value = '';
-    } else if (modalId === 'addEmojiModal') {
-        // 清理表情包上传的临时数据
-        cleanupEmojiUploadData();
-    }
-}
 
 // 清理表情包上传临时数据的函数
 function cleanupEmojiUploadData() {
@@ -5365,9 +5168,9 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
         }
         
         // 调试：输出最终的 HTML 结构
-        if (currentBubbleStyle && currentBubbleStyle.html) {
-            console.log('最终消息 HTML 结构:', msgDiv.innerHTML);
-        }
+        // if (currentBubbleStyle && currentBubbleStyle.html) {
+        //     console.log('最终消息 HTML 结构:', msgDiv.innerHTML);
+        // }
         
         // 使用预先读取的值
         if (msg.isVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
@@ -7824,42 +7627,7 @@ async function deleteContact(contactId) {
  * @param {string} message 对话框消息
  * @param {function} onConfirm 用户点击确认按钮时执行的回调
  */
-function showConfirmDialog(title, message, onConfirm) {
-    const dialogId = 'customConfirmDialog';
-    let dialog = document.getElementById(dialogId);
-    if (!dialog) {
-        dialog = document.createElement('div');
-        dialog.id = dialogId;
-        dialog.className = 'modal'; // 复用modal的样式
-        dialog.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div class="modal-title" id="confirmDialogTitle"></div>
-                    <div class="modal-close" onclick="closeModal('${dialogId}')">取消</div>
-                </div>
-                <div class="modal-body">
-                    <p id="confirmDialogMessage" style="text-align: center; margin-bottom: 20px;"></p>
-                    <div style="display: flex; justify-content: space-around; gap: 10px;">
-                        <button class="form-submit" style="background-color: #ccc; flex: 1;" onclick="closeModal('${dialogId}')">取消</button>
-                        <button class="form-submit delete-button" style="flex: 1;" id="confirmActionButton">确定</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-    }
-
-    document.getElementById('confirmDialogTitle').textContent = title;
-    document.getElementById('confirmDialogMessage').textContent = message;
-    
-    const confirmBtn = document.getElementById('confirmActionButton');
-    confirmBtn.onclick = () => {
-        onConfirm();
-        closeModal(dialogId);
-    };
-
-    showModal(dialogId);
-}
+// showConfirmDialog function moved to utils/uiUtils.js
 
 /**
  * 显示消息操作菜单（编辑/删除）
@@ -8002,61 +7770,9 @@ async function saveEditedMessage(messageIndex, newContent) {
     showToast('消息已更新');
 }
 
-function formatContactListTime(dateString) {
-    const d = new Date(dateString);
-    if (isNaN(d.getTime())) return '';
-    
-    const now = new Date();
-    const diff = now - d;
-    
-    if (diff < 3600000) {
-         const minutes = Math.floor(diff / 60000);
-         return minutes < 1 ? '刚刚' : `${minutes}分钟前`;
-    }
+// formatContactListTime function moved to utils/formatUtils.js
 
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const messageDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    if (today.getTime() === messageDate.getTime()) {
-         const hours = d.getHours().toString().padStart(2, '0');
-         const minutes = d.getMinutes().toString().padStart(2, '0');
-         return `${hours}:${minutes}`;
-    }
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
-}
-
-function formatChatTimestamp(dateString) {
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today.getTime() - 86400000);
-    
-    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-    const beijingTime = new Date(date.getTime());
-    const hours = beijingTime.getHours().toString().padStart(2, '0');
-    const minutes = beijingTime.getMinutes().toString().padStart(2, '0');
-    const timeStr = `${hours}:${minutes}`;
-
-    if (messageDate.getTime() === today.getTime()) {
-        return timeStr;
-    }
-    if (messageDate.getTime() === yesterday.getTime()) {
-        return `昨天 ${timeStr}`;
-    }
-    if (now.getFullYear() === date.getFullYear()) {
-        const month = (date.getMonth() + 1);
-        const day = date.getDate();
-        return `${month}月${day}日 ${timeStr}`;
-    } else {
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1);
-        const day = date.getDate();
-        return `${year}年${month}月${day}日 ${timeStr}`;
-    }
-}
+// formatChatTimestamp function moved to utils/formatUtils.js
 
 // --- 事件监听 ---
 document.getElementById('chatInput').addEventListener('keypress', async (e) => { // Make it async
@@ -11613,27 +11329,10 @@ async function loadUserBanner() {
 }
 
 // 工具函数：读取文件为DataURL
-function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
-        reader.onerror = () => reject(new Error('文件读取失败'));
-        reader.readAsDataURL(file);
-    });
-}
+// readFileAsDataURL function moved to utils/formatUtils.js
 
 // 工具函数：Canvas转Blob
-function canvasToBlob(canvas) {
-    return new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => {
-            if (blob) {
-                resolve(blob);
-            } else {
-                reject(new Error('Canvas转换失败'));
-            }
-        }, 'image/jpeg', 0.9);
-    });
-}
+// canvasToBlob function moved to utils/formatUtils.js
 
 // 在显示个人主页时加载banner
 const originalShowUserProfile = showUserProfile;
@@ -11889,22 +11588,7 @@ class ThemeConfigManager {
 const themeConfigManager = new ThemeConfigManager();
 
 // 通用的数据库存储安全检查函数
-function safeCreateTransaction(db, storeNames, mode = 'readonly') {
-    if (!db) {
-        throw new Error('数据库连接不可用');
-    }
-    
-    // 检查所有存储是否存在
-    const missingStores = storeNames.filter(storeName => 
-        !window.db.objectStoreNames.contains(storeName)
-    );
-    
-    if (missingStores.length > 0) {
-        throw new Error(`存储不存在: ${missingStores.join(', ')}`);
-    }
-    
-    return window.db.transaction(storeNames, mode);
-}
+// safeCreateTransaction function moved to utils/formatUtils.js
 
 
 
@@ -11947,80 +11631,10 @@ function loadThemeColor() {
 }
 
 // 应用主题色到页面
-function applyThemeColor(color) {
-    // 禁用渐变模式
-    document.body.classList.remove('gradient-mode');
-    
-    // 计算辅助颜色
-    const lightColor = hexToRgba(color, 0.1);
-    const hoverColor = darkenColor(color, 0.1);
-    
-    // 计算次要色的交互状态（用于模态框、信息按钮等UI元素）
-    const secondaryColor = '#1890ff'; // 固定的次要色
-    const secondaryHover = darkenColor(secondaryColor, 0.15);
-    const secondaryActive = darkenColor(secondaryColor, 0.25);
-    
-    // 更新CSS变量
-    document.documentElement.style.setProperty('--theme-primary', color);
-    document.documentElement.style.setProperty('--theme-primary-light', lightColor);
-    document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
-    document.documentElement.style.setProperty('--theme-secondary-hover', secondaryHover);
-    document.documentElement.style.setProperty('--theme-secondary-active', secondaryActive);
-    document.documentElement.style.setProperty('--use-gradient', '0');
-    
-    // 更新meta标签中的主题色（影响系统状态栏）
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', color);
-    }
-    
-    // 更新manifest相关的meta标签
-    const tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
-    if (tileMeta) {
-        tileMeta.setAttribute('content', color);
-    }
-    
-    console.log('主题色已应用:', color);
-}
+// applyThemeColor function moved to utils/colorUtils.js
 
 // 应用渐变主题
-function applyGradientTheme(primaryColor, secondaryColor, direction) {
-    // 启用渐变模式
-    document.body.classList.add('gradient-mode');
-    
-    // 计算辅助颜色
-    const lightColor = hexToRgba(primaryColor, 0.1);
-    const hoverColor = darkenColor(primaryColor, 0.1);
-    
-    // 在渐变模式下，使用渐变的次要色作为UI元素的次要色
-    const secondaryHover = darkenColor(secondaryColor, 0.15);
-    const secondaryActive = darkenColor(secondaryColor, 0.25);
-    
-    // 更新CSS变量
-    document.documentElement.style.setProperty('--theme-primary', primaryColor);
-    document.documentElement.style.setProperty('--theme-secondary', secondaryColor);
-    document.documentElement.style.setProperty('--theme-primary-light', lightColor);
-    document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
-    document.documentElement.style.setProperty('--theme-secondary-hover', secondaryHover);
-    document.documentElement.style.setProperty('--theme-secondary-active', secondaryActive);
-    document.documentElement.style.setProperty('--theme-gradient-direction', direction);
-    document.documentElement.style.setProperty('--theme-gradient', `linear-gradient(${direction}, ${primaryColor}, ${secondaryColor})`);
-    document.documentElement.style.setProperty('--use-gradient', '1');
-    
-    // 更新meta标签中的主题色（使用主色）
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', primaryColor);
-    }
-    
-    // 更新manifest相关的meta标签
-    const tileMeta = document.querySelector('meta[name="msapplication-TileColor"]');
-    if (tileMeta) {
-        tileMeta.setAttribute('content', primaryColor);
-    }
-    
-    console.log('渐变主题已应用:', { primaryColor, secondaryColor, direction });
-}
+// applyGradientTheme function moved to utils/colorUtils.js
 
 // 保存主题色到IndexedDB
 async function saveThemeColor(color, name) {
@@ -12189,16 +11803,7 @@ function updateCustomColorInputs(color) {
 }
 
 // 验证颜色输入
-function validateColorInput(input, button) {
-    const isValid = isValidHexColor(input.value);
-    button.disabled = !isValid;
-    
-    if (isValid) {
-        input.classList.remove('invalid');
-    } else {
-        input.classList.add('invalid');
-    }
-}
+// validateColorInput function moved to utils/colorUtils.js
 
 // 应用自定义颜色
 function applyCustomColor() {
@@ -12235,30 +11840,6 @@ function applyCustomColor() {
 }
 
 // 工具函数：验证十六进制颜色代码
-function isValidHexColor(color) {
-    return /^#[0-9A-Fa-f]{6}$/.test(color);
-}
-
-// 工具函数：十六进制转RGBA
-function hexToRgba(hex, alpha) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-// 工具函数：加深颜色
-function darkenColor(hex, percent) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    
-    const newR = Math.round(r * (1 - percent));
-    const newG = Math.round(g * (1 - percent));
-    const newB = Math.round(b * (1 - percent));
-    
-    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
-}
 
 // 初始化渐变设置
 function initGradientSettings(gradientConfig) {
@@ -13105,12 +12686,7 @@ window.apiRequestQueue = new APIRequestQueue();
 /**
  * 生成唯一ID
  */
-function generateId() {
-    return Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-// 将函数设为全局可访问
-window.generateId = generateId;
+// generateId function moved to utils/formatUtils.js
 
 // ===== 渐变背景管理系统 =====
 

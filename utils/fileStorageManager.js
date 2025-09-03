@@ -381,19 +381,18 @@ class FileStorageManager {
                 throw new Error(`文件记录中缺少blob数据: ${fileId}`);
             }
             
-            console.log('读取的文件记录详情:', {
-                fileId: fileId,
-                hasBlob: !!fileRecord.blob,
-                blobType: typeof fileRecord.blob,
-                isBlobInstance: fileRecord.blob instanceof Blob,
-                blobConstructor: fileRecord.blob?.constructor?.name,
-                blobKeys: fileRecord.blob && typeof fileRecord.blob === 'object' ? Object.keys(fileRecord.blob) : 'N/A'
-            });
+            // console.log('读取的文件记录详情:', {
+            //     fileId: fileId,
+            //     hasBlob: !!fileRecord.blob,
+            //     blobType: typeof fileRecord.blob,
+            //     isBlobInstance: fileRecord.blob instanceof Blob,
+            //     blobConstructor: fileRecord.blob?.constructor?.name,
+            //     blobKeys: fileRecord.blob && typeof fileRecord.blob === 'object' ? Object.keys(fileRecord.blob) : 'N/A'
+            // });
 
             // 尝试处理各种blob格式
             let actualBlob;
             if (fileRecord.blob instanceof Blob) {
-                console.log('找到有效的Blob对象');
                 actualBlob = fileRecord.blob;
             } else if (fileRecord.blob && typeof fileRecord.blob === 'object') {
                 console.log('尝试重构blob对象，对象结构:', fileRecord.blob);
@@ -543,12 +542,12 @@ class FileStorageManager {
             const transaction = this.db.transaction(['fileReferences'], 'readonly');
             const store = transaction.objectStore('fileReferences');
             const referenceId = `${referenceType}_${referenceKey}`;
-            console.log('查找文件引用，引用ID:', referenceId);
+            // console.log('查找文件引用，引用ID:', referenceId);
             const request = store.get(referenceId);
 
             request.onsuccess = () => {
                 const result = request.result;
-                console.log('文件引用查找结果:', result);
+                // console.log('文件引用查找结果:', result);
                 resolve(result || null);
             };
 
