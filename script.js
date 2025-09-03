@@ -37,17 +37,15 @@ let isInitializingDatabase = false; // 防止多个组件同时初始化数据�
 let databaseInitializationPromise = null; // 缓存初始化Promise，避免重复初始化
 // [DEBUG-MOMENTS-ROLES-END]
 
-// 【修改点 1】: 更新 apiSettings 结构以适应 Minimax
+// API配置设置（不包含minimax语音配置）
 let apiSettings = {
     url: '',
     key: '',
     model: '',
     secondaryModel: 'sync_with_primary',
     contextMessageCount: 10,
-    timeout: 60,
-    // 移除了 elevenLabsApiKey，换成 Minimax 的凭证
-    minimaxGroupId: '',
-    minimaxApiKey: ''
+    timeout: 60
+    // minimax配置已移至localStorage独立管理
 };
 
 // --- 用户配置获取函数 ---
@@ -640,12 +638,7 @@ async function loadDataFromDB() {
         apiSettings = { ...apiSettings, ...savedApiSettings };
         if (apiSettings.contextMessageCount === undefined) apiSettings.contextMessageCount = 10;
         
-        // 【修改点 2】: 从旧的 elevenLabsApiKey 迁移数据，并设置新字段的默认值
-        if (savedApiSettings.elevenLabsApiKey && !savedApiSettings.minimaxApiKey) {
-            apiSettings.minimaxApiKey = savedApiSettings.elevenLabsApiKey;
-        }
-        if (apiSettings.minimaxGroupId === undefined) apiSettings.minimaxGroupId = '';
-        if (apiSettings.minimaxApiKey === undefined) apiSettings.minimaxApiKey = '';
+        // minimax配置现在直接存储在localStorage中，不再通过apiSettings管理
 
         // 为旧API设置数据添加 elevenLabsApiKey 默认值
         if (apiSettings.elevenLabsApiKey === undefined) apiSettings.elevenLabsApiKey = '';
@@ -5120,6 +5113,10 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
     if (!currentContact) return;
     const chatMessages = document.getElementById('chatMessages');
     const allMessages = currentContact.messages;
+    
+    // 避免在循环中重复访问localStorage
+    const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
+    const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
 
     if (isInitialLoad) {
         currentlyDisplayedMessageCount = Math.min(allMessages.length, MESSAGES_PER_PAGE);
@@ -5296,8 +5293,8 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
             console.log('最终消息 HTML 结构:', msgDiv.innerHTML);
         }
         
-        // 检查 forceVoice 标志, contact.voiceId 和 Minimax 的凭证
-        if (msg.forceVoice && currentContact.voiceId && apiSettings.minimaxGroupId && apiSettings.minimaxApiKey) {
+        // 使用预先读取的值
+        if (msg.forceVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
             // 兼容自定义气泡和默认气泡
             const bubble = msgDiv.querySelector('.message-bubble') || 
                           msgDiv.querySelector('.custom-bubble-container') || 
@@ -9475,8 +9472,11 @@ function createVoiceIcon(state = 'default') {
  * @param {string} voiceId - Minimax 的声音ID
  */
 async function playVoiceMessage(bubbleElement, text, voiceId) {
-    // 1. 检查 Minimax API 凭证是否已在设置中配置
-    if (!apiSettings.minimaxGroupId || !apiSettings.minimaxApiKey) {
+    // 1. 直接从localStorage读取 Minimax API 凭证
+    const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
+    const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
+    
+    if (!minimaxGroupId || !minimaxApiKey) {
         showToast('请在设置中填写 Minimax Group ID 和 API Key');
         return;
     }
@@ -9532,8 +9532,8 @@ async function playVoiceMessage(bubbleElement, text, voiceId) {
         if (!audioUrl) {
             console.log('语音缓存未命中，调用API生成语音');
             
-            const groupId = apiSettings.minimaxGroupId;
-            const apiKey = apiSettings.minimaxApiKey;
+            const groupId = minimaxGroupId;
+            const apiKey = minimaxApiKey;
             
             // Minimax API URL，将 GroupId 放在查询参数中
             const apiUrl = `https://api.minimax.chat/v1/text_to_speech?GroupId=${groupId}`;
@@ -15711,9 +15711,8 @@ async function ensureApiConfigIsUpdated() {
                 model: activeConfig.model || '',
                 secondaryModel: activeConfig.secondaryModel || 'sync_with_primary',
                 contextMessageCount: activeConfig.contextMessageCount || 10,
-                timeout: activeConfig.timeout || 60,
-                minimaxGroupId: activeConfig.minimaxGroupId || '',
-                minimaxApiKey: activeConfig.minimaxApiKey || ''
+                timeout: activeConfig.timeout || 60
+                // minimax配置不再包含在apiSettings中
             });
             
             console.log('全局API配置已更新:', {
