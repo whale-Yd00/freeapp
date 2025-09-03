@@ -21,6 +21,33 @@ function escapeHtml(text) {
     return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 }
 
+/**
+ * 解析语音消息格式，支持新的[V]格式和兼容旧的[语音]:格式
+ * @param {string} messageContent - 原始消息内容
+ * @returns {Object} - { content: string, isVoice: boolean }
+ */
+function parseVoiceMessage(messageContent) {
+    if (!messageContent) {
+        return { content: messageContent, isVoice: false };
+    }
+    
+    // 检查新格式：[V]内容
+    if (messageContent.startsWith('[V]')) {
+        const content = messageContent.substring(3);
+        return { content: content, isVoice: true };
+    }
+    
+    // 检查旧格式：[语音]:内容
+    if (messageContent.startsWith('[语音]:')) {
+        const content = messageContent.substring(4).trim();
+        return { content: content, isVoice: true };
+    }
+    
+    // 普通文字消息
+    return { content: messageContent, isVoice: false };
+}
+
+
   
 
 // --- 全局状态 ---
@@ -4179,21 +4206,16 @@ async function handleQixiRetry() {
                     
                     await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
                     
-                    let messageContent = removeThinkingChain(response.content);
-                    let forceVoice = false;
-
-                    if (messageContent.startsWith('[语音]:')) {
-                        forceVoice = true;
-                        messageContent = messageContent.substring(4).trim();
-                    }
+                    let rawMessageContent = removeThinkingChain(response.content);
+                    const voiceParsed = parseVoiceMessage(rawMessageContent);
 
                     const aiMessage = { 
                         role: 'assistant', 
-                        content: messageContent,
+                        content: voiceParsed.content,
                         type: response.type, 
                         time: new Date().toISOString(), 
                         senderId: currentContact.id,
-                        forceVoice: forceVoice
+                        isVoice: voiceParsed.isVoice
                     };
 
                     currentContact.messages.push(aiMessage);
@@ -5294,7 +5316,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
         }
         
         // 使用预先读取的值
-        if (msg.forceVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
+        if (msg.isVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
             // 兼容自定义气泡和默认气泡
             const bubble = msgDiv.querySelector('.message-bubble') || 
                           msgDiv.querySelector('.custom-bubble-container') || 
@@ -5478,23 +5500,16 @@ async function sendMessage() {
                 
                 await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
                 
-                let messageContent = removeThinkingChain(response.content);
-                let forceVoice = false;
-
-                // 检查并处理AI的语音指令
-                if (messageContent.startsWith('[语音]:')) {
-                    forceVoice = true;
-                    // 从消息内容中移除 [语音]: 标签
-                    messageContent = messageContent.substring(4).trim();
-                }
+                let rawMessageContent = removeThinkingChain(response.content);
+                const voiceParsed = parseVoiceMessage(rawMessageContent);
 
                 const aiMessage = { 
                     role: 'assistant', 
-                    content: messageContent, // 使用处理过的内容
+                    content: voiceParsed.content,
                     type: response.type, 
                     time: new Date().toISOString(), 
                     senderId: currentContact.id,
-                    forceVoice: forceVoice // 添加新标志
+                    isVoice: voiceParsed.isVoice
                 };
 
                 currentContact.messages.push(aiMessage);
@@ -5614,22 +5629,15 @@ async function sendGroupMessage() {
             
             await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
             
-            let messageContent = message.content;
-            let forceVoice = false;
-            
-            // 检查语音指令
-            if (messageContent.startsWith('[语音]:')) {
-                forceVoice = true;
-                messageContent = messageContent.substring(4).trim();
-            }
+            const voiceParsed = parseVoiceMessage(message.content);
             
             const aiMessage = {
                 role: 'assistant',
-                content: messageContent,
+                content: voiceParsed.content,
                 type: 'text',
                 time: new Date().toISOString(),
                 senderId: member.id,
-                forceVoice: forceVoice
+                isVoice: voiceParsed.isVoice
             };
             
             currentContact.messages.push(aiMessage);
@@ -5853,6 +5861,51 @@ async function addSingleMessage(message, isNewMessage = false) {
     // 添加到聊天界面
     chatMessages.appendChild(msgDiv);
 
+    // 处理语音消息标识和图标
+    const minimaxGroupId = localStorage.getItem('minimaxGroupId') || '';
+    const minimaxApiKey = localStorage.getItem('minimaxApiKey') || '';
+    
+    if (message.isVoice && currentContact.voiceId && minimaxGroupId && minimaxApiKey) {
+        // 兼容自定义气泡和默认气泡
+        const bubble = msgDiv.querySelector('.message-bubble') || 
+                      msgDiv.querySelector('.custom-bubble-container') || 
+                      msgDiv.querySelector('.chat-bubble');
+        if (bubble) {
+            const messageUniqueId = `${currentContact.id}-${message.time}`;
+            
+            // 给气泡添加语音消息标识
+            bubble.classList.add('voice-message');
+            bubble.dataset.voiceMessageId = `voice-${messageUniqueId}`;
+            
+            // 在消息内容前添加语音符号
+            const textContentDiv = bubble.querySelector('.message-content') || bubble;
+            if (textContentDiv && !textContentDiv.querySelector('.voice-icon')) {
+                const voiceIcon = document.createElement('span');
+                voiceIcon.className = 'voice-icon';
+                voiceIcon.innerHTML = createVoiceIcon();
+                
+                // 将语音符号插入到文本内容的最前面
+                if (textContentDiv === bubble) {
+                    const firstTextNode = Array.from(textContentDiv.childNodes).find(node => 
+                        node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ''
+                    );
+                    if (firstTextNode) {
+                        textContentDiv.insertBefore(voiceIcon, firstTextNode);
+                    } else {
+                        textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
+                    }
+                } else {
+                    textContentDiv.insertBefore(voiceIcon, textContentDiv.firstChild);
+                }
+                
+                // 添加点击事件监听器
+                bubble.addEventListener('click', () => {
+                    playVoiceMessage(bubble, message.content, message.senderId || currentContact.id);
+                });
+            }
+        }
+    }
+
     // 只有新消息才滚动到底部，避免每次添加消息都重新滚动
     if (isNewMessage) {
         setTimeout(() => {
@@ -5862,9 +5915,6 @@ async function addSingleMessage(message, isNewMessage = false) {
             });
         }, 150); // 新消息延时150ms，让滑入动画更明显
     }
-
-    // 先暂时移除复杂的语音生成逻辑，专注于修复消息样式问题
-    // TODO: 稍后重新添加语音功能
 }
 
 /**
