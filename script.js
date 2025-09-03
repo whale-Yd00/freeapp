@@ -44,6 +44,7 @@ function safeFocus(element, options = {}) {
     } else {
         focusAction();
     }
+}
 
 function escapeHtml(text) {
     const map = {
@@ -460,104 +461,6 @@ async function init() {
 
 
 // --- IndexedDB 核心函数 ---
-
-
-// 数据库重试配置
-const DB_RETRY_CONFIG = {
-    maxRetries: 3,
-    baseDelay: 1000,
-    maxDelay: 5000,
-    connectionRetries: 10,
-    connectionRetryInterval: 5000
-};
-
-// 数据库状态跟踪
-let dbConnectionAttempts = 0;
-let dbConnectionTimer = null;
-let dbReadinessCheckInterval = null;
-
-
-// IndexedDB就绪状态检查
-function waitForIndexedDBReady(timeout = 30000) {
-    return new Promise((resolve, reject) => {
-        const startTime = Date.now();
-        
-        function checkReady() {
-            console.log(`[DEBUG-FIXED] checkReady检查: window.isIndexedDBReady=${window.isIndexedDBReady}, window.db=${!!window.db}`);
-            if (window.isIndexedDBReady && window.db) {
-                console.log('IndexedDB就绪状态检查: 已就绪 [FIXED]');
-                resolve(true);
-                return;
-            }
-            
-            if (Date.now() - startTime > timeout) {
-                console.error('IndexedDB就绪状态检查: 超时');
-                reject(new Error(`IndexedDB就绪检查超时 (${timeout}ms)`));
-                return;
-            }
-            
-            setTimeout(checkReady, 100);
-        }
-        
-        checkReady();
-    });
-}
-
-// 增强版数据库连接监控
-function startConnectionMonitoring() {
-    if (dbReadinessCheckInterval) {
-        clearInterval(dbReadinessCheckInterval);
-    }
-    
-    dbReadinessCheckInterval = setInterval(() => {
-        if (!window.isIndexedDBReady || !window.db) {
-            console.warn('检测到数据库连接断开，准备自动重连...');
-            clearInterval(dbReadinessCheckInterval);
-            handleConnectionLoss();
-        }
-    }, 30000); // 每30秒检查一次连接状态
-}
-
-// 数据库连接断开处理
-async function handleConnectionLoss() {
-    dbConnectionAttempts = 0;
-    
-    const attemptReconnection = async () => {
-        dbConnectionAttempts++;
-        console.log(`数据库自动重连 - 第 ${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries} 次尝试`);
-        
-        try {
-            const result = await window.DatabaseManager.init();
-            if (!result.success) {
-            // 如果标准的初始化流程都失败了，那重连也就失败了
-            throw new Error(result.error || 'DatabaseManager 重新初始化失败');
-        }
-
-        console.log('数据库自动重连成功');
-        showToast('数据库连接已自动恢复', 'success');
-        startConnectionMonitoring();
-
-        } catch (error) {
-            console.error(`数据库重连第 ${dbConnectionAttempts} 次失败:`, error);
-            
-            if (dbConnectionAttempts >= DB_RETRY_CONFIG.connectionRetries) {
-                console.error('数据库自动重连失败，所有重试都已用尽');
-                showDatabaseErrorDialog(new Error('数据库连接失败，请手动刷新页面'), false);
-                return;
-            }
-            
-            // 继续重试
-            dbConnectionTimer = setTimeout(
-                attemptReconnection, 
-                DB_RETRY_CONFIG.connectionRetryInterval
-            );
-        }
-    };
-    
-    // 开始重连
-    attemptReconnection();
-}
-
 
 // 表情数据结构优化函数（版本4、5用户升级到7时自动执行）
 async function performEmojiOptimization() {
@@ -4889,6 +4792,9 @@ async function showApiSettingsModal() {
         showToast('打开设置失败: ' + error.message);
     }
 }
+
+// 确保函数在全局作用域可用
+window.showApiSettingsModal = showApiSettingsModal;
 
 function showBackgroundModal() {
     // 异步包装函数
@@ -15463,8 +15369,10 @@ async function loadCurrentConfigToForm() {
         fillField('apiUrl', activeConfig.url);
         fillField('apiKey', activeConfig.key);
         fillField('apiTimeout', activeConfig.timeout || 60);
-        fillField('minimaxGroupId', activeConfig.minimaxGroupId);
-        fillField('minimaxApiKey', activeConfig.minimaxApiKey);
+        
+        // Minimax配置从localStorage读取（单一全局配置，不属于API配置）
+        fillField('minimaxGroupId', localStorage.getItem('minimaxGroupId') || '');
+        fillField('minimaxApiKey', localStorage.getItem('minimaxApiKey') || '');
         
         // 上下文滑块
         const contextSlider = document.getElementById('contextSlider');
@@ -15637,11 +15545,22 @@ async function loadModelsForCurrentConfig() {
  * 清空配置表单
  */
 function clearConfigForm() {
-    const fields = ['configName', 'apiUrl', 'apiKey', 'apiTimeout', 'minimaxGroupId', 'minimaxApiKey'];
+    // 只清空API配置相关字段，不清空全局配置（Minimax, Unsplash等）
+    const fields = ['configName', 'apiUrl', 'apiKey', 'apiTimeout'];
     fields.forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
     });
+    
+    // Minimax字段保持不变，从localStorage读取
+    const minimaxGroupIdElement = document.getElementById('minimaxGroupId');
+    const minimaxApiKeyElement = document.getElementById('minimaxApiKey');
+    if (minimaxGroupIdElement) {
+        minimaxGroupIdElement.value = localStorage.getItem('minimaxGroupId') || '';
+    }
+    if (minimaxApiKeyElement) {
+        minimaxApiKeyElement.value = localStorage.getItem('minimaxApiKey') || '';
+    }
     
     const contextSlider = document.getElementById('contextSlider');
     const contextValue = document.getElementById('contextValue');
