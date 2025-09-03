@@ -5428,8 +5428,8 @@ body {
     color: #dc3545;
 }
 
-/* 模态框样式 */
-.modal-overlay {
+/* 信息展示类模态框样式 - 可复用的 info-modal 类 */
+.info-modal.modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -5444,11 +5444,11 @@ body {
     transition: opacity 0.2s ease-in-out;
 }
 
-.modal-overlay.hidden {
+.info-modal.modal-overlay.hidden {
     display: none;
 }
 
-.modal-content {
+.info-modal .modal-content {
     background: var(--modal-bg);
     border-radius: 8px;
     padding: 0;
@@ -5457,10 +5457,10 @@ body {
     overflow: hidden;
     box-shadow: 0 4px 12px var(--shadow-color);
     color: var(--text-primary);
-    animation: modalSlideIn 0.2s ease-out;
+    animation: infoModalSlideIn 0.2s ease-out;
 }
 
-@keyframes modalSlideIn {
+@keyframes infoModalSlideIn {
     from {
         opacity: 0;
         transform: translateY(-20px);
@@ -5471,7 +5471,7 @@ body {
     }
 }
 
-.modal-header {
+.info-modal .modal-header {
     font-size: 16px;
     font-weight: bold;
     padding: 20px 20px 15px 20px;
@@ -5479,7 +5479,7 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
-.modal-body {
+.info-modal .modal-body {
     padding: 20px;
     font-size: 14px;
     line-height: 1.6;
@@ -5488,27 +5488,27 @@ body {
     overflow-y: auto;
 }
 
-.modal-body p {
+.info-modal .modal-body p {
     margin-bottom: 10px;
 }
 
-.modal-body ul {
+.info-modal .modal-body ul {
     margin: 8px 0;
     padding-left: 20px;
 }
 
-.modal-body li {
+.info-modal .modal-body li {
     margin-bottom: 4px;
 }
 
-.modal-footer {
+.info-modal .modal-footer {
     padding: 15px 20px;
     border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: flex-end;
 }
 
-.modal-close-btn {
+.info-modal .modal-close-btn {
     flex: 1;
     padding: 10px;
     background: var(--theme-secondary);
@@ -5520,11 +5520,11 @@ body {
     transition: background-color 0.2s ease;
 }
 
-.modal-close-btn:hover {
+.info-modal .modal-close-btn:hover {
     background: var(--theme-secondary-hover);
 }
 
-.modal-close-btn:active {
+.info-modal .modal-close-btn:active {
     background: var(--theme-secondary-active);
 }
 
@@ -5579,24 +5579,24 @@ body {
     background: #117a8b;
 }
 
-/* 响应式设计 */
+/* 信息展示类模态框响应式设计 */
 @media (max-width: 480px) {
-    .modal-content {
+    .info-modal .modal-content {
         max-width: 90vw;
         margin: 0 auto;
     }
     
-    .modal-header {
+    .info-modal .modal-header {
         font-size: 15px;
         padding: 15px;
     }
     
-    .modal-body {
+    .info-modal .modal-body {
         padding: 15px;
         font-size: 13px;
     }
     
-    .modal-footer {
+    .info-modal .modal-footer {
         padding: 15px;
     }
 }
