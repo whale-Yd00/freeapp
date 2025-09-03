@@ -632,6 +632,54 @@ class ImageStorageAPI {
     }
 
     /**
+     * 清理临时头像引用
+     * 清理所有以 'temp_' 开头的头像引用
+     */
+    async cleanupTempAvatarReferences() {
+        await this.init();
+        
+        try {
+            // 获取所有头像引用
+            const transaction = window.db.transaction(['fileReferences'], 'readwrite');
+            const store = transaction.objectStore('fileReferences');
+            const index = store.index('category');
+            const request = index.getAll('avatar_contact');
+            
+            request.onsuccess = async () => {
+                const references = request.result;
+                const tempReferences = references.filter(ref => 
+                    ref.referenceKey && ref.referenceKey.startsWith('temp_')
+                );
+                
+                console.log(`找到 ${tempReferences.length} 个临时头像引用，开始清理...`);
+                
+                for (const ref of tempReferences) {
+                    try {
+                        // 删除文件引用
+                        await this.fileManager.deleteFileReference('avatar_contact', ref.referenceKey);
+                        // 尝试删除对应的文件
+                        if (ref.fileId) {
+                            await this.fileManager.deleteFile(ref.fileId);
+                        }
+                        console.log(`清理临时引用: ${ref.referenceId}`);
+                    } catch (error) {
+                        console.warn(`清理临时引用失败: ${ref.referenceId}`, error);
+                    }
+                }
+                
+                console.log('临时头像引用清理完成');
+            };
+            
+            request.onerror = () => {
+                console.error('获取头像引用失败:', request.error);
+            };
+            
+        } catch (error) {
+            console.error('清理临时头像引用失败:', error);
+        }
+    }
+
+    /**
      * 检查是否需要数据迁移
      */
     async needsMigration() {
@@ -1020,6 +1068,20 @@ async function handleContactAvatarUpload(event, editingContact) {
     try {
         // 如果正在编辑联系人，使用联系人ID；否则为新联系人生成临时ID
         const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
+        console.log('handleContactAvatarUpload - 使用的联系人ID:', contactId, '编辑中的联系人:', editingContact);
+        
+        // 如果是编辑现有联系人且之前有头像，先删除旧的文件引用
+        if (editingContact && editingContact.avatarFileId) {
+            try {
+                console.log('删除旧的头像引用，联系人ID:', contactId, '旧的fileId:', editingContact.avatarFileId);
+                if (window.ImageStorageAPI) {
+                    await window.ImageStorageAPI.deleteImage(`avatar_contact`, contactId);
+                }
+            } catch (deleteError) {
+                console.warn('删除旧头像失败，继续上传新头像:', deleteError);
+            }
+        }
+        
         const fileId = await handleAvatarUpload('avatarUploadInput', 'contact', contactId, 'avatarUploadStatus');
         
         if (fileId) {

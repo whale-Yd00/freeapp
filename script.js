@@ -30,6 +30,7 @@ window.contacts = contacts;
 let currentContact = null;
 window.currentContact = currentContact;
 let editingContact = null;
+window.editingContact = editingContact;
 
 // [DEBUG-MOMENTS-ROLES-START] 数据库初始化竞态条件控制，修复完成后可选择保留
 let isInitializingDatabase = false; // 防止多个组件同时初始化数据库
@@ -4552,6 +4553,7 @@ function closeModal(modalId) {
     modal.style.display = 'none';
     if (modalId === 'addContactModal') {
         editingContact = null;
+        window.editingContact = null;
         document.getElementById('contactModalTitle').textContent = '添加AI助手';
         document.getElementById('contactName').value = '';
         document.getElementById('contactAvatar').value = '';
@@ -4608,6 +4610,7 @@ function cleanupEmojiUploadData() {
 
 function showAddContactModal() {
     editingContact = null;
+    window.editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
     
     // 清除所有输入框和状态提示
@@ -4629,6 +4632,7 @@ function showAddContactModal() {
 function showEditContactModal() {
     if (!currentContact) { showToast('请先选择联系人'); return; }
     editingContact = currentContact;
+    window.editingContact = editingContact;
     document.getElementById('contactModalTitle').textContent = '编辑AI助手';
     document.getElementById('contactName').value = currentContact.name;
     
