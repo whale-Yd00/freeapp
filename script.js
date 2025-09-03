@@ -1,493 +1,14 @@
-﻿// === Console日志捕获系统 ===
-let consoleLogs = [];
-const maxLogEntries = 500; // 限制日志条目数量避免内存过大
+﻿// === 核心应用脚本 ===
+// 已将以下功能迁移到专门的utils文件：
+// - 主题管理 → uiManager.js
+// - 文件上传处理 → imageStorageAPI.js  
+// - 数据库管理 → dataMigrator.js
+// - 日志系统 → systemUtilities.js
 
-// === 主题管理系统 ===
-class ThemeManager {
-    constructor() {
-        this.THEME_KEY = 'whale-llt-theme';
-        this.themes = {
-            system: 'system-theme',
-            light: '',
-            dark: 'dark-mode'
-        };
-        this.currentTheme = this.getStoredTheme();
-        this.mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    }
+// 主题管理已迁移到 utils/uiManager.js
 
-    getStoredTheme() {
-        return localStorage.getItem(this.THEME_KEY) || 'system';
-    }
+// 长按屏蔽系统已迁移到 utils/uiManager.js
 
-    setTheme(theme) {
-        if (!this.themes.hasOwnProperty(theme)) {
-            console.warn('未知主题:', theme);
-            return;
-        }
-
-        this.currentTheme = theme;
-        localStorage.setItem(this.THEME_KEY, theme);
-        this.applyTheme();
-        this.updateThemeUI();
-    }
-
-    applyTheme() {
-        const body = document.body;
-        
-        // 移除所有主题类
-        Object.values(this.themes).forEach(className => {
-            if (className) body.classList.remove(className);
-        });
-
-        // 应用当前主题类
-        const themeClass = this.themes[this.currentTheme];
-        if (themeClass) {
-            body.classList.add(themeClass);
-        }
-    }
-
-    updateThemeUI() {
-        // 更新主题切换按钮的显示状态
-        const buttons = document.querySelectorAll('[data-theme]');
-        buttons.forEach(btn => {
-            if (btn.dataset.theme === this.currentTheme) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-        });
-        
-        console.log('主题UI已更新，当前主题:', this.currentTheme);
-    }
-
-    init() {
-        // 立即应用主题，避免闪烁
-        this.applyTheme();
-        
-        // 初始化UI状态
-        this.updateThemeUI();
-        
-        // 监听系统主题变化
-        this.mediaQuery.addEventListener('change', () => {
-            if (this.currentTheme === 'system') {
-                this.applyTheme();
-            }
-        });
-
-        console.log('主题管理器初始化完成，当前主题:', this.currentTheme);
-    }
-
-    getCurrentTheme() {
-        return this.currentTheme;
-    }
-}
-
-// 创建全局主题管理器实例
-window.themeManager = new ThemeManager();
-
-// 主题切换函数
-function switchTheme(theme) {
-    window.themeManager.setTheme(theme);
-    
-    // 提供用户反馈
-    const themeNames = {
-        system: '跟随系统',
-        light: '亮色模式', 
-        dark: '暗黑模式'
-    };
-    
-    // 可以在这里添加toast提示，但现在先不添加以免干扰用户
-    console.log(`已切换到${themeNames[theme]}主题`);
-}
-
-// 获取当前主题
-function getCurrentTheme() {
-    return window.themeManager.getCurrentTheme();
-}
-
-// === 屏蔽长按选择和上下文菜单系统 ===
-function initializeLongPressBlocking() {
-    // 屏蔽上下文菜单（右键菜单和长按菜单）
-    document.addEventListener('contextmenu', function(e) {
-        // 允许输入框的上下文菜单
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
-            e.target.contentEditable === 'true') {
-            return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-    }, { passive: false });
-
-    // 屏蔽选择开始事件
-    document.addEventListener('selectstart', function(e) {
-        // 允许输入框的选择
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
-            e.target.contentEditable === 'true') {
-            return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-    }, { passive: false });
-
-    // 屏蔽拖拽开始事件（某些情况下长按会触发）
-    document.addEventListener('dragstart', function(e) {
-        // 允许输入框内容的拖拽
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
-            e.target.contentEditable === 'true') {
-            return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-    }, { passive: false });
-
-    // iOS Safari 特殊处理：屏蔽长按高亮
-    let longPressTimer = null;
-    let touchStartTime = 0;
-    let touchTarget = null;
-    
-    document.addEventListener('touchstart', function(e) {
-        // 输入框允许正常行为
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || 
-            e.target.contentEditable === 'true') {
-            return;
-        }
-        
-        touchTarget = e.target;
-        touchStartTime = Date.now();
-        longPressTimer = setTimeout(() => {
-            // 只有当前活跃元素不是输入框时才blur
-            if (document.activeElement && 
-                document.activeElement.tagName !== 'INPUT' && 
-                document.activeElement.tagName !== 'TEXTAREA' && 
-                document.activeElement.contentEditable !== 'true') {
-                document.activeElement.blur();
-            }
-            // 只清除非输入框的选择
-            const selection = window.getSelection();
-            if (selection.rangeCount > 0) {
-                const range = selection.getRangeAt(0);
-                const container = range.commonAncestorContainer;
-                const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-                
-                if (element && 
-                    element.tagName !== 'INPUT' && 
-                    element.tagName !== 'TEXTAREA' && 
-                    element.contentEditable !== 'true' &&
-                    !element.closest('input, textarea, [contenteditable="true"]')) {
-                    selection.removeAllRanges();
-                }
-            }
-        }, 500); // 500ms 后算作长按
-    }, { passive: true });
-
-    document.addEventListener('touchend', function(e) {
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-        touchTarget = null;
-    }, { passive: true });
-
-    document.addEventListener('touchmove', function(e) {
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-    }, { passive: true });
-
-    // 额外保护：清除任何意外的选择（但不干扰正在交互的输入框）
-    setInterval(() => {
-        // 如果当前有输入框聚焦，跳过清理
-        if (document.activeElement && (
-            document.activeElement.tagName === 'INPUT' || 
-            document.activeElement.tagName === 'TEXTAREA' || 
-            document.activeElement.contentEditable === 'true')) {
-            return;
-        }
-        
-        const selection = window.getSelection();
-        if (selection.rangeCount > 0) {
-            const range = selection.getRangeAt(0);
-            const container = range.commonAncestorContainer;
-            const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
-            
-            // 如果选择的不是输入框内容，就清除选择
-            if (element && 
-                element.tagName !== 'INPUT' && 
-                element.tagName !== 'TEXTAREA' && 
-                element.contentEditable !== 'true' &&
-                !element.closest('input, textarea, [contenteditable="true"]')) {
-                selection.removeAllRanges();
-            }
-        }
-    }, 200); // 降低频率，减少对性能的影响
-}
-
-// 在页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', initializeLongPressBlocking);
-
-// === 输入框安全聚焦工具函数 ===
-function safeFocus(element, options = {}) {
-    if (!element || typeof element.focus !== 'function') return;
-    
-    const {
-        preventScroll = false,
-        delay = 0,
-        smooth = true
-    } = options;
-    
-    // 防抖机制：如果element已经是activeElement，避免重复操作
-    if (document.activeElement === element) return;
-    
-    const focusAction = () => {
-        try {
-            // 如果元素不在可视区域，先聚焦但阻止滚动
-            element.focus({ preventScroll: true });
-            
-            // 如果需要滚动到可视区域，使用viewportManager的方法
-            if (!preventScroll && window.viewportManager) {
-                // 延迟一下，让focus事件先完成
-                setTimeout(() => {
-                    window.viewportManager.scrollToActiveInput();
-                }, 50);
-            }
-        } catch (error) {
-            console.warn('Focus operation failed:', error);
-        }
-    };
-    
-    if (delay > 0) {
-        setTimeout(focusAction, delay);
-    } else {
-        focusAction();
-    }
-}
-
-// 重写console方法来捕获日志
-function setupConsoleCapture() {
-    const originalConsole = {
-        log: console.log,
-        error: console.error,
-        warn: console.warn,
-        info: console.info,
-        debug: console.debug
-    };
-
-    function captureLog(level, args) {
-        const timestamp = new Date().toISOString();
-        const message = args.map(arg => {
-            if (typeof arg === 'object') {
-                try {
-                    return JSON.stringify(arg, null, 2);
-                } catch (e) {
-                    return String(arg);
-                }
-            }
-            return String(arg);
-        }).join(' ');
-        
-        consoleLogs.push({
-            timestamp,
-            level,
-            message
-        });
-        
-        // 限制日志数量
-        if (consoleLogs.length > maxLogEntries) {
-            consoleLogs = consoleLogs.slice(-maxLogEntries);
-        }
-    }
-
-    console.log = function(...args) {
-        captureLog('log', args);
-        originalConsole.log.apply(console, args);
-    };
-
-    console.error = function(...args) {
-        captureLog('error', args);
-        originalConsole.error.apply(console, args);
-    };
-
-    console.warn = function(...args) {
-        captureLog('warn', args);
-        originalConsole.warn.apply(console, args);
-    };
-
-    console.info = function(...args) {
-        captureLog('info', args);
-        originalConsole.info.apply(console, args);
-    };
-
-    console.debug = function(...args) {
-        captureLog('debug', args);
-        originalConsole.debug.apply(console, args);
-    };
-}
-
-// 传统下载方式的辅助函数
-function fallbackDownload(content, filename) {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-// 导出日志功能
-function exportConsoleLogs() {
-    try {
-        if (consoleLogs.length === 0) {
-            showToast('没有日志可导出');
-            return;
-        }
-
-        const logContent = consoleLogs.map(log => 
-            `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
-        ).join('\n');
-        
-        const filename = `console-logs-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-        
-        // 检查是否支持Web Share API（移动端分享）
-        if (navigator.share && navigator.canShare) {
-            const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
-            const file = new File([blob], filename, { type: 'text/plain' });
-            
-            // 检查是否可以分享文件
-            if (navigator.canShare({ files: [file] })) {
-                navigator.share({
-                    title: '调试日志',
-                    text: '应用调试日志文件',
-                    files: [file]
-                }).then(() => {
-                    showToast('分享成功');
-                    // 关闭设置菜单
-                    document.getElementById('settingsMenu').style.display = 'none';
-                }).catch((error) => {
-                    console.log('分享取消或失败:', error);
-                    // 如果分享失败，回退到传统下载方式
-                    fallbackDownload(logContent, filename);
-                    showToast(`已导出 ${consoleLogs.length} 条日志`);
-                    // 关闭设置菜单
-                    document.getElementById('settingsMenu').style.display = 'none';
-                });
-                return;
-            }
-        }
-        
-        // 回退到传统下载方式（PC端或不支持分享的移动端）
-        fallbackDownload(logContent, filename);
-        showToast(`已导出 ${consoleLogs.length} 条日志`);
-        
-        // 关闭设置菜单
-        document.getElementById('settingsMenu').style.display = 'none';
-    } catch (error) {
-        console.error('导出日志失败:', error);
-        showToast('导出日志失败: ' + error.message);
-    }
-}
-
-// 立即启用console捕获
-setupConsoleCapture();
-
-// === 调试日志页面功能 ===
-function showDebugLogPage() {
-    showPage('debugLogPage');
-    updateDebugLogDisplay();
-}
-
-function updateDebugLogDisplay() {
-    const logContent = document.getElementById('debugLogContent');
-    const logCount = document.getElementById('logCount');
-    
-    if (consoleLogs.length === 0) {
-        logContent.innerHTML = '<div class="debug-log-empty">暂无日志记录</div>';
-        logCount.textContent = '0';
-        return;
-    }
-    
-    logCount.textContent = consoleLogs.length.toString();
-    
-    const logsHtml = consoleLogs.map(log => {
-        const time = new Date(log.timestamp).toLocaleTimeString();
-        const levelClass = `debug-log-${log.level}`;
-        return `
-            <div class="debug-log-item ${levelClass}">
-                <div class="debug-log-header">
-                    <span class="debug-log-time">${time}</span>
-                    <span class="debug-log-level">${log.level.toUpperCase()}</span>
-                </div>
-                <div class="debug-log-message">${escapeHtml(log.message)}</div>
-            </div>
-        `;
-    }).join('');
-    
-    logContent.innerHTML = logsHtml;
-    
-    // 滚动到底部显示最新日志
-    logContent.scrollTop = logContent.scrollHeight;
-}
-
-function clearDebugLogs() {
-    consoleLogs.length = 0;
-    updateDebugLogDisplay();
-    showToast('已清空调试日志');
-}
-
-function copyDebugLogs() {
-    if (consoleLogs.length === 0) {
-        showToast('没有日志可复制');
-        return;
-    }
-    
-    const logText = consoleLogs.map(log => 
-        `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}`
-    ).join('\n');
-    
-    // 尝试使用现代的Clipboard API
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(logText).then(() => {
-            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
-        }).catch(err => {
-            console.error('复制失败:', err);
-            fallbackCopyTextToClipboard(logText);
-        });
-    } else {
-        fallbackCopyTextToClipboard(logText);
-    }
-}
-
-function fallbackCopyTextToClipboard(text) {
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    textArea.style.top = "0";
-    textArea.style.left = "0";
-    textArea.style.position = "fixed";
-    
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-    
-    try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-            showToast(`已复制 ${consoleLogs.length} 条日志到剪贴板`);
-        } else {
-            showToast('复制失败，请手动选择文本');
-        }
-    } catch (err) {
-        console.error('Fallback: 复制失败', err);
-        showToast('复制失败: ' + err.message);
-    }
-    
-    document.body.removeChild(textArea);
-}
 
 function escapeHtml(text) {
     const map = {
@@ -500,311 +21,7 @@ function escapeHtml(text) {
     return text.replace(/[&<>"']/g, function(m) { return map[m]; });
 }
 
-// --- 通用文件上传函数 ---
-async function handleFileUpload(inputId, targetUrlInputId, statusElementId) {
-    const fileInput = document.getElementById(inputId);
-    const file = fileInput.files[0];
-    const statusElement = document.getElementById(statusElementId);
-    const targetUrlInput = document.getElementById(targetUrlInputId);
-
-    if (!file) {
-        showToast('请先选择一个文件');
-        return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件');
-        fileInput.value = '';
-        return;
-    }
-
-    if (statusElement) statusElement.textContent = '上传中...';
-    
-    // 使用 FileReader 将图片转为 Base64
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-        targetUrlInput.value = reader.result;
-        if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('图片已加载');
-    };
-    reader.onerror = (error) => {
-        console.error('文件读取失败:', error);
-        if (statusElement) statusElement.textContent = '读取失败';
-        showToast(`读取失败: ${error.message}`);
-    };
-}
-
-// --- 新的文件系统上传函数 ---
-async function handleAvatarUpload(inputId, entityType, entityId, statusElementId) {
-    const fileInput = document.getElementById(inputId);
-    const file = fileInput.files[0];
-    const statusElement = document.getElementById(statusElementId);
-
-    if (!file) {
-        showToast('请先选择一个文件');
-        return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件');
-        fileInput.value = '';
-        return;
-    }
-
-    if (statusElement) statusElement.textContent = '上传中...';
-    
-    try {
-        // 使用新的文件系统存储头像
-        if (!window.ImageStorageAPI) {
-            throw new Error('ImageStorageAPI 未初始化');
-        }
-        
-        await window.ImageStorageAPI.init();
-        const fileId = await window.ImageStorageAPI.storeAvatar(file, entityType, entityId);
-        
-        if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('头像已保存', 'success');
-        
-        // 返回文件ID用于后续处理
-        return fileId;
-    } catch (error) {
-        console.error('头像上传失败:', error);
-        if (statusElement) statusElement.textContent = '上传失败';
-        showUploadError(error);
-        throw error;
-    }
-}
-
-async function handleBackgroundUpload(inputId, contactId, statusElementId) {
-    const fileInput = document.getElementById(inputId);
-    const file = fileInput.files[0];
-    const statusElement = document.getElementById(statusElementId);
-
-    if (!file) {
-        showToast('请先选择一个文件');
-        return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件');
-        fileInput.value = '';
-        return;
-    }
-
-    if (statusElement) statusElement.textContent = '上传中...';
-    
-    try {
-        // 使用新的文件系统存储背景图片
-        if (!window.ImageStorageAPI) {
-            throw new Error('ImageStorageAPI 未初始化');
-        }
-        
-        await window.ImageStorageAPI.init();
-        const fileId = await window.ImageStorageAPI.storeBackground(file, contactId);
-        
-        if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('背景图片已保存', 'success');
-        
-        // 返回文件ID用于后续处理
-        return fileId;
-    } catch (error) {
-        console.error('背景图片上传失败:', error);
-        if (statusElement) statusElement.textContent = '上传失败';
-        showUploadError(error);
-        throw error;
-    }
-}
-
-async function handleEmojiUpload(inputId, emojiTag, statusElementId) {
-    const fileInput = document.getElementById(inputId);
-    const file = fileInput.files[0];
-    const statusElement = document.getElementById(statusElementId);
-
-    if (!file) {
-        showToast('请先选择一个文件');
-        return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-        showToast('请上传图片文件');
-        fileInput.value = '';
-        return;
-    }
-
-    if (statusElement) statusElement.textContent = '上传中...';
-    
-    try {
-        // 使用新的文件系统存储表情包
-        if (!window.ImageStorageAPI) {
-            throw new Error('ImageStorageAPI 未初始化');
-        }
-        
-        await window.ImageStorageAPI.init();
-        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
-        
-        if (statusElement) statusElement.textContent = '上传成功！';
-        showToast('表情包已保存', 'success');
-        
-        // 返回文件ID用于后续处理
-        return fileId;
-    } catch (error) {
-        console.error('表情包上传失败:', error);
-        if (statusElement) statusElement.textContent = '上传失败';
-        showUploadError(error);
-        throw error;
-    }
-}
-
-// --- 特定的上传处理函数 ---
-async function handleContactAvatarUpload(event) {
-    try {
-        // 如果正在编辑联系人，使用联系人ID；否则为新联系人生成临时ID
-        const contactId = editingContact ? editingContact.id : 'temp_' + Date.now();
-        const fileId = await handleAvatarUpload('avatarUploadInput', 'contact', contactId, 'avatarUploadStatus');
-        
-        if (fileId) {
-            // 更新隐藏的URL输入框为文件ID引用
-            document.getElementById('contactAvatar').value = `file:${fileId}`;
-            
-            // 不再清理file input，保持上传状态
-            // document.getElementById('avatarUploadInput').value = '';
-            
-            // 清理联系人头像缓存
-            if (window.ImageDisplayHelper) {
-                window.ImageDisplayHelper.clearCacheByType(`avatar_contact_${contactId}`);
-            }
-            
-            // 设置持久状态提示
-            const statusElement = document.getElementById('avatarUploadStatus');
-            if (statusElement) {
-                statusElement.textContent = '已上传';
-                statusElement.style.color = '#07c160';
-            }
-        }
-    } catch (error) {
-        console.error('联系人头像上传失败:', error);
-    }
-}
-
-async function handleProfileAvatarUpload(event) {
-    try {
-        const fileId = await handleAvatarUpload('profileUploadInput', 'user', 'profile', 'profileUploadStatus');
-        
-        if (fileId) {
-            // 更新隐藏的URL输入框为文件ID引用
-            document.getElementById('profileAvatarInput').value = `file:${fileId}`;
-            
-            // 不再清理file input，保持上传状态
-            // document.getElementById('profileUploadInput').value = '';
-            
-            // 清理头像缓存
-            if (window.ImageDisplayHelper) {
-                window.ImageDisplayHelper.clearCacheByType('avatar_user_');
-            }
-            
-            // 设置持久状态提示
-            const statusElement = document.getElementById('profileUploadStatus');
-            if (statusElement) {
-                statusElement.textContent = '已上传';
-                statusElement.style.color = '#07c160';
-            }
-            
-            // 立即更新UI
-            await updateUserProfileUI();
-        }
-    } catch (error) {
-        console.error('个人头像上传失败:', error);
-    }
-}
-
-async function handleBgUpload(event) {
-    try {
-        if (!currentContact) {
-            showToast('请先选择联系人');
-            return;
-        }
-        
-        const fileId = await handleBackgroundUpload('bgUploadInput', currentContact.id, 'bgUploadStatus');
-        
-        if (fileId) {
-            // 更新隐藏的URL输入框为文件ID引用
-            document.getElementById('backgroundUrl').value = `file:${fileId}`;
-        }
-    } catch (error) {
-        console.error('背景图片上传失败:', error);
-    }
-}
-
-// 全局变量存储临时上传的表情包文件
-let tempEmojiFile = null;
-
-async function handleEmojiFileUpload(event) {
-    try {
-        const fileInput = document.getElementById('emojiUploadInput');
-        const file = fileInput.files[0];
-        
-        if (!file) {
-            showToast('请先选择一个文件');
-            return;
-        }
-        
-        if (!file.type.startsWith('image/')) {
-            showToast('请上传图片文件');
-            return;
-        }
-        
-        // 简单存储文件对象，等待保存时处理
-        tempEmojiFile = file;
-        
-        const statusElement = document.getElementById('emojiUploadStatus');
-        if (statusElement) {
-            statusElement.textContent = '图片已选择';
-            statusElement.style.color = '#07c160';
-        }
-        
-        // 生成临时URL用于预览
-        const tempUrl = URL.createObjectURL(file);
-        document.getElementById('emojiUrl').value = `temp:${tempUrl}`;
-        
-        showToast('图片已选择，填写意思后点击添加');
-        
-    } catch (error) {
-        console.error('表情包文件选择失败:', error);
-        showToast('文件选择失败，请重试');
-    }
-}
-
-// 使用fileSystem存储表情包的辅助函数
-async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
-    try {
-        if (statusElement) statusElement.textContent = '正在存储...';
-        
-        // 直接传递File对象给ImageStorageAPI，让它处理数据类型转换
-        const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
-        
-        if (fileId) {
-            document.getElementById('emojiUrl').value = `file:${fileId}`;
-            
-            if (statusElement) {
-                statusElement.textContent = '存储成功';
-                statusElement.style.color = '#07c160';
-            }
-            
-            console.log('表情包存储成功，文件ID:', fileId);
-            return fileId;
-        }
-    } catch (error) {
-        console.error('表情包存储失败:', error);
-        if (statusElement) {
-            statusElement.textContent = '存储失败';
-            statusElement.style.color = '#ff3b30';
-        }
-        showToast('存储失败: ' + error.message);
-        throw error;
-    }
-}
-
+  
 
 // --- 全局状态 ---
 let contacts = [];
@@ -813,6 +30,7 @@ window.contacts = contacts;
 let currentContact = null;
 window.currentContact = currentContact;
 let editingContact = null;
+window.editingContact = editingContact;
 
 // [DEBUG-MOMENTS-ROLES-START] 数据库初始化竞态条件控制，修复完成后可选择保留
 let isInitializingDatabase = false; // 防止多个组件同时初始化数据库
@@ -1040,38 +258,6 @@ let selectedMessages = new Set();
 let voiceAudio = new Audio(); // 用于播放语音消息的全局Audio对象
 let currentPlayingElement = null; // 跟踪当前播放的语音元素
 
-// 浏览器兼容性检测
-function checkBrowserCompatibility() {
-    // 检测浏览器是否支持 :has() 选择器
-    let supportsHas = false;
-    
-    try {
-        // 尝试创建一个使用 :has() 的CSS规则来测试支持性
-        const testRule = document.createElement('style');
-        testRule.textContent = 'body:has(div) { color: inherit; }';
-        document.head.appendChild(testRule);
-        
-        // 检查规则是否被正确解析
-        supportsHas = testRule.sheet && testRule.sheet.cssRules.length > 0;
-        
-        // 清理测试元素
-        document.head.removeChild(testRule);
-    } catch (e) {
-        // 如果出现错误，说明不支持
-        supportsHas = false;
-    }
-    
-    // 如果不支持 :has()，为body添加标识类以启用JavaScript备用方案
-    if (!supportsHas) {
-        document.body.classList.add('no-has-support');
-        console.log('检测到浏览器不支持 :has() 选择器，已启用JavaScript备用方案');
-    } else {
-        console.log('浏览器支持 :has() 选择器');
-    }
-    
-    // 将支持状态存储为全局变量，供其他函数使用
-    window.browserSupportsHas = supportsHas;
-}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1125,7 +311,7 @@ async function init() {
         }
         
         // 七夕节特殊处理 - 检查是否为8月29日且第一次打开
-        await checkSpecialEvents();
+        await window.SystemUtils.checkSpecialEvents();
         
     } catch (error) {
         console.error('应用初始化失败:', error);
@@ -1240,189 +426,6 @@ async function init() {
 
 
 // --- IndexedDB 核心函数 ---
-
-
-// 数据库重试配置
-const DB_RETRY_CONFIG = {
-    maxRetries: 3,
-    baseDelay: 1000,
-    maxDelay: 5000,
-    connectionRetries: 10,
-    connectionRetryInterval: 5000
-};
-
-// 数据库状态跟踪
-let dbConnectionAttempts = 0;
-let dbConnectionTimer = null;
-let dbReadinessCheckInterval = null;
-
-// 用户友好的错误对话框
-function showDatabaseErrorDialog(error, isRetrying = false) {
-    const title = isRetrying ? '数据库重试中...' : '数据库连接失败';
-    const message = isRetrying 
-        ? `数据库连接异常，正在自动重试... (${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries})\n\n错误信息: ${error.message}`
-        : `数据库连接失败，所有重试都已用尽。\n\n错误信息: ${error.message}\n\n建议:\n1. 刷新页面重试\n2. 清除浏览器缓存\n3. 检查浏览器是否支持IndexedDB`;
-    
-    // 创建自定义对话框
-    if (!document.getElementById('db-error-dialog')) {
-        const dialog = document.createElement('div');
-        dialog.id = 'db-error-dialog';
-        dialog.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.8); display: flex; align-items: center; 
-            justify-content: center; z-index: 10000; font-family: Arial, sans-serif;
-        `;
-        
-        const dialogContent = document.createElement('div');
-        dialogContent.style.cssText = `
-            background: white; padding: 30px; border-radius: 12px; 
-            max-width: 500px; margin: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        `;
-        
-        dialog.appendChild(dialogContent);
-        document.body.appendChild(dialog);
-    }
-    
-    const dialog = document.getElementById('db-error-dialog');
-    const content = dialog.querySelector('div');
-    content.innerHTML = `
-        <h3 style="color: ${isRetrying ? '#ffa500' : '#dc3545'}; margin-top: 0;">${title}</h3>
-        <p style="margin: 15px 0; line-height: 1.6; white-space: pre-line;">${message}</p>
-        ${!isRetrying ? `
-            <div style="text-align: right; margin-top: 20px;">
-                <button onclick="location.reload()" style="
-                    background: #007bff; color: white; border: none; 
-                    padding: 10px 20px; border-radius: 6px; cursor: pointer;
-                ">刷新页面</button>
-            </div>
-        ` : ''}
-    `;
-    
-    dialog.style.display = 'flex';
-    
-    if (isRetrying) {
-        setTimeout(() => {
-            if (dialog && dialog.parentNode) {
-                dialog.style.display = 'none';
-            }
-        }, 3000);
-    }
-}
-
-// 带递增等待时间的重试机制
-async function retryWithBackoff(operation, context = '', retries = DB_RETRY_CONFIG.maxRetries) {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            console.log(`${context} - 尝试第 ${attempt}/${retries} 次`);
-            const result = await operation();
-            if (attempt > 1) {
-                console.log(`${context} - 第 ${attempt} 次尝试成功`);
-                showToast('数据库连接已恢复', 'success');
-            }
-            return result;
-        } catch (error) {
-            console.error(`${context} - 第 ${attempt}/${retries} 次尝试失败:`, error);
-            
-            if (attempt === retries) {
-                console.error(`${context} - 所有重试都已失败，抛出最终错误`);
-                throw error;
-            }
-            
-            // 计算递增等待时间
-            const delay = Math.min(
-                DB_RETRY_CONFIG.baseDelay * Math.pow(2, attempt - 1),
-                DB_RETRY_CONFIG.maxDelay
-            );
-            
-            console.log(`${context} - 等待 ${delay}ms 后重试...`);
-            showToast(`${context}失败，${delay/1000}秒后重试 (${attempt}/${retries})`, 'warning');
-            
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-}
-
-// IndexedDB就绪状态检查
-function waitForIndexedDBReady(timeout = 30000) {
-    return new Promise((resolve, reject) => {
-        const startTime = Date.now();
-        
-        function checkReady() {
-            console.log(`[DEBUG-FIXED] checkReady检查: window.isIndexedDBReady=${window.isIndexedDBReady}, window.db=${!!window.db}`);
-            if (window.isIndexedDBReady && window.db) {
-                console.log('IndexedDB就绪状态检查: 已就绪 [FIXED]');
-                resolve(true);
-                return;
-            }
-            
-            if (Date.now() - startTime > timeout) {
-                console.error('IndexedDB就绪状态检查: 超时');
-                reject(new Error(`IndexedDB就绪检查超时 (${timeout}ms)`));
-                return;
-            }
-            
-            setTimeout(checkReady, 100);
-        }
-        
-        checkReady();
-    });
-}
-
-// 增强版数据库连接监控
-function startConnectionMonitoring() {
-    if (dbReadinessCheckInterval) {
-        clearInterval(dbReadinessCheckInterval);
-    }
-    
-    dbReadinessCheckInterval = setInterval(() => {
-        if (!window.isIndexedDBReady || !window.db) {
-            console.warn('检测到数据库连接断开，准备自动重连...');
-            clearInterval(dbReadinessCheckInterval);
-            handleConnectionLoss();
-        }
-    }, 30000); // 每30秒检查一次连接状态
-}
-
-// 数据库连接断开处理
-async function handleConnectionLoss() {
-    dbConnectionAttempts = 0;
-    
-    const attemptReconnection = async () => {
-        dbConnectionAttempts++;
-        console.log(`数据库自动重连 - 第 ${dbConnectionAttempts}/${DB_RETRY_CONFIG.connectionRetries} 次尝试`);
-        
-        try {
-            const result = await window.DatabaseManager.init();
-            if (!result.success) {
-            // 如果标准的初始化流程都失败了，那重连也就失败了
-            throw new Error(result.error || 'DatabaseManager 重新初始化失败');
-        }
-
-        console.log('数据库自动重连成功');
-        showToast('数据库连接已自动恢复', 'success');
-        startConnectionMonitoring();
-
-        } catch (error) {
-            console.error(`数据库重连第 ${dbConnectionAttempts} 次失败:`, error);
-            
-            if (dbConnectionAttempts >= DB_RETRY_CONFIG.connectionRetries) {
-                console.error('数据库自动重连失败，所有重试都已用尽');
-                showDatabaseErrorDialog(new Error('数据库连接失败，请手动刷新页面'), false);
-                return;
-            }
-            
-            // 继续重试
-            dbConnectionTimer = setTimeout(
-                attemptReconnection, 
-                DB_RETRY_CONFIG.connectionRetryInterval
-            );
-        }
-    };
-    
-    // 开始重连
-    attemptReconnection();
-}
-
 
 // 表情数据结构优化函数（版本4、5用户升级到7时自动执行）
 async function performEmojiOptimization() {
@@ -1773,64 +776,6 @@ async function saveDataToDB() {
     }, '数据库保存操作');
 }
 
-// 增强版IndexedDB请求辅助函数 - 带重试机制
-function promisifyRequest(request, context = '数据库操作') {
-    return new Promise((resolve, reject) => {
-        request.onsuccess = () => {
-            console.log(`${context} - 请求成功`);
-            resolve(request.result);
-        };
-        
-        request.onerror = () => {
-            const error = request.error || new Error(`${context}失败`);
-            console.error(`${context} - 请求失败:`, {
-                errorName: error.name,
-                errorMessage: error.message,
-                errorCode: error.code,
-                timestamp: new Date().toISOString()
-            });
-            reject(error);
-        };
-        
-        request.onblocked = () => {
-            const error = new Error(`${context} - 请求被阻塞，可能有其他标签页正在使用数据库`);
-            console.warn(error.message);
-            reject(error);
-        };
-    });
-}
-
-// 增强版IndexedDB事务辅助函数 - 带重试机制
-function promisifyTransaction(transaction, context = '数据库事务') {
-    return new Promise((resolve, reject) => {
-        transaction.oncomplete = () => {
-            console.log(`${context} - 事务完成`);
-            resolve();
-        };
-        
-        transaction.onerror = () => {
-            const error = transaction.error || new Error(`${context}失败`);
-            console.error(`${context} - 事务失败:`, {
-                errorName: error.name,
-                errorMessage: error.message,
-                errorCode: error.code,
-                timestamp: new Date().toISOString()
-            });
-            reject(error);
-        };
-        
-        transaction.onabort = () => {
-            const error = new Error(`${context} - 事务被中止`);
-            console.error(error.message);
-            reject(error);
-        };
-    });
-}
-
-// 带重试的数据库操作包装器
-async function executeWithRetry(operation, context = '数据库操作') {
-    return await retryWithBackoff(operation, context);
-}
 
 // [DEBUG-MOMENTS-ROLES-START] 统一的数据库初始化函数，修复完成后可选择保留
 /**
@@ -1926,27 +871,6 @@ async function initializeDatabaseOnce() {
 }
 // [DEBUG-MOMENTS-ROLES-END]
 
-// 增强版数据库就绪检查 - 在执行操作前确保数据库可用
-async function ensureDBReady(operation, context = '数据库操作') {
-    try {
-        // 首先等待数据库就绪
-        await waitForIndexedDBReady();
-        
-        // 然后执行操作，带重试机制
-        return await executeWithRetry(operation, context);
-        
-    } catch (error) {
-        console.error(`${context} - 确保数据库就绪失败:`, error);
-        
-        // 如果是连接问题，尝试重新连接
-        if (error.message.includes('超时') || error.message.includes('连接')) {
-            console.log(`${context} - 检测到连接问题，触发重连...`);
-            handleConnectionLoss();
-        }
-        
-        throw error;
-    }
-}
 
 // --- 论坛功能 ---
 
@@ -5629,6 +4553,7 @@ function closeModal(modalId) {
     modal.style.display = 'none';
     if (modalId === 'addContactModal') {
         editingContact = null;
+        window.editingContact = null;
         document.getElementById('contactModalTitle').textContent = '添加AI助手';
         document.getElementById('contactName').value = '';
         document.getElementById('contactAvatar').value = '';
@@ -5646,8 +4571,8 @@ function closeModal(modalId) {
 function cleanupEmojiUploadData() {
     try {
         // 清理临时文件
-        if (tempEmojiFile) {
-            tempEmojiFile = null;
+        if (window.ImageUploadHandlers.tempEmojiFile) {
+            window.ImageUploadHandlers.tempEmojiFile = null;
         }
         
         // 清理临时URL
@@ -5685,6 +4610,7 @@ function cleanupEmojiUploadData() {
 
 function showAddContactModal() {
     editingContact = null;
+    window.editingContact = null;
     document.getElementById('contactModalTitle').textContent = '添加AI助手';
     
     // 清除所有输入框和状态提示
@@ -5706,6 +4632,7 @@ function showAddContactModal() {
 function showEditContactModal() {
     if (!currentContact) { showToast('请先选择联系人'); return; }
     editingContact = currentContact;
+    window.editingContact = editingContact;
     document.getElementById('contactModalTitle').textContent = '编辑AI助手';
     document.getElementById('contactName').value = currentContact.name;
     
@@ -5833,6 +4760,9 @@ async function showApiSettingsModal() {
         showToast('打开设置失败: ' + error.message);
     }
 }
+
+// 确保函数在全局作用域可用
+window.showApiSettingsModal = showApiSettingsModal;
 
 function showBackgroundModal() {
     // 异步包装函数
@@ -5967,6 +4897,9 @@ async function saveContact(event) {
     }
     await saveDataToDB(); // 使用IndexedDB保存
     await renderContactList();
+    if (editingContact && currentContact && editingContact.id === currentContact.id) {
+        await renderMessages(false);
+    }
     closeModal('addContactModal');
     
     // 清理自定义状态提示
@@ -6511,7 +5444,7 @@ async function sendUserMessage() {
     await addSingleMessage(userMessage, true); // 单独添加用户消息，使用动画
     await renderContactList();
     await saveDataToDB(); // 使用IndexedDB保存
-    safeFocus(input);
+    window.UIManager.safeFocus(input);
 }
 
 async function sendMessage() {
@@ -8493,18 +7426,19 @@ async function addEmoji(event) {
     const imageUrl = document.getElementById('emojiUrl').value;
     
     // 处理临时URL的情况：如果是临时URL但还有临时文件，先转换存储
-    if (imageUrl.startsWith('temp:') && tempEmojiFile) {
+    if (imageUrl.startsWith('temp:') && window.ImageUploadHandlers.tempEmojiFile) {
         try {
             const statusElement = document.getElementById('emojiUploadStatus');
-            await storeEmojiWithMeaning(tempEmojiFile, meaning, statusElement);
+            await window.ImageUploadHandlers.storeEmojiWithMeaning(window.ImageUploadHandlers.tempEmojiFile, meaning, statusElement);
             
             // 清理临时数据
             const tempUrl = imageUrl.substring(5);
             URL.revokeObjectURL(tempUrl);
-            tempEmojiFile = null;
+            window.ImageUploadHandlers.tempEmojiFile = null;
             
             // 获取新的fileId URL
             const newImageUrl = document.getElementById('emojiUrl').value;
+            
             if (!newImageUrl.startsWith('file:')) {
                 showToast('文件存储失败，请重试');
                 return;
@@ -9106,14 +8040,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('最终APIService状态:', !!window.apiService);
     console.log('========================');
     
-    // 优先初始化主题管理器，避免主题闪烁
-    window.themeManager.init();
-    
-    // 兼容性检测：检测浏览器是否支持 :has() 选择器
-    checkBrowserCompatibility();
-
-    setupServiceWorkerUpdater();
-        
+    // 注册Service Worker
+    if (window.SystemUtils && typeof window.SystemUtils.registerServiceWorker === 'function') {
+        window.SystemUtils.registerServiceWorker();
+    }
+          
     // 检查URL中是否有导入ID
     const urlParams = new URLSearchParams(window.location.search);
     const importId = urlParams.get('importId');
@@ -11780,7 +10711,7 @@ function showMomentComment(momentId) {
     const textarea = replyContainer.querySelector('.moment-reply-input');
     
     replyContainer.classList.add('active');
-    safeFocus(textarea, { delay: 100 });
+    window.UIManager.safeFocus(textarea, { delay: 100 });
     
     // 关闭菜单（发现页面才有菜单）
     if (!isInUserProfile) {
@@ -11896,7 +10827,7 @@ function showCommentReply(commentId, authorName, momentId) {
     const textarea = replyContainer.querySelector('.moment-reply-input');
     
     replyContainer.classList.add('active');
-    safeFocus(textarea, { delay: 100 });
+    window.UIManager.safeFocus(textarea, { delay: 100 });
     textarea.setAttribute('placeholder', `回复${authorName}...`);
 }
 
@@ -13840,150 +12771,6 @@ async function resetBubbleStyleToDefault() {
     }
 }
 
-function setupServiceWorkerUpdater() {
-    if ('serviceWorker' in navigator) {
-        let newWorker;
-        let refreshing = false;
-
-        // 监听 Service Worker 控制器变化（当新 SW 接管页面时）
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (refreshing) return;
-            console.log('Service Worker 控制器已更新，准备刷新页面...');
-            refreshing = true;
-            window.location.reload();
-        });
-
-        navigator.serviceWorker.ready.then(reg => {
-            console.log('Service Worker 就绪，开始监听更新...');
-            
-            // 手动检查更新（每 2 小时检查一次）
-            setInterval(() => {
-                console.log('手动检查 Service Worker 更新...');
-                reg.update();
-            }, 2 * 60 * 60 * 1000); // 2 小时
-
-            // 浏览器在后台发现新版本的 service-worker.js 文件时会触发 updatefound 事件
-            reg.addEventListener('updatefound', () => {
-                console.log('发现新的 Service Worker 版本！');
-                newWorker = reg.installing;
-                
-                newWorker.addEventListener('statechange', () => {
-                    console.log('Service Worker 状态变化:', newWorker.state);
-                    // newWorker.state 变为 installed，表示新 Service Worker 已安装完毕
-                    if (newWorker.state === 'installed') {
-                        // 检查当前是否有 Service Worker 在控制页面
-                        if (navigator.serviceWorker.controller) {
-                            // 这意味着页面被旧的 Service Worker 控制着，需要更新
-                            console.log('显示更新通知...');
-                            showUpdateNotification(newWorker);
-                        } else {
-                            // 首次安装 Service Worker
-                            console.log('Service Worker 首次安装完成');
-                        }
-                    }
-                });
-            });
-        }).catch(err => {
-            console.error('Service Worker ready 失败:', err);
-        });
-    }
-}
-
-// 显示更新提示的UI函数
-function showUpdateNotification(newWorker) {
-    let notification = document.getElementById('sw-update-notification');
-    if (!notification) {
-        notification = document.createElement('div');
-        notification.id = 'sw-update-notification';
-        // 更好看的样式
-        notification.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 16px 24px;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            font-size: 15px;
-            font-weight: 500;
-            min-width: 320px;
-            opacity: 0;
-            animation: slideUp 0.3s ease-out forwards;
-        `;
-        
-        // 添加动画样式
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideUp {
-                from {
-                    opacity: 0;
-                    transform: translate(-50%, 20px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translate(-50%, 0);
-                }
-            }
-        `;
-        document.head.appendChild(style);
-        
-        document.body.appendChild(notification);
-    }
-
-    // 创建更新按钮点击处理函数
-    const handleUpdate = () => {
-        console.log('用户确认更新，通知新 Service Worker 跳过等待...');
-        // 通知新的 Service Worker 跳过等待状态
-        if (newWorker) {
-            newWorker.postMessage({ type: 'SKIP_WAITING' });
-        }
-        // 隐藏通知
-        notification.style.display = 'none';
-    };
-
-    notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-            </svg>
-            <span>发现新版本！</span>
-        </div>
-        <div style="display: flex; gap: 12px;">
-            <button onclick="this.parentElement.parentElement.style.display='none'" 
-                style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;">
-                稍后
-            </button>
-            <button id="update-btn" 
-                style="background: rgba(255,255,255,0.9); color: #333; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
-                立即更新
-            </button>
-        </div>
-    `;
-    
-    // 绑定更新按钮事件
-    notification.querySelector('#update-btn').addEventListener('click', handleUpdate);
-    
-    notification.style.display = 'flex';
-    
-    // 30 秒后自动隐藏通知
-    setTimeout(() => {
-        if (notification && notification.style.display !== 'none') {
-            notification.style.opacity = '0.7';
-            notification.querySelector('span').textContent = '新版本可用（30秒后自动隐藏）';
-            setTimeout(() => {
-                if (notification && notification.style.display !== 'none') {
-                    notification.style.display = 'none';
-                }
-            }, 5000);
-        }
-    }, 30000);
-}
 
 // ===== 图片关键词优化相关函数 =====
 
@@ -15178,43 +13965,6 @@ window.statusBallManager = new StatusBallManager();
 
 
 /**
- * 检查特殊事件并处理相关逻辑
- */
-async function checkSpecialEvents() {
-    try {
-        const today = new Date();
-        const month = (today.getMonth() + 1).toString().padStart(2, '0');
-        const day = today.getDate().toString().padStart(2, '0');
-        const dateString = `${month}-${day}`;
-        
-        console.log('当前日期检查:', dateString);
-        
-        // 检查是否为8月29日
-        if (month === '08' && day === '29') {
-            console.log('今天是七夕节！'); // 保持原有日志，因为这是具体的日期判断
-            
-            // 检查是否为今日第一次打开应用
-            const lastSpecialEventVisit = localStorage.getItem('lastSpecialEventVisit');
-            const todayString = today.toDateString();
-            
-            if (lastSpecialEventVisit !== todayString) {
-                console.log('今日第一次打开应用，开始特殊事件流程');
-                
-                // 记录今日已访问
-                localStorage.setItem('lastSpecialEventVisit', todayString);
-                
-                // 启动特殊事件流程（七夕节）
-                await startSpecialEventFlow('qixi');
-            } else {
-                console.log('今日已处理过特殊事件流程');
-            }
-        }
-    } catch (error) {
-        console.error('特殊事件检查出错:', error);
-    }
-}
-
-/**
  * 开始特殊事件流程
  * @param {string} eventType - 事件类型 ('qixi', 'birthday', 'holiday' 等)
  */
@@ -15288,6 +14038,9 @@ async function startSpecialEventFlow(eventType = 'qixi') {
         showApiError(error);
     }
 }
+
+// 暴露特殊事件流程函数到全局
+window.startSpecialEventFlow = startSpecialEventFlow;
 
 /**
  * 显示状态球加载弹窗
@@ -16558,8 +15311,10 @@ async function loadCurrentConfigToForm() {
         fillField('apiUrl', activeConfig.url);
         fillField('apiKey', activeConfig.key);
         fillField('apiTimeout', activeConfig.timeout || 60);
-        fillField('minimaxGroupId', activeConfig.minimaxGroupId);
-        fillField('minimaxApiKey', activeConfig.minimaxApiKey);
+        
+        // Minimax配置从localStorage读取（单一全局配置，不属于API配置）
+        fillField('minimaxGroupId', localStorage.getItem('minimaxGroupId') || '');
+        fillField('minimaxApiKey', localStorage.getItem('minimaxApiKey') || '');
         
         // 上下文滑块
         const contextSlider = document.getElementById('contextSlider');
@@ -16732,11 +15487,22 @@ async function loadModelsForCurrentConfig() {
  * 清空配置表单
  */
 function clearConfigForm() {
-    const fields = ['configName', 'apiUrl', 'apiKey', 'apiTimeout', 'minimaxGroupId', 'minimaxApiKey'];
+    // 只清空API配置相关字段，不清空全局配置（Minimax, Unsplash等）
+    const fields = ['configName', 'apiUrl', 'apiKey', 'apiTimeout'];
     fields.forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
     });
+    
+    // Minimax字段保持不变，从localStorage读取
+    const minimaxGroupIdElement = document.getElementById('minimaxGroupId');
+    const minimaxApiKeyElement = document.getElementById('minimaxApiKey');
+    if (minimaxGroupIdElement) {
+        minimaxGroupIdElement.value = localStorage.getItem('minimaxGroupId') || '';
+    }
+    if (minimaxApiKeyElement) {
+        minimaxApiKeyElement.value = localStorage.getItem('minimaxApiKey') || '';
+    }
     
     const contextSlider = document.getElementById('contextSlider');
     const contextValue = document.getElementById('contextValue');

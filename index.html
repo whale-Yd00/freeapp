@@ -173,7 +173,7 @@
                     <div class="profile-item-label">记忆管理</div>
                     <div class="profile-item-arrow">›</div>
                 </div>
-                <div class="profile-item" onclick="showDebugLogPage()"
+                <div class="profile-item" onclick="window.SystemUtils.showDebugLogPage()"
                 data-umami-event="Debug Log Open">
                     <div class="profile-item-label">查看调试日志</div>
                     <div class="profile-item-arrow">›</div>
@@ -457,8 +457,8 @@
                 </div>
                 <div class="chat-title">调试日志</div>
                 <div class="header-actions">
-                    <button class="header-btn" onclick="clearDebugLogs()">清空</button>
-                    <button class="header-btn" onclick="copyDebugLogs()">复制</button>
+                    <button class="header-btn" onclick="window.SystemUtils.clearDebugLogs()">清空</button>
+                    <button class="header-btn" onclick="window.SystemUtils.copyDebugLogs()">复制</button>
                 </div>
             </div>
             
@@ -496,21 +496,21 @@
                     <p class="appearance-section-desc">选择你喜欢的主题模式，支持跟随系统设置</p>
                     
                     <div class="theme-mode-grid">
-                        <div class="theme-mode-option active" data-theme="system" onclick="switchTheme('system')">
+                        <div class="theme-mode-option active" data-theme="system" onclick="window.UIManager.switchTheme('system')">
                             <div class="theme-mode-icon">🔄</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">跟随系统</div>
                                 <div class="theme-mode-desc">自动跟随系统暗色模式</div>
                             </div>
                         </div>
-                        <div class="theme-mode-option" data-theme="light" onclick="switchTheme('light')">
+                        <div class="theme-mode-option" data-theme="light" onclick="window.UIManager.switchTheme('light')">
                             <div class="theme-mode-icon">☀️</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">亮色模式</div>
                                 <div class="theme-mode-desc">始终使用亮色主题</div>
                             </div>
                         </div>
-                        <div class="theme-mode-option" data-theme="dark" onclick="switchTheme('dark')">
+                        <div class="theme-mode-option" data-theme="dark" onclick="window.UIManager.switchTheme('dark')">
                             <div class="theme-mode-icon">🌙</div>
                             <div class="theme-mode-content">
                                 <div class="theme-mode-name">暗黑模式</div>
@@ -830,7 +830,7 @@
             <!-- 新增删除聊天对象选项 -->
             <div class="menu-item delete-item" onclick="deleteCurrentContact()">删除聊天对象</div>
             <!-- 调试功能 -->
-            <div class="menu-item" onclick="exportConsoleLogs()">导出调试日志</div>
+            <div class="menu-item" onclick="window.SystemUtils.exportConsoleLogs()">导出调试日志</div>
         </div>
     </div>
 
@@ -991,7 +991,7 @@
                         <label class="form-label">头像（可选）</label>
                         <input type="url" class="form-input" id="contactAvatar" placeholder="可直接粘贴URL或上传本地图片">
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleContactAvatarUpload(event)">
+                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleContactAvatarUpload(event, window.editingContact)">
                             <span id="avatarUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -1249,7 +1249,7 @@
                         <label class="form-label">背景图片</label>
                         <input type="url" class="form-input" id="backgroundUrl" placeholder="可直接粘贴URL或上传本地图片">
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="handleBgUpload(event)">
+                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="window.ImageUploadHandlers.handleBgUpload(event)">
                             <span id="bgUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -1271,7 +1271,7 @@
                         <label class="form-label">表情图片</label>
                         <input type="url" class="form-input" id="emojiUrl" placeholder="可直接粘贴URL或上传本地图片" required>
                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="handleEmojiFileUpload(event)">
+                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="window.ImageUploadHandlers.handleEmojiFileUpload(event)">
                             <span id="emojiUploadStatus" style="font-size: 12px; color: #07c160;"></span>
                         </div>
                     </div>
@@ -1641,8 +1641,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="utils/viewportManager.js"></script>
+    <script src="utils/uiManager.js"></script>
     <script src="js/api.js"></script>
+    <script src="utils/dataMigrator.js"></script>
     <script src="script.js?v=1.1"></script>
     <script src="utils/promptBuilder.js?v=1.1"></script>
     <script src="utils/memoryTable.js?v=1.1"></script>
@@ -1652,10 +1653,9 @@
     <script src="utils/imageMigrationManager.js"></script>
     <script src="utils/chatEmojiMigrationManager.js"></script>
     <script src="utils/voiceStorageAPI.js"></script>
-    <script src="utils/dataMigrator.js"></script>
     <script src="utils/fileStorageExporter.js"></script>
     <script src="utils/fileStorageImporter.js"></script>
-    <script src="utils/announcementManager.js"></script>
+    <script src="utils/systemUtilities.js"></script>
     <script src="utils/characterMemory.js"></script>
     <script src="utils/imageKeywordGenerator.js"></script>
     
