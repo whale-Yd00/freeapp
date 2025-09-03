@@ -214,10 +214,10 @@
                             <div id="persistentStatusIndicator" style="font-size: 13px; font-weight: bold;">
                                 ⏳ 检查中...
                             </div>
-                            <button type="button" onclick="showPersistentStorageInfo()" 
-                                    style="width: 18px; height: 18px; border-radius: 50%; background: #FFB6C1; color: white; border: none; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"
+                            <button type="button" onclick="StorageManager.showPersistentStorageInfo()" 
+                                    style="width: 18px; height: 18px; border-radius: 50%; background: #007bff; color: white; border: none; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"
                                     title="点击查看持久化存储说明">
-                                ?
+                                !
                             </button>
                         </div>
                     </div>
@@ -229,7 +229,7 @@
                                 style="padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
                             刷新统计
                         </button>
-                        <button type="button" class="request-persistent-btn" onclick="requestPersistentStorageAndRefresh()" 
+                        <button type="button" class="request-persistent-btn" onclick="StorageManager.requestPersistentStorageAndRefresh()" 
                                 style="padding: 5px 10px; font-size: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;" title="申请将数据库设为持久化存储，防止被浏览器清理">
                             💾 申请持久化数据库
                         </button>
@@ -1689,5 +1689,37 @@
             });
         }
     </script>
+    
+    <!-- 持久化存储说明模态框 -->
+    <div id="persistentStorageInfoModal" class="modal-overlay hidden" onclick="if(event.target === this) StorageManager.closePersistentStorageInfo()">
+        <div class="modal-content">
+            <div class="modal-header">
+                📚 数据持久化存储说明
+            </div>
+            <div class="modal-body">
+                <p><strong>什么是数据持久化存储？</strong></p>
+                <p>数据持久化存储，代表数据不会轻易被设备/浏览器清除。</p>
+                
+                <p><strong>为什么需要？</strong></p>
+                <p>若未持久存储，则可能会被随时清理，导致数据丢失。</p>
+                
+                <p><strong>如何获得？</strong></p>
+                <p>请尝试"申请持久化数据库"按钮。若申请未通过，可以尝试：</p>
+                <ul>
+                    <li>多访问网页，增加使用频率</li>
+                    <li>等几天再尝试申请</li>
+                    <li>将网站添加到书签</li>
+                </ul>
+                
+                <p><strong>期间建议</strong></p>
+                <p>申请期间，请频繁备份数据以防丢失。</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close-btn" onclick="StorageManager.closePersistentStorageInfo()">
+                    我知道了
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

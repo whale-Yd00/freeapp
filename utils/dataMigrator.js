@@ -1175,24 +1175,11 @@ window.refreshDatabaseStats = async function() {
         // 同时检查persistent状态和数据库统计
         const [result, persistentResult] = await Promise.all([
             window.DatabaseManager.getStats(),
-            window.checkPersistentStorage()
+            window.StorageManager.checkPersistentStorage()
         ]);
         
-        // 更新persistent状态指示器
-        if (persistentIndicator) {
-            if (persistentResult.success) {
-                if (persistentResult.isPersistent) {
-                    persistentIndicator.innerHTML = '🎉🟢数据已持久存储';
-                    persistentIndicator.style.color = '#28a745';
-                } else {
-                    persistentIndicator.innerHTML = '❤️‍🩹🟡数据未持久存储';
-                    persistentIndicator.style.color = '#ffc107';
-                }
-            } else {
-                persistentIndicator.innerHTML = '❓状态未知';
-                persistentIndicator.style.color = '#6c757d';
-            }
-        }
+        // 更新persistent状态指示器 - 使用CSS驱动的状态管理
+        window.StorageManager.updatePersistentStatusIndicator(persistentResult);
         
         if (result.success) {
             const stats = result.stats;
@@ -3148,207 +3135,182 @@ if (typeof window !== 'undefined' && window.isIndexedDBReady) {
 // ==== 持久化存储管理功能 ====
 
 /**
- * 检查IndexedDB是否为持久化存储
+ * 持久化存储管理器 - 统一管理所有与持久化存储相关的功能
+ * 避免全局命名空间污染，提供清晰的功能分组
  */
-window.checkPersistentStorage = async function() {
-    try {
-        if ('storage' in navigator && 'persisted' in navigator.storage) {
-            const isPersistent = await navigator.storage.persisted();
-            const estimate = await navigator.storage.estimate();
-            
-            return {
-                success: true,
-                isPersistent: isPersistent,
-                estimate: estimate
-            };
-        } else {
+window.StorageManager = {
+    /**
+     * 检查IndexedDB是否为持久化存储
+     */
+    async checkPersistentStorage() {
+        try {
+            if ('storage' in navigator && 'persisted' in navigator.storage) {
+                const isPersistent = await navigator.storage.persisted();
+                const estimate = await navigator.storage.estimate();
+                
+                return {
+                    success: true,
+                    isPersistent: isPersistent,
+                    estimate: estimate
+                };
+            } else {
+                return {
+                    success: false,
+                    error: '浏览器不支持Storage API',
+                    isPersistent: false
+                };
+            }
+        } catch (error) {
+            console.error('检查持久化存储状态失败:', error);
             return {
                 success: false,
-                error: '浏览器不支持Storage API',
+                error: error.message,
                 isPersistent: false
             };
         }
-    } catch (error) {
-        console.error('检查持久化存储状态失败:', error);
-        return {
-            success: false,
-            error: error.message,
-            isPersistent: false
-        };
-    }
-};
+    },
 
-/**
- * 申请持久化存储权限
- */
-window.requestPersistentStorage = async function() {
-    try {
-        if ('storage' in navigator && 'persist' in navigator.storage) {
-            const granted = await navigator.storage.persist();
-            const estimate = await navigator.storage.estimate();
-            
-            return {
-                success: true,
-                granted: granted,
-                estimate: estimate,
-                message: granted ? '持久化存储申请成功！数据现在更安全了。' : '持久化存储申请未通过，建议多访问网页、等几天再尝试。'
-            };
-        } else {
+    /**
+     * 申请持久化存储权限
+     */
+    async requestPersistentStorage() {
+        try {
+            if ('storage' in navigator && 'persist' in navigator.storage) {
+                const granted = await navigator.storage.persist();
+                const estimate = await navigator.storage.estimate();
+                
+                return {
+                    success: true,
+                    granted: granted,
+                    estimate: estimate,
+                    message: granted ? '持久化存储申请成功！数据现在更安全了。' : '持久化存储申请未通过，建议多访问网页、等几天再尝试。'
+                };
+            } else {
+                return {
+                    success: false,
+                    error: '浏览器不支持Storage API',
+                    granted: false
+                };
+            }
+        } catch (error) {
+            console.error('申请持久化存储失败:', error);
             return {
                 success: false,
-                error: '浏览器不支持Storage API',
+                error: error.message,
                 granted: false
             };
         }
-    } catch (error) {
-        console.error('申请持久化存储失败:', error);
-        return {
-            success: false,
-            error: error.message,
-            granted: false
-        };
-    }
-};
+    },
 
-/**
- * 申请持久化存储并刷新状态
- */
-window.requestPersistentStorageAndRefresh = async function() {
-    const requestBtn = document.querySelector('.request-persistent-btn');
-    const persistentIndicator = document.getElementById('persistentStatusIndicator');
-    
-    try {
-        if (requestBtn) {
-            requestBtn.textContent = '申请中...';
-            requestBtn.disabled = true;
-        }
+    /**
+     * 更新持久化状态指示器 - 使用CSS驱动的状态管理
+     */
+    updatePersistentStatusIndicator(persistentResult) {
+        const persistentIndicator = document.getElementById('persistentStatusIndicator');
+        if (!persistentIndicator) return;
+
+        let status = 'unknown';
+        let content = '❓状态未知';
         
-        if (persistentIndicator) {
-            persistentIndicator.innerHTML = '⏳ 申请中...';
-            persistentIndicator.style.color = '#6c757d';
-        }
-        
-        const result = await window.requestPersistentStorage();
-        
-        if (result.success) {
-            if (typeof showToast === 'function') {
-                showToast(result.message);
+        if (persistentResult.success) {
+            if (persistentResult.isPersistent) {
+                status = 'persistent';
+                content = '🎉🟢数据已持久存储';
             } else {
-                alert(result.message);
+                status = 'not-persistent';
+                content = '❤️‍🩹🟡数据未持久存储';
             }
-            
-            // 刷新状态显示
-            setTimeout(() => {
-                if (typeof window.refreshDatabaseStats === 'function') {
-                    window.refreshDatabaseStats();
-                }
-            }, 500);
-            
-        } else {
-            if (typeof showToast === 'function') {
-                showToast('申请失败: ' + result.error);
-            } else {
-                alert('申请失败: ' + result.error);
+        }
+        
+        // 使用 data-* 属性控制样式，实现关注点分离
+        persistentIndicator.dataset.status = status;
+        persistentIndicator.innerHTML = content;
+    },
+
+    /**
+     * 申请持久化存储并刷新状态
+     */
+    async requestPersistentStorageAndRefresh() {
+        const requestBtn = document.querySelector('.request-persistent-btn');
+        const persistentIndicator = document.getElementById('persistentStatusIndicator');
+        
+        try {
+            if (requestBtn) {
+                requestBtn.textContent = '申请中...';
+                requestBtn.disabled = true;
             }
             
             if (persistentIndicator) {
-                persistentIndicator.innerHTML = '❌ 申请失败';
-                persistentIndicator.style.color = '#dc3545';
+                persistentIndicator.innerHTML = '⏳ 申请中...';
+                persistentIndicator.dataset.status = 'requesting';
+            }
+            
+            const result = await this.requestPersistentStorage();
+            
+            if (result.success) {
+                if (typeof showToast === 'function') {
+                    showToast(result.message);
+                } else {
+                    alert(result.message);
+                }
+                
+                // 刷新状态显示
+                setTimeout(() => {
+                    if (typeof window.refreshDatabaseStats === 'function') {
+                        window.refreshDatabaseStats();
+                    }
+                }, 500);
+                
+            } else {
+                if (typeof showToast === 'function') {
+                    showToast('申请失败: ' + result.error);
+                } else {
+                    alert('申请失败: ' + result.error);
+                }
+                
+                if (persistentIndicator) {
+                    persistentIndicator.innerHTML = '❌ 申请失败';
+                    persistentIndicator.dataset.status = 'error';
+                }
+            }
+        } catch (error) {
+            console.error('申请持久化存储出错:', error);
+            
+            if (typeof showToast === 'function') {
+                showToast('申请出错: ' + error.message);
+            } else {
+                alert('申请出错: ' + error.message);
+            }
+            
+            if (persistentIndicator) {
+                persistentIndicator.innerHTML = '❌ 申请出错';
+                persistentIndicator.dataset.status = 'error';
+            }
+        } finally {
+            if (requestBtn) {
+                requestBtn.textContent = '💾 申请持久化数据库';
+                requestBtn.disabled = false;
             }
         }
-    } catch (error) {
-        console.error('申请持久化存储出错:', error);
-        
-        if (typeof showToast === 'function') {
-            showToast('申请出错: ' + error.message);
-        } else {
-            alert('申请出错: ' + error.message);
+    },
+
+    /**
+     * 显示持久化存储说明弹窗 - 使用预定义HTML结构
+     */
+    showPersistentStorageInfo() {
+        const modal = document.getElementById('persistentStorageInfoModal');
+        if (modal) {
+            modal.classList.remove('hidden');
         }
-        
-        if (persistentIndicator) {
-            persistentIndicator.innerHTML = '❌ 申请出错';
-            persistentIndicator.style.color = '#dc3545';
-        }
-    } finally {
-        if (requestBtn) {
-            requestBtn.textContent = '💾 申请持久化数据库';
-            requestBtn.disabled = false;
+    },
+
+    /**
+     * 关闭持久化存储说明弹窗
+     */
+    closePersistentStorageInfo() {
+        const modal = document.getElementById('persistentStorageInfoModal');
+        if (modal) {
+            modal.classList.add('hidden');
         }
     }
-};
-
-/**
- * 显示持久化存储说明弹窗
- */
-window.showPersistentStorageInfo = function() {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        padding: 20px;
-    `;
-    
-    const content = document.createElement('div');
-    content.style.cssText = `
-        background: white;
-        border-radius: 8px;
-        padding: 20px;
-        max-width: 400px;
-        max-height: 80vh;
-        overflow-y: auto;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    `;
-    
-    content.innerHTML = `
-        <div style="font-size: 16px; font-weight: bold; margin-bottom: 15px; color: #333;">
-            📚 数据持久化存储说明
-        </div>
-        <div style="font-size: 14px; line-height: 1.6; color: #666; margin-bottom: 20px;">
-            <p><strong>什么是数据持久化存储？</strong></p>
-            <p>数据持久化存储，代表数据不会轻易被设备/浏览器清除。</p>
-            
-            <p><strong>为什么需要？</strong></p>
-            <p>若未持久存储，则可能会被随时清理，导致数据丢失。</p>
-            
-            <p><strong>如何获得？</strong></p>
-            <p>请尝试"申请持久化数据库"按钮。若申请未通过，可以尝试：</p>
-            <ul style="margin: 8px 0; padding-left: 20px;">
-                <li>多访问网页，增加使用频率</li>
-                <li>将网站添加到书签或收藏</li>
-                <li>等几天再尝试申请</li>
-            </ul>
-            
-            <p><strong>建议</strong></p>
-            <p>若申请持久化存储失败，请频繁备份数据以防丢失，并几天后重试。</p>
-        </div>
-        <div style="display: flex; gap: 10px;">
-            <button id="closeInfoModal" style="flex: 1; padding: 10px; background: #FFB6C1; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                我知道了
-            </button>
-        </div>
-    `;
-    
-    modal.appendChild(content);
-    document.body.appendChild(modal);
-    
-    // 关闭按钮事件
-    document.getElementById('closeInfoModal').onclick = () => {
-        document.body.removeChild(modal);
-    };
-    
-    // 点击背景关闭
-    modal.onclick = (e) => {
-        if (e.target === modal) {
-            document.body.removeChild(modal);
-        }
-    };
 };

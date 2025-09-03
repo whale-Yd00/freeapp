@@ -5394,3 +5394,148 @@ body {
         width: 35px;
     }
 }
+
+/* ==== 持久化存储管理样式 ==== */
+
+/* 持久化状态指示器样式 - CSS驱动的状态管理 */
+#persistentStatusIndicator[data-status="persistent"] {
+    color: #28a745;
+}
+
+#persistentStatusIndicator[data-status="not-persistent"] {
+    color: #ffc107;
+}
+
+#persistentStatusIndicator[data-status="unknown"] {
+    color: #6c757d;
+}
+
+#persistentStatusIndicator[data-status="requesting"] {
+    color: #6c757d;
+}
+
+#persistentStatusIndicator[data-status="error"] {
+    color: #dc3545;
+}
+
+/* 模态框样式 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--overlay-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+    transition: opacity 0.2s ease-in-out;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: var(--modal-bg);
+    border-radius: 8px;
+    padding: 0;
+    max-width: 400px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 4px 12px var(--shadow-color);
+    color: var(--text-primary);
+    animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal-header {
+    font-size: 16px;
+    font-weight: bold;
+    padding: 20px 20px 15px 20px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-body {
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.modal-body p {
+    margin-bottom: 10px;
+}
+
+.modal-body ul {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.modal-body li {
+    margin-bottom: 4px;
+}
+
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.modal-close-btn {
+    flex: 1;
+    padding: 10px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.modal-close-btn:hover {
+    background: #0056b3;
+}
+
+.modal-close-btn:active {
+    background: #004085;
+}
+
+/* 响应式设计 */
+@media (max-width: 480px) {
+    .modal-content {
+        max-width: 90vw;
+        margin: 0 auto;
+    }
+    
+    .modal-header {
+        font-size: 15px;
+        padding: 15px;
+    }
+    
+    .modal-body {
+        padding: 15px;
+        font-size: 13px;
+    }
+    
+    .modal-footer {
+        padding: 15px;
+    }
+}
