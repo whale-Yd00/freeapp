@@ -1120,6 +1120,7 @@ window.ImageUploadHandlers = {
 };
 
 // 为了向后兼容，保留主要的全局引用
+// TODO: Remove these global assignments once all code is updated to use ImageUploadHandlers.
 window.handleContactAvatarUpload = handleContactAvatarUpload;
 window.handleProfileAvatarUpload = handleProfileAvatarUpload;
 
