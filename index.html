@@ -208,14 +208,30 @@
             <div class="data-management-container">
                 <!-- 数据统计信息 -->
                 <div class="database-stats" style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px; margin-bottom: 15px;">
-                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">数据统计</h4>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0; font-size: 18px; font-weight: bold; color: #333;">数据统计</h3>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div id="persistentStatusIndicator" style="font-size: 13px; font-weight: bold;">
+                                ⏳ 检查中...
+                            </div>
+                            <button type="button" onclick="showPersistentStorageInfo()" 
+                                    style="width: 18px; height: 18px; border-radius: 50%; background: #FFB6C1; color: white; border: none; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold;"
+                                    title="点击查看持久化存储说明">
+                                ?
+                            </button>
+                        </div>
+                    </div>
                     <div id="databaseStatsContent" style="font-size: 13px; color: #666;">
                         <div>正在加载统计信息...</div>
                     </div>
-                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
                         <button type="button" class="refresh-stats-btn" onclick="refreshDatabaseStats()" 
                                 style="padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
                             刷新统计
+                        </button>
+                        <button type="button" class="request-persistent-btn" onclick="requestPersistentStorageAndRefresh()" 
+                                style="padding: 5px 10px; font-size: 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;" title="申请将数据库设为持久化存储，防止被浏览器清理">
+                            💾 申请持久化数据库
                         </button>
                         <button type="button" class="optimize-db-btn" onclick="optimizeEmojiDatabase()" 
                                 style="padding: 5px 10px; font-size: 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;" title="将Base64表情转换为标签格式，减小数据库体积">
