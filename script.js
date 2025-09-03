@@ -11900,10 +11900,17 @@ function applyThemeColor(color) {
     const lightColor = hexToRgba(color, 0.1);
     const hoverColor = darkenColor(color, 0.1);
     
+    // 计算次要色的交互状态（用于模态框、信息按钮等UI元素）
+    const secondaryColor = '#1890ff'; // 固定的次要色
+    const secondaryHover = darkenColor(secondaryColor, 0.15);
+    const secondaryActive = darkenColor(secondaryColor, 0.25);
+    
     // 更新CSS变量
     document.documentElement.style.setProperty('--theme-primary', color);
     document.documentElement.style.setProperty('--theme-primary-light', lightColor);
     document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
+    document.documentElement.style.setProperty('--theme-secondary-hover', secondaryHover);
+    document.documentElement.style.setProperty('--theme-secondary-active', secondaryActive);
     document.documentElement.style.setProperty('--use-gradient', '0');
     
     // 更新meta标签中的主题色（影响系统状态栏）
@@ -11930,11 +11937,17 @@ function applyGradientTheme(primaryColor, secondaryColor, direction) {
     const lightColor = hexToRgba(primaryColor, 0.1);
     const hoverColor = darkenColor(primaryColor, 0.1);
     
+    // 在渐变模式下，使用渐变的次要色作为UI元素的次要色
+    const secondaryHover = darkenColor(secondaryColor, 0.15);
+    const secondaryActive = darkenColor(secondaryColor, 0.25);
+    
     // 更新CSS变量
     document.documentElement.style.setProperty('--theme-primary', primaryColor);
     document.documentElement.style.setProperty('--theme-secondary', secondaryColor);
     document.documentElement.style.setProperty('--theme-primary-light', lightColor);
     document.documentElement.style.setProperty('--theme-primary-hover', hoverColor);
+    document.documentElement.style.setProperty('--theme-secondary-hover', secondaryHover);
+    document.documentElement.style.setProperty('--theme-secondary-active', secondaryActive);
     document.documentElement.style.setProperty('--theme-gradient-direction', direction);
     document.documentElement.style.setProperty('--theme-gradient', `linear-gradient(${direction}, ${primaryColor}, ${secondaryColor})`);
     document.documentElement.style.setProperty('--use-gradient', '1');
