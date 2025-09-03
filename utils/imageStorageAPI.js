@@ -1028,6 +1028,7 @@ async function handleEmojiFileUpload(event) {
         
         // 简单存储文件对象，等待保存时处理
         tempEmojiFile = file;
+        window.ImageUploadHandlers.tempEmojiFile = file;  // 同步更新到暴露的对象中
         
         const statusElement = document.getElementById('emojiUploadStatus');
         if (statusElement) {

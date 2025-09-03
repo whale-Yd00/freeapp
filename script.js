@@ -7422,6 +7422,16 @@ async function addEmoji(event) {
     
     const imageUrl = document.getElementById('emojiUrl').value;
     
+    console.log('addEmoji: 检查条件:', {
+        imageUrl: imageUrl,
+        imageUrlStartsWithTemp: imageUrl.startsWith('temp:'),
+        hasTempEmojiFile: !!window.ImageUploadHandlers.tempEmojiFile,
+        tempEmojiFile: window.ImageUploadHandlers.tempEmojiFile ? {
+            name: window.ImageUploadHandlers.tempEmojiFile.name,
+            size: window.ImageUploadHandlers.tempEmojiFile.size
+        } : 'null'
+    });
+    
     // 处理临时URL的情况：如果是临时URL但还有临时文件，先转换存储
     if (imageUrl.startsWith('temp:') && window.ImageUploadHandlers.tempEmojiFile) {
         console.log('addEmoji: 检测到临时文件，开始转换存储:', {
