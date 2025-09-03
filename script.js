@@ -6012,16 +6012,9 @@ async function callAPI(contact, turnContext = []) {
             else if (chatRepliesText.includes('||')) {
                 replies = chatRepliesText.split('||').map(r => r.trim()).filter(r => r);
             }
-            // 如果都没有，按句子分割
+            // 如果都没有，按换行符分割
             else {
-                const sentences = chatRepliesText.split(/([。！？\n])/).filter(Boolean);
-                let tempReplies = [];
-                for (let i = 0; i < sentences.length; i += 2) {
-                    let sentence = sentences[i];
-                    let punctuation = sentences[i+1] || '';
-                    tempReplies.push(sentence + punctuation);
-                }
-                replies = tempReplies;
+                replies = chatRepliesText.split('\n').map(r => r.trim()).filter(r => r);
             }
         }
         const processedReplies = [];
