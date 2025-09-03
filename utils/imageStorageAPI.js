@@ -276,6 +276,15 @@ class ImageStorageAPI {
         await this.init();
 
         try {
+            console.log('ImageStorageAPI.storeEmoji 开始执行:', {
+                imageData: imageData ? {
+                    type: imageData.constructor.name,
+                    size: imageData instanceof File || imageData instanceof Blob ? imageData.size : 'unknown',
+                    mimeType: imageData instanceof File || imageData instanceof Blob ? imageData.type : 'unknown'
+                } : 'null',
+                emojiTag: emojiTag
+            });
+            
             // 验证输入参数
             if (!imageData) {
                 throw new DetailedError('FILE_MISSING', '没有选择表情包图片');
@@ -296,11 +305,18 @@ class ImageStorageAPI {
                 }
             }
 
+            console.log('开始存储文件到文件系统...');
             const result = await this.fileManager.storeFile(imageData, {
                 type: 'emoji',
                 tag: emojiTag
             });
+            console.log('文件存储结果:', result);
 
+            console.log('开始创建文件引用:', {
+                fileId: result.fileId,
+                category: 'emoji',
+                referenceKey: emojiTag
+            });
             await this.fileManager.createFileReference(
                 result.fileId,
                 'emoji',
@@ -309,8 +325,10 @@ class ImageStorageAPI {
                     storedAt: new Date().toISOString()
                 }
             );
+            console.log('文件引用创建完成');
 
             // 表情包存储成功
+            console.log('ImageStorageAPI.storeEmoji 成功完成，返回fileId:', result.fileId);
             return result.fileId;
 
         } catch (error) {
@@ -1034,13 +1052,21 @@ async function handleEmojiFileUpload(event) {
  */
 async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
     try {
+        console.log('storeEmojiWithMeaning 开始执行:', {
+            file: file ? {name: file.name, size: file.size, type: file.type} : 'null',
+            emojiTag: emojiTag,
+            hasImageStorageAPI: !!window.ImageStorageAPI
+        });
+        
         if (statusElement) statusElement.textContent = '正在存储...';
         
         // 直接传递File对象给ImageStorageAPI，让它处理数据类型转换
         const fileId = await window.ImageStorageAPI.storeEmoji(file, emojiTag);
+        console.log('ImageStorageAPI.storeEmoji 返回的 fileId:', fileId);
         
         if (fileId) {
             document.getElementById('emojiUrl').value = `file:${fileId}`;
+            console.log('已更新 emojiUrl 输入框为:', `file:${fileId}`);
             
             if (statusElement) {
                 statusElement.textContent = '存储成功';
@@ -1049,6 +1075,9 @@ async function storeEmojiWithMeaning(file, emojiTag, statusElement) {
             
             console.log('表情包存储成功，文件ID:', fileId);
             return fileId;
+        } else {
+            console.warn('storeEmoji 返回了空的 fileId');
+            throw new Error('存储返回空的文件ID');
         }
     } catch (error) {
         console.error('表情包存储失败:', error);
