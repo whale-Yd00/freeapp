@@ -4,6 +4,8 @@
     --theme-primary-light: rgba(7, 193, 96, 0.1);
     --theme-primary-hover: #06a84f;
     --theme-secondary: #1890ff;
+    --theme-secondary-hover: #0078d4;
+    --theme-secondary-active: #106ebe;
     --theme-gradient-direction: to right;
     --theme-gradient: linear-gradient(var(--theme-gradient-direction), var(--theme-primary), var(--theme-secondary));
     --use-gradient: 0; /* 0 = 不使用渐变, 1 = 使用渐变 */
@@ -35,6 +37,10 @@
     --input-bg: #2d2d2d;
     --modal-bg: #1a1a1a;
     --overlay-bg: rgba(0, 0, 0, 0.7);
+    
+    /* 暗色模式下的主题色适配 */
+    --theme-secondary-hover: #4dabf7;
+    --theme-secondary-active: #339af0;
 }
 
 /* 系统主题检测 */
@@ -51,6 +57,10 @@
         --input-bg: #2d2d2d;
         --modal-bg: #1a1a1a;
         --overlay-bg: rgba(0, 0, 0, 0.7);
+        
+        /* 系统暗色主题下的主题色适配 */
+        --theme-secondary-hover: #4dabf7;
+        --theme-secondary-active: #339af0;
     }
 }
 
@@ -5501,7 +5511,7 @@ body {
 .modal-close-btn {
     flex: 1;
     padding: 10px;
-    background: #007bff;
+    background: var(--theme-secondary);
     color: white;
     border: none;
     border-radius: 4px;
@@ -5511,11 +5521,11 @@ body {
 }
 
 .modal-close-btn:hover {
-    background: #0056b3;
+    background: var(--theme-secondary-hover);
 }
 
 .modal-close-btn:active {
-    background: #004085;
+    background: var(--theme-secondary-active);
 }
 
 /* 信息按钮样式 - 使用主题色 */
