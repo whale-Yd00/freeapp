@@ -5340,14 +5340,10 @@ async function sendMessage() {
             const { replies } = await callChatAPIWithPriority(currentContact, [], true);
             hideTypingIndicator();
             
-            // 异步更新记忆表格（不阻塞后续流程）
-            setTimeout(async () => {
-                try {
-                    await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
-                } catch (error) {
-                    console.warn('记忆表格更新失败:', error);
-                }
-            }, 1000);
+            // 异步更新记忆表格（使用API队列，不阻塞用户操作）
+            if (window.updateMemoryTableWithSecondaryModel) {
+                window.updateMemoryTableWithSecondaryModel(currentContact, true);
+            }
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
             
             // 批量处理AI回复，避免每条消息都重新渲染
@@ -7438,14 +7434,10 @@ async function sendEmoji(emoji) {
         const { replies } = await callAPI(currentContact);
         hideTypingIndicator();
         
-        // 异步更新记忆表格（不阻塞后续流程）
-        setTimeout(async () => {
-            try {
-                await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
-            } catch (error) {
-                console.warn('记忆表格更新失败:', error);
-            }
-        }, 1000);
+        // 异步更新记忆表格（使用API队列，不阻塞用户操作）
+        if (window.updateMemoryTableWithSecondaryModel) {
+            window.updateMemoryTableWithSecondaryModel(currentContact, true);
+        }
         if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
         for (const response of replies) {
             await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));
@@ -13132,6 +13124,32 @@ const STATUS_BALL_CONFIGS = {
             processing: '后台处理，不影响聊天',
             completed: '已为好友生成中秋祝福'
         }
+    },
+    // 新增：记忆管理状态配置
+    memory_update: {
+        name: '记忆管理',
+        emoji: '🧠',
+        completedEmoji: '✨',
+        theme: {
+            primary: '#6c63ff',
+            gradient: 'linear-gradient(135deg, #6c63ff 0%, #5a52d6 100%)',  // 紫蓝渐变
+            alternativeGradients: [
+                'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',  // 蓝紫渐变
+                'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',  // 蓝青渐变
+                'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)'   // 清新渐变
+            ]
+        },
+        titles: {
+            loading: '记忆系统准备中',
+            processing: '更新联系人记忆中',
+            completed: '记忆更新完成'
+        },
+        descriptions: {
+            loading: '正在初始化记忆管理',
+            processing: '后台处理，不影响聊天',
+            completed: '联系人记忆已更新'
+        },
+        priority: 3 // 低优先级，不影响重要任务
     }
 };
 
