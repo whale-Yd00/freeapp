@@ -97,10 +97,10 @@ function closeModal(modalId) {
         Object.entries(elements).forEach(([id, value]) => {
             const element = document.getElementById(id);
             if (element) {
-                if (element.textContent !== undefined) {
-                    element.textContent = value;
-                } else {
+                if (element.nodeName === 'INPUT' || element.nodeName === 'TEXTAREA') {
                     element.value = value;
+                } else {
+                    element.textContent = value;
                 }
             }
         });
@@ -120,8 +120,34 @@ function cleanupEmojiUploadData() {
             window.ImageUploadHandlers.tempEmojiFile = null;
         }
         
-        // 清理其他临时数据...
-        // 这里可以根据需要添加更多清理逻辑
+        // 清理临时URL
+        const emojiUrlInput = document.getElementById('emojiUrl');
+        if (emojiUrlInput && emojiUrlInput.value.startsWith('temp:')) {
+            const tempUrl = emojiUrlInput.value.substring(5);
+            URL.revokeObjectURL(tempUrl);
+            emojiUrlInput.value = '';
+        }
+        
+        // 清理文件输入
+        const fileInput = document.getElementById('emojiUploadInput');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+        
+        // 清理状态提示
+        const statusElement = document.getElementById('emojiUploadStatus');
+        if (statusElement) {
+            statusElement.textContent = '';
+            statusElement.style.color = '';
+        }
+        
+        // 清理意思输入框
+        const meaningInput = document.getElementById('emojiMeaning');
+        if (meaningInput) {
+            meaningInput.value = '';
+        }
+        
+        console.log('表情包上传临时数据已清理');
     } catch (error) {
         console.warn('清理表情包临时数据时出错:', error);
     }
