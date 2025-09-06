@@ -5976,14 +5976,14 @@ async function testApiConnection() {
 
     } catch (error) {
         console.error('测试连接失败:', error);
-        showToast('连接失败: ' + error.message);
         
-        // 标记测试失败的key为失败状态
+        // 标记测试失败的key为失败状态，并传递具体错误信息
         if (keyElement) {
             console.log('标记key为失败状态:', keyElement.id || 'secondary key');
-            markKeyAsFailed(keyElement);
+            markKeyAsFailed(keyElement, '连接失败: ' + error.message);
         } else {
             console.error('无法标记key为失败状态: keyElement为null');
+            showToast('连接失败: ' + error.message);
         }
     }
 }
@@ -6384,7 +6384,7 @@ function removeProviderRow(button, event) {
 }
 
 // 标记API Key为失败状态
-async function markKeyAsFailed(keyElement) {
+async function markKeyAsFailed(keyElement, errorMessage = null) {
     try {
         if (!keyElement) {
             console.error('markKeyAsFailed: keyElement为null');
@@ -6451,7 +6451,10 @@ async function markKeyAsFailed(keyElement) {
             }
         }
         
-        showToast('Key已标记为失败状态');
+        // 显示具体的错误信息，而不是通用的失败消息
+        if (errorMessage) {
+            showToast(errorMessage);
+        }
         
     } catch (error) {
         console.error('标记Key失败状态出错:', error);
