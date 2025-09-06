@@ -676,7 +676,7 @@ body {
     right: 0;
     bottom: 0;
     background-color: #f7f7f7;
-    z-index: 4;
+    z-index: 100; /* 在聊天之上 */
     transform: translateY(100%);
     transition: transform 0.3s ease-in-out, visibility 0s linear 0.3s, opacity 0.3s ease-in-out;
     overflow-y: auto;
