@@ -5340,14 +5340,10 @@ async function sendMessage() {
             const { replies } = await callChatAPIWithPriority(currentContact, [], true);
             hideTypingIndicator();
             
-            // 异步更新记忆表格（不阻塞后续流程）
-            setTimeout(async () => {
-                try {
-                    await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
-                } catch (error) {
-                    console.warn('记忆表格更新失败:', error);
-                }
-            }, 1000);
+            // 异步更新记忆表格（使用API队列，不阻塞用户操作）
+            if (window.updateMemoryTableWithSecondaryModel) {
+                window.updateMemoryTableWithSecondaryModel(currentContact, true);
+            }
             if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
             
             // 批量处理AI回复，避免每条消息都重新渲染
@@ -7438,14 +7434,10 @@ async function sendEmoji(emoji) {
         const { replies } = await callAPI(currentContact);
         hideTypingIndicator();
         
-        // 异步更新记忆表格（不阻塞后续流程）
-        setTimeout(async () => {
-            try {
-                await window.memoryTableManager.updateMemoryTableWithSecondaryModel(currentContact);
-            } catch (error) {
-                console.warn('记忆表格更新失败:', error);
-            }
-        }, 1000);
+        // 异步更新记忆表格（使用API队列，不阻塞用户操作）
+        if (window.updateMemoryTableWithSecondaryModel) {
+            window.updateMemoryTableWithSecondaryModel(currentContact, true);
+        }
         if (!replies || replies.length === 0) { showTopNotification('AI没有返回有效回复'); return; }
         for (const response of replies) {
             await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 800));

@@ -57,6 +57,12 @@ class APIService {
             messagesCount: messages.length
         });
 
+        // 自动设置 deepseek 模型的 max_tokens 为 8100
+        if (model && model.toLowerCase().includes('deepseek')) {
+            options = { ...options, max_tokens: 8100 };
+            console.log(`[API调用] 检测到 deepseek 模型，自动设置 max_tokens 为 8100`);
+        }
+
         const payload = { model, messages, ...options, stream: false };
 
         let success = false;

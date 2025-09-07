@@ -454,6 +454,78 @@ class MemoryTableManager {
         }
     }
 
+    /**
+     * 异步更新记忆表格 - 使用API队列
+     */
+    async updateMemoryTableAsync(contact, options = {}) {
+        if (!window.apiRequestQueue) {
+            console.warn('API队列未初始化，回退到同步更新');
+            return this.updateMemoryTableWithSecondaryModel(contact);
+        }
+
+        const priority = options.priority || window.apiRequestQueue.PRIORITY.LOW;
+        const description = `更新${contact.name || contact.nickname || '联系人'}的记忆表格`;
+        const EVENT_TYPE = 'memory_update';
+        const STATUS_BALL_ID = `special_event_${EVENT_TYPE}`;
+
+        // 显示记忆更新状态球
+        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.[EVENT_TYPE]) {
+            const queueState = {
+                completedTasks: 0,
+                totalTasks: 1,
+                currentTask: description,
+                eventType: EVENT_TYPE,
+                config: window.STATUS_BALL_CONFIGS[EVENT_TYPE]
+            };
+            window.statusBallManager.showSpecialEvent(EVENT_TYPE, queueState);
+        }
+
+        return new Promise((resolve) => {
+            window.apiRequestQueue.addRequest(
+                () => this.updateMemoryTableWithSecondaryModel(contact),
+                {
+                    priority,
+                    description,
+                    onComplete: (requestId, result) => {
+                        console.log(`记忆表格异步更新完成: ${description}`);
+                        
+                        // 更新悬浮球状态为完成
+                        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.[EVENT_TYPE]) {
+                            const completedState = {
+                                completedTasks: 1,
+                                totalTasks: 1,
+                                currentTask: description,
+                                eventType: EVENT_TYPE,
+                                config: window.STATUS_BALL_CONFIGS[EVENT_TYPE],
+                                completed: true
+                            };
+                            window.statusBallManager.showSpecialEvent(EVENT_TYPE, completedState);
+                            
+                            // 3秒后自动隐藏
+                            setTimeout(() => {
+                                if (window.statusBallManager) {
+                                    window.statusBallManager.removeState(STATUS_BALL_ID);
+                                }
+                            }, 3000);
+                        }
+                        
+                        resolve(result);
+                    },
+                    onError: (requestId, error) => {
+                        console.error(`记忆表格异步更新失败: ${description}`, error);
+                        
+                        // 隐藏悬浮球（失败时）
+                        if (window.statusBallManager) {
+                            window.statusBallManager.removeState(STATUS_BALL_ID);
+                        }
+                        
+                        resolve(false);
+                    }
+                }
+            );
+        });
+    }
+
     // 获取次要模型
     getSecondaryModel() {
         const secondaryModel = window.apiSettings?.secondaryModel;
@@ -496,7 +568,10 @@ window.renderMemoryTable = function(markdown) {
     return window.memoryTableManager.renderMemoryTable(markdown);
 };
 
-window.updateMemoryTableWithSecondaryModel = function(contact) {
+window.updateMemoryTableWithSecondaryModel = function(contact, useAsync = true) {
+    if (useAsync && window.memoryTableManager && window.memoryTableManager.updateMemoryTableAsync) {
+        return window.memoryTableManager.updateMemoryTableAsync(contact);
+    }
     return window.memoryTableManager.updateMemoryTableWithSecondaryModel(contact);
 };
 
