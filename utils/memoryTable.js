@@ -465,17 +465,19 @@ class MemoryTableManager {
 
         const priority = options.priority || window.apiRequestQueue.PRIORITY.LOW;
         const description = `更新${contact.name || contact.nickname || '联系人'}的记忆表格`;
+        const EVENT_TYPE = 'memory_update';
+        const STATUS_BALL_ID = `special_event_${EVENT_TYPE}`;
 
         // 显示记忆更新状态球
-        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.memory_update) {
+        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.[EVENT_TYPE]) {
             const queueState = {
                 completedTasks: 0,
                 totalTasks: 1,
                 currentTask: description,
-                eventType: 'memory_update',
-                config: window.STATUS_BALL_CONFIGS.memory_update
+                eventType: EVENT_TYPE,
+                config: window.STATUS_BALL_CONFIGS[EVENT_TYPE]
             };
-            window.statusBallManager.showSpecialEvent('memory_update', queueState);
+            window.statusBallManager.showSpecialEvent(EVENT_TYPE, queueState);
         }
 
         return new Promise((resolve) => {
@@ -488,21 +490,21 @@ class MemoryTableManager {
                         console.log(`记忆表格异步更新完成: ${description}`);
                         
                         // 更新悬浮球状态为完成
-                        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.memory_update) {
+                        if (window.statusBallManager && window.STATUS_BALL_CONFIGS?.[EVENT_TYPE]) {
                             const completedState = {
                                 completedTasks: 1,
                                 totalTasks: 1,
                                 currentTask: description,
-                                eventType: 'memory_update',
-                                config: window.STATUS_BALL_CONFIGS.memory_update,
+                                eventType: EVENT_TYPE,
+                                config: window.STATUS_BALL_CONFIGS[EVENT_TYPE],
                                 completed: true
                             };
-                            window.statusBallManager.showSpecialEvent('memory_update', completedState);
+                            window.statusBallManager.showSpecialEvent(EVENT_TYPE, completedState);
                             
                             // 3秒后自动隐藏
                             setTimeout(() => {
                                 if (window.statusBallManager) {
-                                    window.statusBallManager.removeState('special_event_memory_update');
+                                    window.statusBallManager.removeState(STATUS_BALL_ID);
                                 }
                             }, 3000);
                         }
@@ -514,7 +516,7 @@ class MemoryTableManager {
                         
                         // 隐藏悬浮球（失败时）
                         if (window.statusBallManager) {
-                            window.statusBallManager.removeState('special_event_memory_update');
+                            window.statusBallManager.removeState(STATUS_BALL_ID);
                         }
                         
                         resolve(false);
