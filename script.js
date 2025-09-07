@@ -4921,6 +4921,32 @@ async function getGroupAvatarContent(group) {
 
 // --- 聊天核心逻辑 ---
 async function openChat(contact) {
+    // 确保从数据库获取最新的联系人数据，解决voiceId同步问题
+    try {
+        const dbContact = await ensureDBReady(async () => {
+            const transaction = window.db.transaction(['contacts'], 'readonly');
+            const store = transaction.objectStore('contacts');
+
+            return await promisifyRequest(store.get(contact.id), '获取联系人数据');
+        }, '获取联系人数据');
+        
+        // 同步voiceId和其他字段到内存对象
+        if (dbContact) {
+            const fieldsToSync = ['voiceId', 'personality', 'customPrompts'];
+            let syncedFields = [];
+            
+            for (const field of fieldsToSync) {
+                if (dbContact[field] !== contact[field]) {
+                    contact[field] = dbContact[field];
+                    syncedFields.push(field);
+                }
+            }
+            
+        }
+    } catch (error) {
+        console.error('[openChat] 数据库同步失败，使用内存数据:', error);
+    }
+    
     currentContact = contact;
     window.currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
