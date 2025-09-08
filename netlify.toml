@@ -1,9 +1,23 @@
 # netlify.toml
 
 [build]
-  command = "# no build command"
+  command = "npm run build"
   publish = "."
   functions = "netlify/functions"
+
+# 生产环境配置 (main 分支)
+[context.production.environment]
+  ENVIRONMENT = "production"
+  
+# 部署预览配置 (Pull Request)
+[context.deploy-preview.environment]
+  ENVIRONMENT = "staging"
+  ENVIRONMENT_LABEL = "预览环境"
+  
+# 分支部署配置 (除 main 外的其他分支)
+[context.branch-deploy.environment]
+  ENVIRONMENT = "staging"
+  ENVIRONMENT_LABEL = "测试环境"
 
 # 注意：proxy-api 和 test-connection 功能已改为前端直接调用，不再需要重定向规则
 

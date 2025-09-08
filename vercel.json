@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "./",
   "headers": [
     {
       "source": "/api/sync/(.*)",

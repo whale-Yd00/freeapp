@@ -38,6 +38,8 @@
     <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
     
     <script src="config/sync-config.js"></script>
+    <script src="config/environment-config.js"></script>
+    <script src="js/environment-indicator.js"></script>
     <script src="utils/apiConfigManager.js"></script>
 
     <!-- Analytics -->
@@ -133,6 +135,21 @@
                 </div>
                 
                 <div class="moments-list" id="momentsList" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="interactive-page" id="interactivePage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>互动界面</span>
+                </div>
+                <div class="header-actions">
+                    <div class="sync-btn" onclick="syncInteractiveData()" title="同步角色数据">🔄</div>
+                </div>
+            </div>
+            <div class="interactive-content">
+                <iframe id="interactiveFrame" src="interact.html" style="width: 100%; height: calc(100vh - 60px); border: none;"></iframe>
             </div>
         </div>
 
@@ -865,6 +882,10 @@
         <div class="nav-item" onclick="showPage('momentsPage')" data-umami-event="Nav Discover">
             <div class="nav-icon">🔍</div>
             <div class="nav-text">发现</div>
+        </div>
+        <div class="nav-item" onclick="showPage('interactivePage')" data-umami-event="Nav Interactive">
+            <div class="nav-icon">🎮</div>
+            <div class="nav-text">互动</div>
         </div>
         <div class="nav-item" onclick="showPage('profilePage')" data-umami-event="Nav Profile">
             <div class="nav-icon">👤</div>

@@ -350,6 +350,122 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// --- 初始化进度显示函数 ---
+
+/**
+ * 显示初始化进度提示
+ * @param {string} message - 显示消息
+ * @param {string} type - 消息类型 (system/api/worker/url/import/database/error)
+ */
+function showInitializationProgress(message, type = 'info') {
+    // 查找或创建进度容器
+    let progressContainer = document.getElementById('init-progress-container');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'init-progress-container';
+        progressContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+        
+        const progressBox = document.createElement('div');
+        progressBox.id = 'init-progress-box';
+        progressBox.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        progressBox.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <div class="spinner" style="
+                    width: 24px; height: 24px; margin-right: 12px;
+                    border: 3px solid #f3f3f3; border-top: 3px solid #007bff;
+                    border-radius: 50%; animation: spin 1s linear infinite;
+                "></div>
+                <h3 style="margin: 0; color: #333;">Whale-LLT 正在启动</h3>
+            </div>
+            <p id="init-progress-message" style="margin: 0; color: #666; line-height: 1.5;"></p>
+            <div id="init-progress-steps" style="margin-top: 15px; font-size: 12px; color: #999; text-align: left;"></div>
+        `;
+        
+        progressContainer.appendChild(progressBox);
+        document.body.appendChild(progressContainer);
+        
+        // 添加CSS动画
+        if (!document.getElementById('init-progress-styles')) {
+            const style = document.createElement('style');
+            style.id = 'init-progress-styles';
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+    
+    const messageEl = document.getElementById('init-progress-message');
+    const stepsEl = document.getElementById('init-progress-steps');
+    
+    if (messageEl) {
+        messageEl.textContent = message;
+        messageEl.style.color = type === 'error' ? '#dc3545' : '#666';
+    }
+    
+    // 记录步骤
+    if (type !== 'error' && stepsEl) {
+        const timestamp = new Date().toLocaleTimeString();
+        const stepEl = document.createElement('div');
+        stepEl.textContent = `${timestamp} - ${message}`;
+        stepEl.style.cssText = 'margin: 2px 0; opacity: 0.7;';
+        stepsEl.appendChild(stepEl);
+        
+        // 只保留最近5个步骤
+        while (stepsEl.children.length > 5) {
+            stepsEl.removeChild(stepsEl.firstChild);
+        }
+    }
+    
+    console.log(`[初始化进度] ${message}`);
+}
+
+/**
+ * 隐藏初始化进度提示
+ */
+function hideInitializationProgress() {
+    const progressContainer = document.getElementById('init-progress-container');
+    if (progressContainer) {
+        progressContainer.style.opacity = '0';
+        progressContainer.style.transition = 'opacity 0.3s ease-out';
+        
+        setTimeout(() => {
+            if (progressContainer.parentNode) {
+                progressContainer.parentNode.removeChild(progressContainer);
+            }
+        }, 300);
+    }
+    
+    // 清理样式
+    const styles = document.getElementById('init-progress-styles');
+    if (styles && styles.parentNode) {
+        styles.parentNode.removeChild(styles);
+    }
+}
+
 // --- 初始化 ---
 async function init() {
     try {
@@ -953,7 +1069,7 @@ async function initializeDatabaseOnce() {
 // formatTime function moved to utils/formatUtils.js
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage', 'interactivePage'];
 
 function showPage(pageIdToShow) {
     // 异步包装函数，用于处理包含异步操作的页面显示
@@ -4763,7 +4879,22 @@ async function saveContact(event) {
         Object.assign(editingContact, contactData);
         showToast('修改成功');
     } else {
-        const contact = { id: Date.now().toString(), ...contactData, messages: [], lastMessage: '点击开始聊天', lastTime: formatContactListTime(new Date().toISOString()), type: 'private', memoryTableContent: defaultMemoryTable };
+        const contact = { 
+            id: Date.now().toString(), 
+            ...contactData, 
+            messages: [], 
+            lastMessage: '点击开始聊天', 
+            lastTime: formatContactListTime(new Date().toISOString()), 
+            type: 'private', 
+            memoryTableContent: defaultMemoryTable,
+            // 互动界面相关字段
+            interactiveBackgroundFileId: '',
+            touchZones: [],
+            theme: 'theme-pink-white',
+            ttsEnabled: false,
+            diaryEntries: {},
+            interactiveChatHistory: []
+        };
         contacts.unshift(contact);
         showToast('添加成功');
     }
@@ -7838,34 +7969,72 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 验证和初始化APIService
-    console.log('=== 页面初始化开始 ===');
-    console.log('APIService状态:', !!window.apiService);
+    // 立即设置主应用初始化标志，通知扩展模块
+    window.mainAppInitializing = true;
+    window.mainAppInitStartTime = Date.now();
     
-    if (!window.apiService && typeof APIService !== 'undefined') {
-        console.log('重新初始化APIService...');
-        window.apiService = new APIService();
-        console.log('APIService重新初始化完成');
-    }
+    // 显示初始化提示
+    showInitializationProgress('正在启动应用...', 'system');
     
-    console.log('最终APIService状态:', !!window.apiService);
-    console.log('========================');
-    
-    // 注册Service Worker
-    if (window.SystemUtils && typeof window.SystemUtils.registerServiceWorker === 'function') {
-        window.SystemUtils.registerServiceWorker();
-    }
-          
-    // 检查URL中是否有导入ID
-    const urlParams = new URLSearchParams(window.location.search);
-    const importId = urlParams.get('importId');
+    try {
+        // 验证和初始化APIService
+        console.log('=== 页面初始化开始 ===');
+        showInitializationProgress('正在检查API服务...', 'api');
+        console.log('APIService状态:', !!window.apiService);
+        
+        if (!window.apiService && typeof APIService !== 'undefined') {
+            console.log('重新初始化APIService...');
+            window.apiService = new APIService();
+            console.log('APIService重新初始化完成');
+        }
+        
+        console.log('最终APIService状态:', !!window.apiService);
+        console.log('========================');
+        
+        // 注册Service Worker
+        showInitializationProgress('正在注册Service Worker...', 'worker');
+        if (window.SystemUtils && typeof window.SystemUtils.registerServiceWorker === 'function') {
+            window.SystemUtils.registerServiceWorker();
+        }
+              
+        // 检查URL中是否有导入ID
+        showInitializationProgress('正在检查URL参数...', 'url');
+        const urlParams = new URLSearchParams(window.location.search);
+        const importId = urlParams.get('importId');
 
-    if (importId) {
-        // 如果有ID，则执行自动导入流程
-        await handleAutoImport(importId);
-    } else {
-        // 否则，正常初始化应用
-        await init();
+        if (importId) {
+            // 如果有ID，则执行自动导入流程
+            showInitializationProgress('正在执行自动导入...', 'import');
+            await handleAutoImport(importId);
+        } else {
+            // 否则，正常初始化应用
+            showInitializationProgress('正在初始化数据库...', 'database');
+            await init();
+        }
+        
+        // 初始化完成
+        const initTime = Date.now() - window.mainAppInitStartTime;
+        console.log(`[主应用] 初始化完成，耗时: ${initTime}ms`);
+        
+        // 发送初始化完成事件
+        if (typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('mainAppInitComplete', {
+                detail: { 
+                    initTime: initTime,
+                    timestamp: Date.now()
+                }
+            }));
+        }
+        
+        // 隐藏初始化提示
+        hideInitializationProgress();
+        
+    } catch (error) {
+        console.error('[主应用] 初始化失败:', error);
+        showInitializationProgress('应用启动失败: ' + error.message, 'error');
+        setTimeout(() => hideInitializationProgress(), 5000);
+    } finally {
+        window.mainAppInitializing = false;
     }
 });
 
@@ -15412,3 +15581,128 @@ window.updateConfigActionButtons = updateConfigActionButtons;
 window.ensureApiConfigIsUpdated = ensureApiConfigIsUpdated;
 window.loadModelsForConfig = loadModelsForConfig;
 window.saveModelSelection = saveModelSelection;
+
+// === 互动界面数据同步 ===
+
+/**
+ * 同步数据到互动界面
+ */
+async function syncInteractiveData() {
+    try {
+        showToast('正在同步角色数据...', 'info');
+        
+        const interactiveFrame = document.getElementById('interactiveFrame');
+        if (!interactiveFrame || !interactiveFrame.contentWindow) {
+            showToast('互动界面未准备就绪', 'error');
+            return;
+        }
+
+        // 准备同步数据
+        const syncData = {
+            type: 'BULK_DATA_SYNC',
+            characters: contacts.filter(c => c.type === 'private').map(contact => ({
+                name: contact.name,
+                personality: contact.personality,
+                voiceId: contact.voiceId || '',
+                avatar: contact.avatarFileId || contact.avatar || ''
+            })),
+            apiSettings: {
+                url: window.apiSettings?.url || '',
+                key: window.apiSettings?.key || '',
+                model: window.apiSettings?.model || '',
+                minimaxGroupId: window.minimaxSettings?.groupId || '',
+                minimaxApiKey: window.minimaxSettings?.apiKey || ''
+            },
+            userProfile: {
+                name: window.userProfile?.name || '默认用户',
+                personality: window.userProfile?.personality || '一个温柔的探索者'
+            }
+        };
+
+        // 发送数据到iframe
+        interactiveFrame.contentWindow.postMessage(syncData, '*');
+        
+        console.log('数据同步到互动界面:', syncData);
+        showToast('角色数据同步完成', 'success');
+        
+    } catch (error) {
+        console.error('互动界面数据同步失败:', error);
+        showToast('数据同步失败', 'error');
+    }
+}
+
+/**
+ * 处理来自互动界面的数据更新
+ */
+function handleInteractiveDataUpdate(data) {
+    try {
+        console.log('收到互动界面数据更新:', data);
+        
+        if (data.type === 'UPDATE_CONTACT' && data.contactId && data.updateData) {
+            // 找到对应的contact并更新
+            const contact = contacts.find(c => c.name === data.contactId || c.id === data.contactId);
+            if (contact) {
+                // 更新互动相关字段
+                if (data.updateData.interactiveBackgroundFileId !== undefined) {
+                    contact.interactiveBackgroundFileId = data.updateData.interactiveBackgroundFileId;
+                }
+                if (data.updateData.touchZones !== undefined) {
+                    contact.touchZones = data.updateData.touchZones;
+                }
+                if (data.updateData.theme !== undefined) {
+                    contact.theme = data.updateData.theme;
+                }
+                if (data.updateData.ttsEnabled !== undefined) {
+                    contact.ttsEnabled = data.updateData.ttsEnabled;
+                }
+                if (data.updateData.diaryEntries !== undefined) {
+                    contact.diaryEntries = { ...contact.diaryEntries, ...data.updateData.diaryEntries };
+                }
+                if (data.updateData.interactiveChatHistory !== undefined) {
+                    // 追加聊天记录而不是替换
+                    contact.interactiveChatHistory = contact.interactiveChatHistory || [];
+                    contact.interactiveChatHistory.push(...data.updateData.interactiveChatHistory);
+                }
+                
+                // 保存到数据库
+                saveDataToDB().then(() => {
+                    console.log(`角色 "${contact.name}" 的互动数据已更新`);
+                    showToast('互动数据已保存', 'success');
+                }).catch(error => {
+                    console.error('保存互动数据失败:', error);
+                    showToast('保存互动数据失败', 'error');
+                });
+            }
+        }
+        
+    } catch (error) {
+        console.error('处理互动界面数据更新失败:', error);
+    }
+}
+
+// 监听来自iframe的消息
+window.addEventListener('message', (event) => {
+    // 只处理来自互动界面的消息
+    if (event.origin === window.location.origin && event.data && event.data.type) {
+        handleInteractiveDataUpdate(event.data);
+    }
+});
+
+// 在进入互动页面时自动同步数据
+const originalShowPage = window.showPage;
+window.showPage = function(pageId) {
+    const result = originalShowPage.call(this, pageId);
+    
+    // 如果切换到互动页面，延迟1秒后自动同步数据
+    if (pageId === 'interactivePage') {
+        setTimeout(() => {
+            syncInteractiveData();
+        }, 1000);
+    }
+    
+    return result;
+};
+
+// 暴露互动相关函数到全局
+window.syncInteractiveData = syncInteractiveData;
+window.handleInteractiveDataUpdate = handleInteractiveDataUpdate;

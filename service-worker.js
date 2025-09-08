@@ -1,4 +1,4 @@
-const CACHE_NAME = 'whale-llt-v7';
+const CACHE_NAME = 'whale-llt-test-v3';
 const CACHE_VERSION = Date.now(); // 添加时间戳确保版本唯一性
 const urlsToCache = [
   '/',
