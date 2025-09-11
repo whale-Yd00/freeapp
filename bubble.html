@@ -9,18 +9,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <!-- 引入FileStorageManager相关脚本 -->
     <script src="utils/fileStorageManager.js"></script>
+    <script src="utils/fontLoader.js"></script>
     <script src="utils/imageStorageAPI.js"></script>
     <script src="utils/imageDisplayHelper.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- 中文字体CDN导入 -->
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/syst/dist/SourceHanSerifCN/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/lxgwwenkaibright/dist/LXGWBright-Regular/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/dymh/dist/DouyinSansBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hwmct/dist/汇文明朝体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ToneOZ-Pinyin-Kai/dist/ToneOZ-PinyinW-Kai-Simplified/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hcqyt/dist/ChillRoundFBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ysbzt/dist/峄山碑篆体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
+    <!-- 字体按需加载 - 移除预加载的CSS，改为动态加载 -->
     <style>
         body { font-family: 'Inter', sans-serif; }
         input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:#e2e8f0;border-radius:3px;outline:none;opacity:.7;transition:opacity .2s}
@@ -512,7 +505,21 @@
                 currentTextContent.style.color = controls.textColor.value;
                 
                 // 更新字体
-                currentTextContent.style.fontFamily = controls.fontFamily.value;
+                const selectedFont = controls.fontFamily.value;
+                currentTextContent.style.fontFamily = selectedFont;
+                
+                // 动态加载字体（如果需要）
+                if (window.fontLoader && selectedFont && selectedFont !== 'Inter') {
+                    window.fontLoader.loadFont(selectedFont).then(success => {
+                        if (success) {
+                            console.log(`字体加载成功，应用到预览: ${selectedFont}`);
+                        } else {
+                            console.warn(`字体加载失败: ${selectedFont}`);
+                        }
+                    }).catch(error => {
+                        console.error(`字体加载异常: ${selectedFont}`, error);
+                    });
+                }
 
                 if (currentBgType === 'solid') {
                     const color = controls.bgColor.value;

@@ -27,20 +27,13 @@
     
     <link rel="stylesheet" href="style.css">
     
-    <!-- 中文字体CDN导入 -->
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/syst/dist/SourceHanSerifCN/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/lxgwwenkaibright/dist/LXGWBright-Regular/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/dymh/dist/DouyinSansBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hwmct/dist/汇文明朝体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ToneOZ-Pinyin-Kai/dist/ToneOZ-PinyinW-Kai-Simplified/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hcqyt/dist/ChillRoundFBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ysbzt/dist/峄山碑篆体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
+    <!-- 字体按需加载 - 移除预加载的CSS，改为动态加载 -->
     
     <script src="config/sync-config.js"></script>
     <script src="config/environment-config.js"></script>
     <script src="js/environment-indicator.js"></script>
     <script src="utils/apiConfigManager.js"></script>
+    <script src="utils/fontLoader.js"></script>
 
     <!-- Analytics -->
     <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>

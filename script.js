@@ -12477,6 +12477,32 @@ async function applyBubbleStyleToCurrentChat() {
             window.customBubbleStyle = window.customBubbleStyleKare;
         }
         
+        // 动态加载所需字体
+        if (window.fontLoader) {
+            const fontsToLoad = new Set();
+            
+            if (actualStyleDataKare?.fontFamily && shouldEnableKare) {
+                fontsToLoad.add(actualStyleDataKare.fontFamily);
+            }
+            
+            if (actualStyleDataSelf?.fontFamily && shouldEnableSelf) {
+                fontsToLoad.add(actualStyleDataSelf.fontFamily);
+            }
+            
+            if (fontsToLoad.size > 0) {
+                console.log('开始加载气泡样式所需字体:', Array.from(fontsToLoad));
+                try {
+                    const fontResults = await Promise.all(
+                        Array.from(fontsToLoad).map(font => window.fontLoader.loadFont(font))
+                    );
+                    const loadedCount = fontResults.filter(Boolean).length;
+                    console.log(`气泡字体加载完成: ${loadedCount}/${fontsToLoad.size} 成功`);
+                } catch (error) {
+                    console.warn('加载气泡字体时发生错误:', error);
+                }
+            }
+        }
+
         // 重新渲染当前聊天消息以应用新样式
         if (window.currentContact && (window.customBubbleStyleKare || window.customBubbleStyleSelf)) {
             await renderMessages(false); // 明确指定非初始加载，避免滚动
