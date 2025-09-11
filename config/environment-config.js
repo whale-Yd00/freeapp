@@ -58,7 +58,6 @@ class EnvironmentConfig {
         if (typeof window === 'undefined') return 'production';
 
         const hostname = window.location.hostname;
-        const pathname = window.location.pathname;
 
         // 本地开发环境
         if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('192.168.')) {
