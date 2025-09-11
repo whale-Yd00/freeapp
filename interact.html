@@ -593,7 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         contactId: currentCharacterName,
                         updateData: updateData
                     };
-                    window.parent.postMessage(syncData, '*');
+                    window.parent.postMessage(syncData, window.location.origin);
                 }
             }
         } catch (error) {

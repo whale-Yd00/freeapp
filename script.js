@@ -15704,7 +15704,7 @@ async function syncInteractiveData() {
         };
 
         // 发送数据到iframe
-        interactiveFrame.contentWindow.postMessage(syncData, '*');
+        interactiveFrame.contentWindow.postMessage(syncData, window.location.origin);
         
         console.log('数据同步到互动界面:', syncData);
         showToast('角色数据同步完成', 'success');
