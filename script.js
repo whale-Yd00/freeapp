@@ -5003,6 +5003,7 @@ async function renderContactList() {
     for (const contact of contacts) {
         const item = document.createElement('div');
         item.className = 'contact-item';
+        item.setAttribute('data-contact-id', contact.id);
         
         if (contact.type === 'group') {
             const groupAvatarContent = await getGroupAvatarContent(contact);
@@ -5044,6 +5045,7 @@ async function renderContactList() {
 /**
  * 更新联系人列表的时间显示
  * 每分钟调用一次，重新计算相对时间
+ * 使用直接DOM更新，避免重新渲染整个列表
  */
 function updateContactListTimes() {
     // 检查是否在联系人列表页面
@@ -5052,7 +5054,7 @@ function updateContactListTimes() {
         return; // 如果不在联系人列表页面，直接返回
     }
     
-    let hasUpdates = false;
+    let updateCount = 0;
     
     // 更新每个联系人的时间显示
     contacts.forEach(contact => {
@@ -5060,18 +5062,23 @@ function updateContactListTimes() {
             const lastMsg = contact.messages[contact.messages.length - 1];
             const newTime = formatContactListTime(lastMsg.time);
             
-            // 只有时间显示真的改变了才标记需要更新
+            // 只有时间显示真的改变了才更新DOM
             if (contact.lastTime !== newTime) {
                 contact.lastTime = newTime;
-                hasUpdates = true;
+                
+                // 找到对应的DOM元素并直接更新时间显示
+                const contactItem = document.querySelector(`[data-contact-id="${contact.id}"]`);
+                if (contactItem) {
+                    const timeElement = contactItem.querySelector('.contact-time');
+                    if (timeElement) {
+                        timeElement.textContent = newTime;
+                        updateCount++;
+                    }
+                }
             }
         }
     });
     
-    // 只有在有实际更新时才重新渲染
-    if (hasUpdates) {
-        renderContactList();
-    }
 }
 
 /**
