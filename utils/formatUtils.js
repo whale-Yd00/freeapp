@@ -93,30 +93,96 @@ function formatTimeLegacy(timestamp) {
  * @returns {string} 格式化的时间字符串
  */
 function formatContactListTime(dateString) {
-    const d = new Date(dateString);
-    if (isNaN(d.getTime())) return '';
+    // 处理空值或无效输入
+    if (!dateString) return '';
+    
+    // 如果已经是格式化后的时间，直接返回
+    if (typeof dateString === 'string' && (
+        dateString === '刚刚' || 
+        dateString.includes('分钟前') || 
+        dateString.includes('小时前') ||
+        dateString.includes('星期') ||
+        dateString.includes('昨天') ||
+        dateString.includes('前天') ||
+        (dateString.includes(':') && !dateString.includes('T')) || // 排除ISO格式
+        (dateString.includes('月') && dateString.includes('日'))
+    )) {
+        return dateString;
+    }
+    
+    // 尝试解析日期
+    let d;
+    try {
+        d = new Date(dateString);
+        // 检查日期是否有效
+        if (isNaN(d.getTime())) {
+            console.warn('Invalid date string:', dateString);
+            return '';
+        }
+    } catch (e) {
+        console.warn('Error parsing date:', dateString, e);
+        return '';
+    }
     
     const now = new Date();
     const diff = now - d;
     
-    // 一小时内显示"刚刚"或"X分钟前"
-    if (diff < 3600000) {
-        const minutes = Math.floor(diff / 60000);
-        return minutes < 1 ? '刚刚' : `${minutes}分钟前`;
-    }
-
-    // 同一天显示时分
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const messageDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    if (today.getTime() === messageDate.getTime()) {
-        const hours = d.getHours().toString().padStart(2, '0');
-        const minutes = d.getMinutes().toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
+    // 如果时间在未来，可能是时区问题，使用当前时间
+    if (diff < 0) {
+        console.warn('Future timestamp detected, using current time:', dateString);
+        d = now;
     }
     
-    // 其他天显示月日
-    return `${d.getMonth() + 1}月${d.getDate()}日`;
+    // 2分钟内显示"刚刚"
+    if (diff < 2 * 60 * 1000) {
+        return '刚刚';
+    }
+    
+    // 2分钟后到1小时内显示"X分钟前"
+    if (diff < 60 * 60 * 1000) {
+        const minutes = Math.floor(diff / (60 * 1000));
+        return `${minutes}分钟前`;
+    }
+    
+    // 1小时到24小时内显示"X小时前"
+    if (diff < 24 * 60 * 60 * 1000) {
+        const hours = Math.floor(diff / (60 * 60 * 1000));
+        return `${hours}小时前`;
+    }
+
+    // 获取今天、昨天、前天的日期（只比较日期部分）
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const messageDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    
+    // 昨天
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (yesterday.getTime() === messageDate.getTime()) {
+        return '昨天';
+    }
+    
+    // 前天
+    const dayBeforeYesterday = new Date(today);
+    dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+    if (dayBeforeYesterday.getTime() === messageDate.getTime()) {
+        return '前天';
+    }
+    
+    // 一周内显示星期几
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    if (d >= weekAgo) {
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        return weekdays[d.getDay()];
+    }
+    
+    // 今年内显示月日
+    if (d.getFullYear() === now.getFullYear()) {
+        return `${d.getMonth() + 1}月${d.getDate()}日`;
+    }
+    
+    // 其他显示年月日
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 /**

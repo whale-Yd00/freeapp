@@ -541,6 +541,8 @@ async function init() {
     }
 
     await renderContactList();
+    // 立即更新一次时间显示，确保首次进入页面显示正确的时间
+    updateContactListTimes();
     await updateUserProfileUI();
     updateContextIndicator();
     
@@ -1149,6 +1151,11 @@ async function showPageAsync(pageIdToShow) {
 
     if (pageIdToShow === 'dataManagementPage') {
         refreshDatabaseStats();
+    }
+    
+    // 切换到联系人列表时手动刷新时间显示
+    if (pageIdToShow === 'contactListPage') {
+        updateContactListTimes();
     }   
 }
 
@@ -5034,6 +5041,47 @@ async function renderContactList() {
     }
 }
 
+/**
+ * 更新联系人列表的时间显示
+ * 每分钟调用一次，重新计算相对时间
+ */
+function updateContactListTimes() {
+    // 检查是否在联系人列表页面
+    const contactListPage = document.getElementById('contactListPage');
+    if (!contactListPage || !contactListPage.classList.contains('active')) {
+        return; // 如果不在联系人列表页面，直接返回
+    }
+    
+    let hasUpdates = false;
+    
+    // 更新每个联系人的时间显示
+    contacts.forEach(contact => {
+        if (contact.messages && contact.messages.length > 0) {
+            const lastMsg = contact.messages[contact.messages.length - 1];
+            const newTime = formatContactListTime(lastMsg.time);
+            
+            // 只有时间显示真的改变了才标记需要更新
+            if (contact.lastTime !== newTime) {
+                contact.lastTime = newTime;
+                hasUpdates = true;
+            }
+        }
+    });
+    
+    // 只有在有实际更新时才重新渲染
+    if (hasUpdates) {
+        renderContactList();
+    }
+}
+
+/**
+ * 启动联系人时间定时更新器
+ */
+function startContactTimeUpdater() {
+    // 每分钟更新一次时间显示
+    setInterval(updateContactListTimes, 60000); // 60秒 = 1分钟
+}
+
 async function getGroupAvatarContent(group) {
     const memberAvatars = group.members.slice(0, 4).map(id => contacts.find(c => c.id === id)).filter(Boolean);
     let avatarContent = '';
@@ -8035,6 +8083,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => hideInitializationProgress(), 5000);
     } finally {
         window.mainAppInitializing = false;
+        
+        // 启动联系人时间定时更新器
+        startContactTimeUpdater();
     }
 });
 
