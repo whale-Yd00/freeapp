@@ -94,11 +94,6 @@ class FontLoader {
             link.href = url;
             link.crossOrigin = 'anonymous'; // 添加跨域支持
 
-            link.onload = () => {
-                console.log(`字体样式表加载完成: ${fontFamily}`);
-                resolve(true);
-            };
-
             link.onerror = () => {
                 console.error(`字体样式表加载失败: ${fontFamily} (${url})`);
                 resolve(false);
