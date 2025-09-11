@@ -2,6 +2,31 @@
  * IndexedDB 导入导出模块
  */
 
+// 🔥 文件加载标记 - 追踪每次文件加载
+(() => {
+    const loadId = Math.random().toString(36).substr(2, 8);
+    const loadTime = new Date().toISOString();
+    console.log(`🔍 [FILE-LOAD-${loadId}] dataMigrator.js 开始加载 - 页面: ${window.location.pathname} - 时间: ${loadTime}`);
+    
+    // 检查是否是重复加载
+    if (window.dataMigratorLoadHistory) {
+        console.log(`🔍 [FILE-LOAD-${loadId}] 检测到重复加载! 历史记录:`, window.dataMigratorLoadHistory);
+    }
+    
+    // 记录加载历史
+    window.dataMigratorLoadHistory = window.dataMigratorLoadHistory || [];
+    window.dataMigratorLoadHistory.push({ loadId, loadTime, pathname: window.location.pathname });
+    
+    console.log(`🔍 [FILE-LOAD-${loadId}] 当前加载历史:`, window.dataMigratorLoadHistory);
+})();
+
+// 🔥 简单有效的缓存问题解决方案
+if (window.dataMigratorSkipInit !== true) {
+    window.dataMigratorSkipInit = true;
+    const skipId = Math.random().toString(36).substr(2, 6);
+    console.log(`[缓存解决方案-${skipId}] 设置全局跳过标志 - 页面: ${window.location.pathname}`);
+}
+
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
@@ -2280,9 +2305,59 @@ if (typeof document !== 'undefined') {
     // 智能等待主应用初始化完成 - 事件+轮询混合机制 [优化版]
     const waitForMainAppInit = async (maxWait = 10000) => {
         const startTime = Date.now();
+        const instanceId = Math.random().toString(36).substr(2, 6);
+        
+        console.log(`[智能协调-${instanceId}] 开始协调流程 - 页面: ${window.location.pathname}`);
         
         return new Promise((resolve) => {
             let resolved = false;
+            let dbChannel = null;
+            
+            // 🔥 关键修复：立即检查主应用是否已经初始化完成
+            const checkInitialState = () => {
+                // 检查主应用是否已完成初始化（优先级最高）
+                const isReady = window.isIndexedDBReady && window.db && window.db.version >= 13;
+                
+                // 🔥 添加详细调试信息
+                console.log(`[智能协调-${instanceId}-调试] 状态检查 - isIndexedDBReady: ${window.isIndexedDBReady}, db存在: ${!!window.db}, db版本: ${window.db?.version}, 综合判断: ${isReady}`);
+                
+                if (isReady) {
+                    if (!resolved) {
+                        resolved = true;
+                        console.log(`[智能协调-${instanceId}] 检测到主应用已完成初始化，无需等待`);
+                        if (dbChannel) dbChannel.close();
+                        resolve(true);
+                    }
+                    return true;
+                }
+                return false;
+            };
+            
+            // 立即检查一次，如果已经完成则直接返回
+            if (checkInitialState()) {
+                return;
+            }
+            
+            console.log(`[智能协调-${instanceId}] 立即检查未通过，开始监听事件...`);
+            
+            // 🔥 新增：监听跨页面广播通道
+            try {
+                dbChannel = new BroadcastChannel('db-init-channel');
+                dbChannel.onmessage = (event) => {
+                    if (event.data && event.data.type === 'DB_INITIALIZED' && !resolved) {
+                        resolved = true;
+                        const waitTime = Date.now() - startTime;
+                        console.log(`[智能协调-${instanceId}] 收到跨页面广播：数据库已初始化（来自${event.data.page}），版本：${event.data.version}，等待时间: ${waitTime}ms`);
+                        dbChannel.close();
+                        window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                        window.removeEventListener('databaseReady', databaseReadyListener);
+                        resolve(true);
+                    }
+                };
+                console.log(`[智能协调-${instanceId}] BroadcastChannel监听已设置`);
+            } catch (e) {
+                console.warn(`[智能协调-${instanceId}] BroadcastChannel不支持:`, e);
+            }
             
             // 方式1：监听主应用初始化完成事件（最准确的信号）
             const mainAppCompleteListener = (event) => {
@@ -2290,7 +2365,8 @@ if (typeof document !== 'undefined') {
                     resolved = true;
                     const waitTime = Date.now() - startTime;
                     const initTime = event.detail?.initTime || 'unknown';
-                    console.log(`[智能协调] 主应用初始化完成事件收到，主应用耗时: ${initTime}ms，协调等待时间: ${waitTime}ms`);
+                    console.log(`[智能协调-${instanceId}] 主应用初始化完成事件收到，主应用耗时: ${initTime}ms，协调等待时间: ${waitTime}ms`);
+                    if (dbChannel) dbChannel.close();
                     window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
                     window.removeEventListener('databaseReady', databaseReadyListener);
                     resolve(true);
@@ -2303,7 +2379,8 @@ if (typeof document !== 'undefined') {
                 if (!resolved) {
                     resolved = true;
                     const waitTime = Date.now() - startTime;
-                    console.log(`[智能协调] 数据库就绪事件收到，等待时间: ${waitTime}ms`);
+                    console.log(`[智能协调-${instanceId}] 数据库就绪事件收到，等待时间: ${waitTime}ms`);
+                    if (dbChannel) dbChannel.close();
                     window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
                     window.removeEventListener('databaseReady', databaseReadyListener);
                     resolve(true);
@@ -2316,9 +2393,12 @@ if (typeof document !== 'undefined') {
             const checkReady = () => {
                 if (resolved) return;
                 
+                console.log(`[智能协调-${instanceId}-轮询] 第${Math.ceil((Date.now() - startTime) / checkInterval)}次检查`);
+                
                 // 优先检查：主应用是否正在初始化
                 if (window.mainAppInitializing === true) {
                     const elapsed = Date.now() - startTime;
+                    console.log(`[智能协调-${instanceId}-轮询] 主应用正在初始化中，已等待: ${elapsed}ms`);
                     
                     // 如果主应用正在初始化，延长等待时间
                     if (elapsed < maxWait + 5000) { // 额外给5秒缓冲时间
@@ -2327,14 +2407,19 @@ if (typeof document !== 'undefined') {
                     }
                 }
                 
-                // 检查主应用是否已完成初始化
-                if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
-                    resolved = true;
-                    const waitTime = Date.now() - startTime;
-                    console.log(`[智能协调] 轮询检测到数据库就绪，等待时间: ${waitTime}ms`);
-                    window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
-                    window.removeEventListener('databaseReady', databaseReadyListener);
-                    resolve(true);
+                // 🔥 修复：再次检查初始状态（防止事件丢失）
+                const isReady = window.isIndexedDBReady && window.db && window.db.version >= 13;
+                console.log(`[智能协调-${instanceId}-轮询] 状态检查 - isIndexedDBReady: ${window.isIndexedDBReady}, db存在: ${!!window.db}, db版本: ${window.db?.version}, 综合判断: ${isReady}`);
+                
+                if (isReady) {
+                    if (!resolved) {
+                        resolved = true;
+                        console.log(`[智能协调-${instanceId}] 轮询检测到主应用已完成初始化`);
+                        if (dbChannel) dbChannel.close();
+                        window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                        window.removeEventListener('databaseReady', databaseReadyListener);
+                        resolve(true);
+                    }
                     return;
                 }
                 
@@ -2343,7 +2428,8 @@ if (typeof document !== 'undefined') {
                     if (!resolved) {
                         resolved = true;
                         const isInitializing = window.mainAppInitializing === true ? '（主应用仍在初始化中）' : '（主应用未检测到初始化）';
-                        console.warn(`[智能协调] 等待超时 (${maxWait}ms) ${isInitializing}，启动扩展初始化`);
+                        console.warn(`[智能协调-${instanceId}] 等待超时 (${maxWait}ms) ${isInitializing}，启动扩展初始化`);
+                        if (dbChannel) dbChannel.close();
                         window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
                         window.removeEventListener('databaseReady', databaseReadyListener);
                         resolve(false);
@@ -2354,64 +2440,221 @@ if (typeof document !== 'undefined') {
                 setTimeout(checkReady, checkInterval);
             };
             
-            // 立即检查一次，以防事件已经错过
-            checkReady();
+            // 立即开始轮询检查（防止事件已经错过）
+            setTimeout(checkReady, 0);
         });
     };
 
     // 等待主应用初始化完成后再初始化数据库管理器
     const initializeDatabaseManager = async () => {
+        // 🔥 添加标识符来区分不同实例
+        const instanceId = Math.random().toString(36).substr(2, 6);
+        console.log(`[扩展初始化-${instanceId}] 开始执行 - 当前页面: ${window.location.pathname}`);
+        
+        // 🔥 智能单例保护：只阻止重复初始化，不阻止类和函数定义
+        if (window.dataMigratorInitializationInProgress || window.dataMigratorInitialized) {
+            console.log(`[扩展初始化-${instanceId}] 检测到已有初始化进程，跳过重复初始化`);
+            return;
+        }
+        
+        // 设置初始化进程标志
+        window.dataMigratorInitializationInProgress = true;
+        console.log(`[扩展初始化-${instanceId}] 标记初始化进程开始`);
+        
         const extStartTime = Date.now();
         
         try {
-            console.log('[扩展初始化] 开始智能协调流程...');
+            console.log(`[扩展初始化-${instanceId}] 开始智能协调流程...`);
             
             // 智能等待主应用完成初始化
             const mainAppReady = await waitForMainAppInit();
             
             if (mainAppReady) {
-                console.log('[扩展初始化] 主应用初始化已完成，开始扩展模块初始化');
+                console.log(`[扩展初始化-${instanceId}] 主应用初始化已完成，开始扩展模块初始化`);
             } else {
-                console.warn('[扩展初始化] 主应用初始化超时，但继续执行扩展初始化（确保应用可用性）');
+                console.warn(`[扩展初始化-${instanceId}] 主应用初始化超时，但继续执行扩展初始化（确保应用可用性）`);
             }
             
-            console.log('[扩展初始化] 调用 DatabaseManager.init()...');
+            console.log(`[扩展初始化-${instanceId}] 调用 DatabaseManager.init()...`);
             const result = await window.DatabaseManager.init();
             
             const extTotalTime = Date.now() - extStartTime;
             
             if (result.success) {
-                console.log(`[扩展初始化] 数据库管理器初始化成功，总耗时: ${extTotalTime}ms`);
+                console.log(`[扩展初始化-${instanceId}] 数据库管理器初始化成功，总耗时: ${extTotalTime}ms`);
                 
                 // 增强API设置模态框
                 if (typeof window.enhanceApiSettingsModal === 'function') {
                     window.enhanceApiSettingsModal();
-                    console.log('[扩展初始化] API设置模态框已增强');
+                    console.log(`[扩展初始化-${instanceId}] API设置模态框已增强`);
                 }
                 
-                console.log('[扩展初始化] 所有扩展功能初始化完成 ✓');
+                console.log(`[扩展初始化-${instanceId}] 所有扩展功能初始化完成 ✓`);
+                
+                // 标记初始化完成
+                window.dataMigratorInitialized = true;
             } else {
-                console.error('[扩展初始化] 数据库管理器初始化失败:', result.error);
-                console.warn('[扩展初始化] 尽管初始化失败，应用的基础功能仍可能正常工作');
+                console.error(`[扩展初始化-${instanceId}] 数据库管理器初始化失败:`, result.error);
+                console.warn(`[扩展初始化-${instanceId}] 尽管初始化失败，应用的基础功能仍可能正常工作`);
             }
         } catch (error) {
             const extTotalTime = Date.now() - extStartTime;
-            console.error(`[扩展初始化] 初始化过程异常 (耗时: ${extTotalTime}ms):`, error);
-            console.warn('[扩展初始化] 扩展功能可能不可用，但主应用功能应该仍然正常');
+            console.error(`[扩展初始化-${instanceId}] 初始化过程异常 (耗时: ${extTotalTime}ms):`, error);
+            console.warn(`[扩展初始化-${instanceId}] 扩展功能可能不可用，但主应用功能应该仍然正常`);
+        } finally {
+            // 清除进程标志
+            window.dataMigratorInitializationInProgress = false;
+            console.log(`[扩展初始化-${instanceId}] 清除初始化进程标志`);
         }
     };
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-            // 页面加载完成后立即开始智能协调，不需要额外延时
-            // 智能等待机制会自动处理与主应用的时序协调
-            console.log('[扩展模块] DOM加载完成，启动智能协调机制');
-            initializeDatabaseManager();
+            // 🔥 新架构：使用精准的跨页面监听器
+            const instanceId = Math.random().toString(36).substr(2, 6);
+            console.log(`[扩展模块-${instanceId}] DOM加载完成 - 页面: ${window.location.pathname}`);
+            
+            // 立即检查数据库状态
+            if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
+                console.log(`[扩展模块-${instanceId}] 检测到主应用已初始化，跳过扩展初始化`);
+            } else {
+                console.log(`[扩展模块-${instanceId}] 数据库未就绪，启动跨页面监听...`);
+                startCrossPageDBListener(instanceId);
+            }
         });
     } else {
-        // 页面已加载，立即开始智能协调
-        console.log('[扩展模块] 页面已就绪，启动智能协调机制');
-        initializeDatabaseManager();
+        // 页面已加载，立即开始
+        const instanceId = Math.random().toString(36).substr(2, 6);
+        console.log(`[扩展模块-${instanceId}] 页面已就绪 - 页面: ${window.location.pathname}`);
+        
+        // 立即检查数据库状态
+        if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
+            console.log(`[扩展模块-${instanceId}] 检测到主应用已初始化，跳过扩展初始化`);
+        } else {
+            console.log(`[扩展模块-${instanceId}] 数据库未就绪，启动跨页面监听...`);
+            startCrossPageDBListener(instanceId);
+        }
+    }
+
+    /**
+     * 启动跨页面数据库监听器 - 新的简化方案
+     */
+    async function startCrossPageDBListener(instanceId) {
+        console.log(`[跨页面监听-${instanceId}] 开始监听跨页面数据库状态...`);
+        
+        try {
+            // 创建跨页面监听器
+            const listener = new CrossPageDBListener();
+            
+            // 等待数据库就绪（最多8秒）
+            await listener.waitForDB(8000);
+            
+            console.log(`[跨页面监听-${instanceId}] 检测到数据库已就绪，无需启动扩展初始化`);
+            
+        } catch (error) {
+            console.warn(`[跨页面监听-${instanceId}] 跨页面监听超时，启动备用初始化:`, error.message);
+            
+            // 备用方案：启动扩展初始化
+            await initializeDatabaseManager();
+        }
+    }
+
+    /**
+     * 简化的跨页面监听器实现（内嵌版本）
+     */
+    class CrossPageDBListener {
+        constructor() {
+            this.debugId = Math.random().toString(36).substr(2, 6);
+            console.log(`[CrossPageDB-${this.debugId}] 初始化监听器`);
+        }
+
+        async waitForDB(timeout = 8000) {
+            console.log(`[CrossPageDB-${this.debugId}] 开始等待数据库就绪，超时: ${timeout}ms`);
+            
+            return new Promise((resolve, reject) => {
+                let resolved = false;
+                const startTime = Date.now();
+
+                // 立即检查
+                const checkDB = () => {
+                    // 🔥 首先尝试从 localStorage 读取状态
+                    let storageReady = false;
+                    try {
+                        const dbStatus = localStorage.getItem('dbStatus');
+                        if (dbStatus) {
+                            const status = JSON.parse(dbStatus);
+                            const timeDiff = Date.now() - status.timestamp;
+                            console.log(`[CrossPageDB-${this.debugId}] localStorage 状态检查 - 时间差: ${Math.round(timeDiff/1000)}s, 版本: ${status.version}, 就绪: ${status.isReady}`);
+                            
+                            // 检查状态是否有效且不太旧（5分钟内）
+                            if (status.isReady && status.version >= 13 && (Date.now() - status.timestamp < 300000)) {
+                                storageReady = true;
+                                console.log(`[CrossPageDB-${this.debugId}] 从 localStorage 检测到数据库已初始化 - 来源页面: ${status.page}`);
+                            } else {
+                                console.log(`[CrossPageDB-${this.debugId}] localStorage 状态已过期或无效 - 时间差: ${Math.round(timeDiff/1000)}s/${Math.round(300000/1000)}s`);
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`[CrossPageDB-${this.debugId}] localStorage 读取失败:`, e);
+                    }
+
+                    // 检查 window 全局状态（可能在同一页面内）
+                    const windowReady = window.isIndexedDBReady && window.db && window.db.version >= 13;
+                    const isReady = storageReady || windowReady;
+                    
+                    console.log(`[CrossPageDB-${this.debugId}] 状态检查:`, {
+                        storageReady: storageReady,
+                        windowReady: windowReady,
+                        isIndexedDBReady: window.isIndexedDBReady,
+                        dbExists: !!window.db,
+                        dbVersion: window.db?.version,
+                        finalReady: isReady
+                    });
+
+                    if (isReady && !resolved) {
+                        resolved = true;
+                        console.log(`[CrossPageDB-${this.debugId}] 数据库已就绪！`);
+                        resolve(window.db || { version: 13 }); // 如果是从 storage 检测到的，返回模拟 db 对象
+                        return true;
+                    }
+                    return false;
+                };
+
+                // 立即检查一次
+                if (checkDB()) return;
+
+                // localStorage 事件监听（跨标签页通信）
+                const storageListener = (event) => {
+                    console.log(`[CrossPageDB-${this.debugId}] 收到 localStorage 事件:`, event.key);
+                    if (event.key === 'dbSyncTrigger') {
+                        checkDB();
+                    }
+                };
+                
+                window.addEventListener('storage', storageListener);
+
+                // 定期检查
+                const checkInterval = setInterval(() => {
+                    if (resolved) {
+                        clearInterval(checkInterval);
+                        return;
+                    }
+
+                    if (checkDB()) {
+                        clearInterval(checkInterval);
+                        window.removeEventListener('storage', storageListener);
+                    }
+
+                    // 超时检查
+                    if (Date.now() - startTime > timeout) {
+                        resolved = true;
+                        clearInterval(checkInterval);
+                        window.removeEventListener('storage', storageListener);
+                        reject(new Error(`等待数据库就绪超时 (${timeout}ms)`));
+                    }
+                }, 200); // 200ms 检查一次
+            });
+        }
     }
 }
 

@@ -986,6 +986,45 @@ async function initializeDatabaseOnce() {
     // 如果数据库已经就绪且版本正确，直接返回
     if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
         console.log('[DEBUG] 数据库已经初始化完成，跳过重复初始化');
+        
+        // 🔥 即使跳过初始化，也要发送广播通知其他页面
+        try {
+            const dbChannel = new BroadcastChannel('db-init-channel');
+            dbChannel.postMessage({
+                type: 'DB_INITIALIZED',
+                version: window.db.version,
+                timestamp: Date.now(),
+                page: window.location.pathname
+            });
+            console.log('[跨页面广播] 数据库状态已广播（已初始化场景）');
+            setTimeout(() => dbChannel.close(), 100);
+        } catch (e) {
+            console.warn('[跨页面广播] BroadcastChannel不支持或失败:', e);
+        }
+
+        // 🔥 新增：直接在 localStorage 中存储状态供其他页面读取
+        try {
+            const dbStatus = {
+                isReady: true,
+                version: window.db.version,
+                timestamp: Date.now(),
+                page: window.location.pathname
+            };
+            localStorage.setItem('dbStatus', JSON.stringify(dbStatus));
+            console.log('[跨页面状态] 已写入数据库状态到 localStorage');
+        } catch (e) {
+            console.warn('[跨页面状态] localStorage 写入失败:', e);
+        }
+
+        // 🔥 新增：通过 localStorage 触发跨页面同步事件  
+        try {
+            localStorage.setItem('dbSyncTrigger', Date.now().toString());
+            localStorage.removeItem('dbSyncTrigger');
+            console.log('[跨页面同步] 已触发 localStorage 同步事件');
+        } catch (e) {
+            console.warn('[跨页面同步] localStorage 同步失败:', e);
+        }
+        
         return window.db;
     }
     
@@ -1025,6 +1064,45 @@ async function initializeDatabaseOnce() {
             window.db = db;
             window.isIndexedDBReady = true;
             console.log('[DEBUG] 数据库状态标志已设置: isIndexedDBReady = true');
+            
+            // 🔥 跨页面广播 - 使用 BroadcastChannel 通知其他页面
+            try {
+                const dbChannel = new BroadcastChannel('db-init-channel');
+                dbChannel.postMessage({
+                    type: 'DB_INITIALIZED',
+                    version: db.version,
+                    timestamp: Date.now(),
+                    page: window.location.pathname
+                });
+                console.log('[跨页面广播] 数据库初始化状态已广播到其他页面');
+                // 发送后关闭通道
+                setTimeout(() => dbChannel.close(), 100);
+            } catch (e) {
+                console.warn('[跨页面广播] BroadcastChannel不支持或失败:', e);
+            }
+
+            // 🔥 新增：直接在 localStorage 中存储状态供其他页面读取
+            try {
+                const dbStatus = {
+                    isReady: true,
+                    version: db.version,
+                    timestamp: Date.now(),
+                    page: window.location.pathname
+                };
+                localStorage.setItem('dbStatus', JSON.stringify(dbStatus));
+                console.log('[跨页面状态] 已写入数据库状态到 localStorage（新初始化场景）');
+            } catch (e) {
+                console.warn('[跨页面状态] localStorage 写入失败:', e);
+            }
+
+            // 🔥 新增：通过 localStorage 触发跨页面同步事件
+            try {
+                localStorage.setItem('dbSyncTrigger', Date.now().toString());
+                localStorage.removeItem('dbSyncTrigger');
+                console.log('[跨页面同步] 已触发 localStorage 同步事件（新初始化场景）');
+            } catch (e) {
+                console.warn('[跨页面同步] localStorage 同步失败:', e);
+            }
             
             // 发出初始化完成事件，通知其他组件
             if (typeof window.dispatchEvent === 'function') {
