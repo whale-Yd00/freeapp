@@ -201,6 +201,11 @@ body {
     display: none;
 }
 
+/* 互动页面隐藏规则 */
+.interactive-page:not(.active) {
+    display: none;
+}
+
 .header-title {
     font-size: 17px;
     font-weight: 500;

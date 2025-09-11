@@ -4,7 +4,11 @@
   "main": "marked.min.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "build": "node scripts/build-env-inject.js",
+    "build:dev": "ENVIRONMENT=development node scripts/build-env-inject.js",
+    "build:staging": "ENVIRONMENT=staging node scripts/build-env-inject.js",
+    "build:prod": "ENVIRONMENT=production node scripts/build-env-inject.js"
   },
   "keywords": [],
   "author": "",

@@ -350,6 +350,122 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// --- 初始化进度显示函数 ---
+
+/**
+ * 显示初始化进度提示
+ * @param {string} message - 显示消息
+ * @param {string} type - 消息类型 (system/api/worker/url/import/database/error)
+ */
+function showInitializationProgress(message, type = 'info') {
+    // 查找或创建进度容器
+    let progressContainer = document.getElementById('init-progress-container');
+    if (!progressContainer) {
+        progressContainer = document.createElement('div');
+        progressContainer.id = 'init-progress-container';
+        progressContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+        
+        const progressBox = document.createElement('div');
+        progressBox.id = 'init-progress-box';
+        progressBox.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        progressBox.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <div class="spinner" style="
+                    width: 24px; height: 24px; margin-right: 12px;
+                    border: 3px solid #f3f3f3; border-top: 3px solid #007bff;
+                    border-radius: 50%; animation: spin 1s linear infinite;
+                "></div>
+                <h3 style="margin: 0; color: #333;">Whale-LLT 正在启动</h3>
+            </div>
+            <p id="init-progress-message" style="margin: 0; color: #666; line-height: 1.5;"></p>
+            <div id="init-progress-steps" style="margin-top: 15px; font-size: 12px; color: #999; text-align: left;"></div>
+        `;
+        
+        progressContainer.appendChild(progressBox);
+        document.body.appendChild(progressContainer);
+        
+        // 添加CSS动画
+        if (!document.getElementById('init-progress-styles')) {
+            const style = document.createElement('style');
+            style.id = 'init-progress-styles';
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+    
+    const messageEl = document.getElementById('init-progress-message');
+    const stepsEl = document.getElementById('init-progress-steps');
+    
+    if (messageEl) {
+        messageEl.textContent = message;
+        messageEl.style.color = type === 'error' ? '#dc3545' : '#666';
+    }
+    
+    // 记录步骤
+    if (type !== 'error' && stepsEl) {
+        const timestamp = new Date().toLocaleTimeString();
+        const stepEl = document.createElement('div');
+        stepEl.textContent = `${timestamp} - ${message}`;
+        stepEl.style.cssText = 'margin: 2px 0; opacity: 0.7;';
+        stepsEl.appendChild(stepEl);
+        
+        // 只保留最近5个步骤
+        while (stepsEl.children.length > 5) {
+            stepsEl.removeChild(stepsEl.firstChild);
+        }
+    }
+    
+    console.log(`[初始化进度] ${message}`);
+}
+
+/**
+ * 隐藏初始化进度提示
+ */
+function hideInitializationProgress() {
+    const progressContainer = document.getElementById('init-progress-container');
+    if (progressContainer) {
+        progressContainer.style.opacity = '0';
+        progressContainer.style.transition = 'opacity 0.3s ease-out';
+        
+        setTimeout(() => {
+            if (progressContainer.parentNode) {
+                progressContainer.parentNode.removeChild(progressContainer);
+            }
+        }, 300);
+    }
+    
+    // 清理样式
+    const styles = document.getElementById('init-progress-styles');
+    if (styles && styles.parentNode) {
+        styles.parentNode.removeChild(styles);
+    }
+}
+
 // --- 初始化 ---
 async function init() {
     try {
@@ -425,6 +541,8 @@ async function init() {
     }
 
     await renderContactList();
+    // 立即更新一次时间显示，确保首次进入页面显示正确的时间
+    updateContactListTimes();
     await updateUserProfileUI();
     updateContextIndicator();
     
@@ -953,7 +1071,7 @@ async function initializeDatabaseOnce() {
 // formatTime function moved to utils/formatUtils.js
 
 // --- 页面导航 ---
-const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage'];
+const pageIds = ['contactListPage', 'weiboPage', 'momentsPage', 'profilePage', 'chatPage', 'dataManagementPage', 'debugLogPage', 'memoryManagementPage', 'userProfilePage', 'appearanceManagementPage', 'apiConfigManagementPage', 'interactivePage'];
 
 function showPage(pageIdToShow) {
     // 异步包装函数，用于处理包含异步操作的页面显示
@@ -1033,6 +1151,11 @@ async function showPageAsync(pageIdToShow) {
 
     if (pageIdToShow === 'dataManagementPage') {
         refreshDatabaseStats();
+    }
+    
+    // 切换到联系人列表时手动刷新时间显示
+    if (pageIdToShow === 'contactListPage') {
+        updateContactListTimes();
     }   
 }
 
@@ -4763,7 +4886,22 @@ async function saveContact(event) {
         Object.assign(editingContact, contactData);
         showToast('修改成功');
     } else {
-        const contact = { id: Date.now().toString(), ...contactData, messages: [], lastMessage: '点击开始聊天', lastTime: formatContactListTime(new Date().toISOString()), type: 'private', memoryTableContent: defaultMemoryTable };
+        const contact = { 
+            id: Date.now().toString(), 
+            ...contactData, 
+            messages: [], 
+            lastMessage: '点击开始聊天', 
+            lastTime: formatContactListTime(new Date().toISOString()), 
+            type: 'private', 
+            memoryTableContent: defaultMemoryTable,
+            // 互动界面相关字段
+            interactiveBackgroundFileId: '',
+            touchZones: [],
+            theme: 'theme-pink-white',
+            ttsEnabled: false,
+            diaryEntries: {},
+            interactiveChatHistory: []
+        };
         contacts.unshift(contact);
         showToast('添加成功');
     }
@@ -4865,6 +5003,7 @@ async function renderContactList() {
     for (const contact of contacts) {
         const item = document.createElement('div');
         item.className = 'contact-item';
+        item.setAttribute('data-contact-id', contact.id);
         
         if (contact.type === 'group') {
             const groupAvatarContent = await getGroupAvatarContent(contact);
@@ -4903,6 +5042,53 @@ async function renderContactList() {
     }
 }
 
+/**
+ * 更新联系人列表的时间显示
+ * 每分钟调用一次，重新计算相对时间
+ * 使用直接DOM更新，避免重新渲染整个列表
+ */
+function updateContactListTimes() {
+    // 检查是否在联系人列表页面
+    const contactListPage = document.getElementById('contactListPage');
+    if (!contactListPage || !contactListPage.classList.contains('active')) {
+        return; // 如果不在联系人列表页面，直接返回
+    }
+    
+    let updateCount = 0;
+    
+    // 更新每个联系人的时间显示
+    contacts.forEach(contact => {
+        if (contact.messages && contact.messages.length > 0) {
+            const lastMsg = contact.messages[contact.messages.length - 1];
+            const newTime = formatContactListTime(lastMsg.time);
+            
+            // 只有时间显示真的改变了才更新DOM
+            if (contact.lastTime !== newTime) {
+                contact.lastTime = newTime;
+                
+                // 找到对应的DOM元素并直接更新时间显示
+                const contactItem = document.querySelector(`[data-contact-id="${contact.id}"]`);
+                if (contactItem) {
+                    const timeElement = contactItem.querySelector('.contact-time');
+                    if (timeElement) {
+                        timeElement.textContent = newTime;
+                        updateCount++;
+                    }
+                }
+            }
+        }
+    });
+    
+}
+
+/**
+ * 启动联系人时间定时更新器
+ */
+function startContactTimeUpdater() {
+    // 每分钟更新一次时间显示
+    setInterval(updateContactListTimes, 60000); // 60秒 = 1分钟
+}
+
 async function getGroupAvatarContent(group) {
     const memberAvatars = group.members.slice(0, 4).map(id => contacts.find(c => c.id === id)).filter(Boolean);
     let avatarContent = '';
@@ -4921,6 +5107,32 @@ async function getGroupAvatarContent(group) {
 
 // --- 聊天核心逻辑 ---
 async function openChat(contact) {
+    // 确保从数据库获取最新的联系人数据，解决voiceId同步问题
+    try {
+        const dbContact = await ensureDBReady(async () => {
+            const transaction = window.db.transaction(['contacts'], 'readonly');
+            const store = transaction.objectStore('contacts');
+
+            return await promisifyRequest(store.get(contact.id), '获取联系人数据');
+        }, '获取联系人数据');
+        
+        // 同步voiceId和其他字段到内存对象
+        if (dbContact) {
+            const fieldsToSync = ['voiceId', 'personality', 'customPrompts'];
+            let syncedFields = [];
+            
+            for (const field of fieldsToSync) {
+                if (dbContact[field] !== contact[field]) {
+                    contact[field] = dbContact[field];
+                    syncedFields.push(field);
+                }
+            }
+            
+        }
+    } catch (error) {
+        console.error('[openChat] 数据库同步失败，使用内存数据:', error);
+    }
+    
     currentContact = contact;
     window.currentContact = contact;
     window.memoryTableManager.setCurrentContact(contact);
@@ -5243,11 +5455,7 @@ async function renderMessages(isInitialLoad = false, hasNewMessage = false) {
                 msgDiv.classList.add('message-selected');
             }
         } else {
-            let msgPressTimer;
-            msgDiv.addEventListener('touchstart', () => { msgPressTimer = setTimeout(() => { showMessageActionMenu(originalIndex, msgDiv); }, 700); });
-            msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
-            msgDiv.addEventListener('touchmove', () => clearTimeout(msgPressTimer));
-            msgDiv.addEventListener('contextmenu', (e) => { e.preventDefault(); showMessageActionMenu(originalIndex, msgDiv); });
+            addMessageActionListeners(msgDiv, originalIndex);
         }
         
         chatMessages.appendChild(msgDiv);
@@ -5589,7 +5797,7 @@ async function addSingleMessage(message, isNewMessage = false) {
         contentHtml = await renderEmojiContent(message.content);
     } else if (message.type === 'red_packet') {
         const packet = JSON.parse(message.content);
-        contentHtml = `<div class="message-content red-packet" onclick="showToast('红包金额: ${packet.amount}')"><div class="red-packet-body"><svg class="red-packet-icon" viewBox="0 0 1024 1024"><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32zM731.2 565.2H603.9c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8zM419.8 565.2H292.5c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8z" fill="#FEFEFE"></path><path d="M872.4 240H151.6c-17.7 0-32 14.3-32 32v64h784v-64c0-17.7-14.3-32-32-32z" fill="#FCD4B3"></path><path d="M512 432c-48.6 0-88 39.4-88 88s39.4 88 88 88 88-39.4 88-88-39.4-88-88-88z m0 152c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64-64z" fill="#FCD4B3"></path><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32z m-32 552H215.6V368h624.8v488z" fill="#F37666"></path><path d="M512 128c-112.5 0-204 91.5-204 204s91.5 204 204 204 204-91.5 204-204-91.5-204-204-204z m0 384c-99.4 0-180-80.6-180-180s80.6-180 180-180 180 80.6 180 180-80.6 180-180 180z" fill="#F37666"></path><path d="M512 456c-35.3 0-64 28.7-64 64s28.7 64 64 64 64 28.7 64 64s28.7-64-64-64z m16.4 76.4c-2.3 2.3-5.4 3.6-8.5 3.6h-15.8c-3.1 0-6.2-1.3-8.5-3.6s-3.6-5.4-3.6-8.5v-27.8c0-6.6 5.4-12 12-12h16c6.6 0 12 5.4 12 12v27.8c0.1 3.1-1.2 6.2-3.5 8.5z" fill="#F37666"></path></svg><div class="red-packet-text"><div>${packet.message || '恭喜发财，大吉大利！'}</div><div>领取红包</div></div></div><div class="red-packet-footer">AI红包</div></div>`;
+        contentHtml = `<div class="message-content red-packet" onclick="showToast('红包金额: ${packet.amount}')"><div class="red-packet-body"><svg class="red-packet-icon" viewBox="0 0 1024 1024"><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32zM731.2 565.2H603.9c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8zM419.8 565.2H292.5c-4.4 0-8 3.6-8 8v128.3c0 4.4 3.6 8 8 8h127.3c4.4 0 8-3.6 8-8V573.2c0-4.4-3.6-8-8-8z" fill="#FEFEFE"></path><path d="M872.4 240H151.6c-17.7 0-32 14.3-32 32v64h784v-64c0-17.7-14.3-32-32-32z" fill="#FCD4B3"></path><path d="M512 432c-48.6 0-88 39.4-88 88s39.4 88 88 88 88-39.4 88-88-39.4-88-88-88z m0 152c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64-64z" fill="#FCD4B3"></path><path d="M840.4 304H183.6c-17.7 0-32 14.3-32 32v552c0 17.7 14.3 32 32 32h656.8c17.7 0 32-14.3 32-32V336c0-17.7-14.3-32-32-32z m-32 552H215.6V368h624.8v488z" fill="#F37666"></path><path d="M512 128c-112.5 0-204 91.5-204 204s91.5 204 204 204 204-91.5 204-204-91.5-204-204-204z m0 384c-99.4 0-180-80.6-180-180s80.6-180 180-180 180 80.6 180 180-80.6 180-180 180z" fill="#F37666"></path><path d="M512 456c-35.3 0-64 28.7-64 64s28.7 64 64 64 64 28.7 64 64-28.7-64-64-64z m16.4 76.4c-2.3 2.3-5.4 3.6-8.5 3.6h-15.8c-3.1 0-6.2-1.3-8.5-3.6s-3.6-5.4-3.6-8.5v-27.8c0-6.6 5.4-12 12-12h16c6.6 0 12 5.4 12 12v27.8c0.1 3.1-1.2 6.2-3.5 8.5z" fill="#F37666"></path></svg><div class="red-packet-text"><div>${packet.message || '恭喜发财，大吉大利！'}</div><div>领取红包</div></div></div><div class="red-packet-footer">AI红包</div></div>`;
     } else {
         contentHtml = await processTextWithInlineEmojis(message.content);
     }
@@ -5709,6 +5917,12 @@ async function addSingleMessage(message, isNewMessage = false) {
         }
     } else {
         msgDiv.innerHTML = `<div class="message-avatar">${avatarContent}</div>${bubbleHtml}`;
+    }
+
+    // 添加长按事件监听器 - 修复新消息无法长按弹出菜单的问题
+    if (!isMultiSelectMode) {
+        const originalIndex = parseInt(msgDiv.dataset.messageIndex);
+        addMessageActionListeners(msgDiv, originalIndex);
     }
 
     // 添加到聊天界面
@@ -7629,6 +7843,26 @@ async function deleteContact(contactId) {
  * @param {number} messageIndex 消息索引
  * @param {HTMLElement} messageElement 消息DOM元素
  */
+/**
+ * 为消息元素添加长按和右键菜单事件监听器
+ * @param {HTMLElement} msgDiv - 消息元素
+ * @param {number} originalIndex - 消息在数组中的原始索引
+ */
+function addMessageActionListeners(msgDiv, originalIndex) {
+    let msgPressTimer;
+    msgDiv.addEventListener('touchstart', () => { 
+        msgPressTimer = setTimeout(() => { 
+            showMessageActionMenu(originalIndex, msgDiv); 
+        }, 700); 
+    });
+    msgDiv.addEventListener('touchend', () => clearTimeout(msgPressTimer));
+    msgDiv.addEventListener('touchmove', () => clearTimeout(msgPressTimer));
+    msgDiv.addEventListener('contextmenu', (e) => { 
+        e.preventDefault(); 
+        showMessageActionMenu(originalIndex, msgDiv); 
+    });
+}
+
 function showMessageActionMenu(messageIndex, messageElement) {
     const menuId = 'messageActionMenu';
     let menu = document.getElementById(menuId);
@@ -7790,34 +8024,75 @@ document.addEventListener('click', (e) => {
 // 找到文件末尾的这个事件监听器，用下面的代码替换它
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 验证和初始化APIService
-    console.log('=== 页面初始化开始 ===');
-    console.log('APIService状态:', !!window.apiService);
+    // 立即设置主应用初始化标志，通知扩展模块
+    window.mainAppInitializing = true;
+    window.mainAppInitStartTime = Date.now();
     
-    if (!window.apiService && typeof APIService !== 'undefined') {
-        console.log('重新初始化APIService...');
-        window.apiService = new APIService();
-        console.log('APIService重新初始化完成');
-    }
+    // 显示初始化提示
+    showInitializationProgress('正在启动应用...', 'system');
     
-    console.log('最终APIService状态:', !!window.apiService);
-    console.log('========================');
-    
-    // 注册Service Worker
-    if (window.SystemUtils && typeof window.SystemUtils.registerServiceWorker === 'function') {
-        window.SystemUtils.registerServiceWorker();
-    }
-          
-    // 检查URL中是否有导入ID
-    const urlParams = new URLSearchParams(window.location.search);
-    const importId = urlParams.get('importId');
+    try {
+        // 验证和初始化APIService
+        console.log('=== 页面初始化开始 ===');
+        showInitializationProgress('正在检查API服务...', 'api');
+        console.log('APIService状态:', !!window.apiService);
+        
+        if (!window.apiService && typeof APIService !== 'undefined') {
+            console.log('重新初始化APIService...');
+            window.apiService = new APIService();
+            console.log('APIService重新初始化完成');
+        }
+        
+        console.log('最终APIService状态:', !!window.apiService);
+        console.log('========================');
+        
+        // 注册Service Worker
+        showInitializationProgress('正在注册Service Worker...', 'worker');
+        if (window.SystemUtils && typeof window.SystemUtils.registerServiceWorker === 'function') {
+            window.SystemUtils.registerServiceWorker();
+        }
+              
+        // 检查URL中是否有导入ID
+        showInitializationProgress('正在检查URL参数...', 'url');
+        const urlParams = new URLSearchParams(window.location.search);
+        const importId = urlParams.get('importId');
 
-    if (importId) {
-        // 如果有ID，则执行自动导入流程
-        await handleAutoImport(importId);
-    } else {
-        // 否则，正常初始化应用
-        await init();
+        if (importId) {
+            // 如果有ID，则执行自动导入流程
+            showInitializationProgress('正在执行自动导入...', 'import');
+            await handleAutoImport(importId);
+        } else {
+            // 否则，正常初始化应用
+            showInitializationProgress('正在初始化数据库...', 'database');
+            await init();
+        }
+        
+        // 初始化完成
+        const initTime = Date.now() - window.mainAppInitStartTime;
+        console.log(`[主应用] 初始化完成，耗时: ${initTime}ms`);
+        
+        // 发送初始化完成事件
+        if (typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('mainAppInitComplete', {
+                detail: { 
+                    initTime: initTime,
+                    timestamp: Date.now()
+                }
+            }));
+        }
+        
+        // 隐藏初始化提示
+        hideInitializationProgress();
+        
+    } catch (error) {
+        console.error('[主应用] 初始化失败:', error);
+        showInitializationProgress('应用启动失败: ' + error.message, 'error');
+        setTimeout(() => hideInitializationProgress(), 5000);
+    } finally {
+        window.mainAppInitializing = false;
+        
+        // 启动联系人时间定时更新器
+        startContactTimeUpdater();
     }
 });
 
@@ -12260,6 +12535,32 @@ async function applyBubbleStyleToCurrentChat() {
             window.customBubbleStyle = window.customBubbleStyleKare;
         }
         
+        // 动态加载所需字体
+        if (window.fontLoader) {
+            const fontsToLoad = new Set();
+            
+            if (actualStyleDataKare?.fontFamily && shouldEnableKare) {
+                fontsToLoad.add(actualStyleDataKare.fontFamily);
+            }
+            
+            if (actualStyleDataSelf?.fontFamily && shouldEnableSelf) {
+                fontsToLoad.add(actualStyleDataSelf.fontFamily);
+            }
+            
+            if (fontsToLoad.size > 0) {
+                console.log('开始加载气泡样式所需字体:', Array.from(fontsToLoad));
+                try {
+                    const fontResults = await Promise.all(
+                        Array.from(fontsToLoad).map(font => window.fontLoader.loadFont(font))
+                    );
+                    const loadedCount = fontResults.filter(Boolean).length;
+                    console.log(`气泡字体加载完成: ${loadedCount}/${fontsToLoad.size} 成功`);
+                } catch (error) {
+                    console.warn('加载气泡字体时发生错误:', error);
+                }
+            }
+        }
+
         // 重新渲染当前聊天消息以应用新样式
         if (window.currentContact && (window.customBubbleStyleKare || window.customBubbleStyleSelf)) {
             await renderMessages(false); // 明确指定非初始加载，避免滚动
@@ -15364,3 +15665,128 @@ window.updateConfigActionButtons = updateConfigActionButtons;
 window.ensureApiConfigIsUpdated = ensureApiConfigIsUpdated;
 window.loadModelsForConfig = loadModelsForConfig;
 window.saveModelSelection = saveModelSelection;
+
+// === 互动界面数据同步 ===
+
+/**
+ * 同步数据到互动界面
+ */
+async function syncInteractiveData() {
+    try {
+        showToast('正在同步角色数据...', 'info');
+        
+        const interactiveFrame = document.getElementById('interactiveFrame');
+        if (!interactiveFrame || !interactiveFrame.contentWindow) {
+            showToast('互动界面未准备就绪', 'error');
+            return;
+        }
+
+        // 准备同步数据
+        const syncData = {
+            type: 'BULK_DATA_SYNC',
+            characters: contacts.filter(c => c.type === 'private').map(contact => ({
+                name: contact.name,
+                personality: contact.personality,
+                voiceId: contact.voiceId || '',
+                avatar: contact.avatarFileId || contact.avatar || ''
+            })),
+            apiSettings: {
+                url: window.apiSettings?.url || '',
+                key: window.apiSettings?.key || '',
+                model: window.apiSettings?.model || '',
+                minimaxGroupId: window.minimaxSettings?.groupId || '',
+                minimaxApiKey: window.minimaxSettings?.apiKey || ''
+            },
+            userProfile: {
+                name: window.userProfile?.name || '默认用户',
+                personality: window.userProfile?.personality || '一个温柔的探索者'
+            }
+        };
+
+        // 发送数据到iframe
+        interactiveFrame.contentWindow.postMessage(syncData, window.location.origin);
+        
+        console.log('数据同步到互动界面:', syncData);
+        showToast('角色数据同步完成', 'success');
+        
+    } catch (error) {
+        console.error('互动界面数据同步失败:', error);
+        showToast('数据同步失败', 'error');
+    }
+}
+
+/**
+ * 处理来自互动界面的数据更新
+ */
+function handleInteractiveDataUpdate(data) {
+    try {
+        console.log('收到互动界面数据更新:', data);
+        
+        if (data.type === 'UPDATE_CONTACT' && data.contactId && data.updateData) {
+            // 找到对应的contact并更新
+            const contact = contacts.find(c => c.name === data.contactId || c.id === data.contactId);
+            if (contact) {
+                // 更新互动相关字段
+                if (data.updateData.interactiveBackgroundFileId !== undefined) {
+                    contact.interactiveBackgroundFileId = data.updateData.interactiveBackgroundFileId;
+                }
+                if (data.updateData.touchZones !== undefined) {
+                    contact.touchZones = data.updateData.touchZones;
+                }
+                if (data.updateData.theme !== undefined) {
+                    contact.theme = data.updateData.theme;
+                }
+                if (data.updateData.ttsEnabled !== undefined) {
+                    contact.ttsEnabled = data.updateData.ttsEnabled;
+                }
+                if (data.updateData.diaryEntries !== undefined) {
+                    contact.diaryEntries = { ...contact.diaryEntries, ...data.updateData.diaryEntries };
+                }
+                if (data.updateData.interactiveChatHistory !== undefined) {
+                    // 追加聊天记录而不是替换
+                    contact.interactiveChatHistory = contact.interactiveChatHistory || [];
+                    contact.interactiveChatHistory.push(...data.updateData.interactiveChatHistory);
+                }
+                
+                // 保存到数据库
+                saveDataToDB().then(() => {
+                    console.log(`角色 "${contact.name}" 的互动数据已更新`);
+                    showToast('互动数据已保存', 'success');
+                }).catch(error => {
+                    console.error('保存互动数据失败:', error);
+                    showToast('保存互动数据失败', 'error');
+                });
+            }
+        }
+        
+    } catch (error) {
+        console.error('处理互动界面数据更新失败:', error);
+    }
+}
+
+// 监听来自iframe的消息
+window.addEventListener('message', (event) => {
+    // 只处理来自互动界面的消息
+    if (event.origin === window.location.origin && event.data && event.data.type) {
+        handleInteractiveDataUpdate(event.data);
+    }
+});
+
+// 在进入互动页面时自动同步数据
+const originalShowPage = window.showPage;
+window.showPage = function(pageId) {
+    const result = originalShowPage.call(this, pageId);
+    
+    // 如果切换到互动页面，延迟1秒后自动同步数据
+    if (pageId === 'interactivePage') {
+        setTimeout(() => {
+            syncInteractiveData();
+        }, 1000);
+    }
+    
+    return result;
+};
+
+// 暴露互动相关函数到全局
+window.syncInteractiveData = syncInteractiveData;
+window.handleInteractiveDataUpdate = handleInteractiveDataUpdate;

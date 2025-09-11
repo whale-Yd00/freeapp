@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>互动页面</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+    
+    <!-- Environment Configuration -->
+    <script src="config/environment-config.js"></script>
+    <script src="js/environment-indicator.js"></script>
+    
+    <!-- FileSystem API Dependencies -->
+    <script src="utils/fileStorageManager.js"></script>
+    <script src="utils/imageStorageAPI.js"></script>
+    <script src="utils/imageDisplayHelper.js"></script>
+    
+    <!-- Database Management -->
+    <script src="utils/dataMigrator.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blur-value: 12px;
+            --body-bg: #fdf2f8;
+            --glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.2));
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --glass-shadow: rgba(236, 72, 153, 0.25);
+            --text-primary: #831843;
+            --text-secondary: #be185d;
+            --accent-color: #ec4899;
+            --accent-gradient: linear-gradient(135deg, #fb7185, #ec4899);
+            --char-bubble-bg: #ffffff;
+            --char-bubble-text: #1f2937;
+            --control-bg: rgba(255, 255, 255, 0.3);
+            --control-bg-active: #ffffff;
+            --list-hover-bg: rgba(255, 255, 255, 0.7);
+        }
+        body.theme-blue-purple {
+            --body-bg: #37306B; --glass-bg: linear-gradient(135deg, rgba(173, 169, 217, 0.25), rgba(94, 91, 142, 0.1));
+            --glass-border: rgba(255, 255, 255, 0.1); --glass-shadow: rgba(27, 24, 64, 0.4);
+            --text-primary: #E0E7FF; --text-secondary: #C7D2FE; --accent-color: #818cf8;
+            --accent-gradient: linear-gradient(135deg, #a5b4fc, #818cf8); --char-bubble-bg: rgba(255,255,255,0.1);
+            --char-bubble-text: #E0E7FF; --control-bg: rgba(255, 255, 255, 0.1);
+            --control-bg-active: rgba(255, 255, 255, 0.3); --list-hover-bg: rgba(255, 255, 255, 0.2);
+        }
+        body.theme-black-white {
+            --body-bg: #111827; --glass-bg: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05));
+            --glass-border: rgba(255, 255, 255, 0.15); --glass-shadow: rgba(0, 0, 0, 0.5);
+            --text-primary: #f3f4f6; --text-secondary: #d1d5db; --accent-color: #f9fafb;
+            --accent-gradient: linear-gradient(135deg, #9ca3af, #6b7280); --char-bubble-bg: rgba(255,255,255,0.1);
+            --char-bubble-text: #f3f4f6; --control-bg: rgba(255, 255, 255, 0.1);
+            --control-bg-active: rgba(255, 255, 255, 0.2); --list-hover-bg: rgba(255, 255, 255, 0.15);
+        }
+        html, body { height: 100%; overflow: hidden; font-family: 'Noto Sans SC', sans-serif; background-color: var(--body-bg); transition: background-color 0.5s ease; }
+        #main-container { background-size: cover; background-position: center; height: 100%; width: 100%; position: relative; }
+        #image-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-size: contain; background-position: center; touch-action: none; background-repeat: no-repeat; }
+        .touch-zone { position: absolute; border: 2px dashed rgba(255, 255, 255, 0.7); background-color: rgba(29, 78, 216, 0.4); color: white; font-weight: bold; display: flex; align-items: center; justify-content: center; user-select: none; text-shadow: 1px 1px 2px black; border-radius: 8px; box-sizing: border-box; transition: background-color 0.2s, border-color 0.2s; cursor: move; }
+        .resize-handle, .rotate-handle, .delete-zone-btn { position: absolute; background-color: rgba(255, 255, 255, 0.8); border: 1px solid #333; border-radius: 50%; display: none; box-sizing: border-box; z-index: 10; }
+        .resize-handle { width: 16px; height: 16px; right: -8px; bottom: -8px; cursor: se-resize; }
+        .rotate-handle { width: 16px; height: 16px; left: 50%; top: -20px; transform: translateX(-50%); cursor: alias; }
+        .rotate-handle::before { content: ''; position: absolute; width: 1px; height: 12px; background: #333; left: 50%; top: -12px; }
+        .delete-zone-btn { width: 20px; height: 20px; right: -10px; top: -10px; cursor: pointer; display: none; align-items: center; justify-content: center; background-color: #ef4444; color: white; font-weight: bold; line-height: 18px; }
+        #image-container.edit-mode .touch-zone { border-color: rgba(255, 255, 255, 0.7); cursor: move; }
+        #image-container.edit-mode .touch-zone:hover { border-style: solid; }
+        #image-container.edit-mode .resize-handle, #image-container.edit-mode .rotate-handle, #image-container.edit-mode .delete-zone-btn { display: flex; }
+        #image-container.use-mode .touch-zone { background-color: transparent; border-color: transparent; color: transparent; text-shadow: none; cursor: pointer; z-index: 25; }
+        .glassmorphism { background: var(--glass-bg); backdrop-filter: blur(var(--blur-value)); -webkit-backdrop-filter: blur(var(--blur-value)); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px 0 var(--glass-shadow); transition: background 0.5s ease, border 0.5s ease, box-shadow 0.5s ease; }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+        .chat-bubble { max-width: 75%; padding: 0.5rem 0.75rem; border-radius: 1rem; word-break: break-word; }
+        .chat-bubble-user { background: var(--accent-gradient); color: white; border-bottom-right-radius: 0.25rem; }
+        .chat-bubble-char { background-color: var(--char-bubble-bg); color: var(--char-bubble-text); border: 1px solid var(--glass-border); }
+        .theme-selector div { cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; }
+        .theme-selector div.selected { border-color: var(--accent-color); }
+        .button-gradient { background: var(--accent-gradient); transition: filter 0.2s ease-in-out; }
+        .button-gradient:hover { filter: brightness(1.1); }
+        .segmented-control { display: flex; background-color: var(--control-bg); border-radius: 9px; padding: 3px; width: 100%; }
+        .settings-tab { flex: 1; text-align: center; padding: 6px 4px; border-radius: 7px; font-weight: 500; cursor: pointer; color: var(--text-secondary); transition: background-color 0.3s, color 0.3s; border-bottom: none; }
+        .settings-tab.active { background-color: var(--control-bg-active); color: var(--text-primary); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        select { color: #1f2937; }
+        select option { background-color: #ffffff; color: #111827; }
+        #floating-pomodoro-display { position: absolute; top: 1rem; left: 1rem; z-index: 20; pointer-events: none; display: none; flex-direction: column; gap: 0.5rem; }
+        .floating-timer-block { padding: 0.5rem 1rem; border-radius: 0.75rem; min-width: 200px; }
+        .floating-timer-block .task-name { font-weight: bold; font-size: 0.875rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 4px rgba(0,0,0,0.5); }
+        .floating-timer-block .time { font-family: 'Noto Sans SC', sans-serif, monospace; font-size: 1.5rem; line-height: 2rem; color: var(--text-primary); text-shadow: 0 0 4px rgba(0,0,0,0.5); }
+        #char-pomodoro-display, #user-pomodoro-display { text-shadow: 0 0 8px rgba(0, 0, 0, 0.3); }
+        .diary-list-item { cursor: pointer; padding: 0.75rem 0.5rem; border-radius: 0.5rem; transition: background-color 0.2s; }
+        .diary-list-item:hover { background-color: var(--list-hover-bg); }
+        #diary-list-panel { transform: translateX(-100%); transition: transform 0.3s ease-in-out; box-shadow: 4px 0px 15px rgba(0,0,0,0.2); }
+        #diary-modal.panel-open #diary-list-panel { transform: translateX(0); }
+        #diary-panel-overlay { transition: opacity 0.3s ease-in-out; }
+    </style>
+    <!-- Analytics -->
+    <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>
+</head>
+<body class="theme-pink-white">
+
+    <audio id="tts-audio-player" class="hidden"></audio>
+
+    <div id="main-container">
+        <div id="image-container" class="edit-mode">
+            <div id="upload-prompt" class="absolute inset-0 flex items-center justify-center text-gray-600 pointer-events-none text-center p-4">
+                <p class="text-[var(--text-secondary)]">点击右下角设定按钮 (⚙️)<br>开始配置</p>
+            </div>
+        </div>
+    </div>
+    
+    <div id="floating-pomodoro-display">
+        <div id="floating-char-timer" class="glassmorphism floating-timer-block hidden">
+            <p class="task-name" id="floating-char-task-name">角色的任务</p>
+            <p class="time" id="floating-char-time">25:00</p>
+        </div>
+        <div id="floating-user-timer" class="glassmorphism floating-timer-block hidden">
+            <p class="task-name" id="floating-user-task-name">你的任务</p>
+            <p class="time" id="floating-user-time">25:00</p>
+        </div>
+    </div>
+
+    <div id="top-right-selectors" class="absolute top-4 right-4 z-20 flex flex-col space-y-2 items-end">
+        <select id="active-character-select" class="glassmorphism w-48 px-3 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--accent-color)]"></select>
+    </div>
+
+    <footer id="dialogue-box-container" class="fixed left-0 right-0 p-4 z-20" style="bottom: 60px;">
+        <div id="dialogue-box" class="glassmorphism w-full h-24 p-3 rounded-2xl overflow-y-auto">
+            <p id="dialogue-text" class="text-[var(--text-primary)]">角色将会在这里回应...</p>
+        </div>
+    </footer>
+
+    <div class="absolute bottom-28 right-4 z-30 flex flex-col items-center space-y-3">
+        <button id="chat-btn" class="glassmorphism text-[var(--text-primary)] p-3 rounded-full shadow-lg"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z" clip-rule="evenodd" /></svg></button>
+        <button id="diary-btn" class="glassmorphism text-[var(--text-primary)] p-3 rounded-full shadow-lg"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor"><path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" /></svg></button>
+        <button id="pomodoro-btn" class="glassmorphism text-[var(--text-primary)] p-3 rounded-full shadow-lg"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></button>
+        <div class="flex items-center glassmorphism p-2 rounded-full shadow-lg space-x-2">
+            <label for="mode-toggle" class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="mode-toggle" class="sr-only peer" checked>
+                <div class="w-11 h-6 bg-gray-400 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent-color)]"></div>
+            </label>
+        </div>
+        <button id="settings-btn" class="glassmorphism text-[var(--text-primary)] p-3 rounded-full shadow-lg"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="glassmorphism rounded-2xl p-4 w-full max-w-lg max-h-[90vh] overflow-y-auto relative flex flex-col">
+            <div class="flex-shrink-0 mb-4">
+                <nav class="segmented-control">
+                    <button data-tab="scene-settings-tab" class="settings-tab active">场景设置</button>
+                    <button data-tab="touch-settings-tab" class="settings-tab">互动区域</button>
+                    <button data-tab="theme-settings-tab" class="settings-tab">主题与语音</button>
+                </nav>
+            </div>
+            <div id="settings-content" class="flex-grow overflow-y-auto pr-2"></div>
+            <button id="close-settings-modal-btn" class="absolute top-4 right-4 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-3xl">&times;</button>
+        </div>
+    </div>
+    
+    <div id="chat-modal" class="modal-overlay hidden">
+        <div class="glassmorphism rounded-2xl w-full max-w-lg h-[90vh] flex flex-col p-4">
+            <div class="flex-shrink-0 flex justify-between items-center border-b border-[var(--glass-border)] pb-2 mb-2">
+                <h2 class="text-xl font-bold text-[var(--text-primary)]">聊天</h2>
+                <div class="flex items-center space-x-4">
+                    <button id="clear-chat-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-lg text-sm">清除记录</button>
+                    <button id="close-chat-modal-btn" class="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-2xl">&times;</button>
+                </div>
+            </div>
+            <div id="chat-history" class="flex-grow overflow-y-auto space-y-4 p-2"></div>
+            <div class="flex-shrink-0 mt-2 flex space-x-2">
+                <input type="text" id="chat-input" class="flex-grow bg-white/30 border border-gray-300/50 rounded-lg px-3 py-2 focus:outline-none text-[var(--text-primary)] placeholder-[var(--text-secondary)]" placeholder="输入消息...">
+                <button id="chat-send-btn" class="button-gradient text-white px-4 py-2 rounded-lg">发送</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="diary-modal" class="modal-overlay hidden">
+        <div id="diary-main-content" class="w-full max-w-2xl h-auto max-h-[90vh] flex flex-col glassmorphism rounded-2xl relative overflow-hidden">
+             <div class="flex-shrink-0 flex items-center justify-between border-b border-[var(--glass-border)] p-4">
+                 <button id="show-diary-panel-btn" class="text-[var(--text-primary)] p-2 rounded-full hover:bg-black/10"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+                 <h2 id="diary-title" class="text-xl font-bold text-[var(--text-primary)] text-center flex-grow mx-4">角色日记</h2>
+                 <div class="flex items-center space-x-2">
+                    <button id="generate-diary-btn" class="text-[var(--text-primary)] p-2 rounded-full hover:bg-black/10"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 4l16 16" /></svg></button>
+                    <button id="close-diary-modal-btn" class="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-3xl">&times;</button>
+                 </div>
+             </div>
+             <div id="diary-content-wrapper" class="flex-grow overflow-y-auto p-6">
+                 <div id="diary-content" class="text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">请在左侧选择一篇日记查看，或生成今日日记。</div>
+             </div>
+        </div>
+        <div id="diary-panel-overlay" class="hidden absolute inset-0 bg-black/30 z-10"></div>
+        <div id="diary-list-panel" class="absolute top-0 left-0 h-full w-full max-w-xs glassmorphism p-4 z-20 flex flex-col space-y-4">
+             <h3 class="text-xl font-bold text-[var(--text-primary)] border-b border-[var(--glass-border)] pb-2">日记列表</h3>
+             <div id="diary-list" class="flex-grow overflow-y-auto text-[var(--text-primary)] space-y-1"></div>
+        </div>
+    </div>
+    
+    <div id="pomodoro-modal" class="modal-overlay hidden">
+        <div class="glassmorphism rounded-2xl w-full max-w-lg h-auto flex flex-col p-6 space-y-4">
+            <div class="flex justify-between items-center border-b border-[var(--glass-border)] pb-3 mb-3">
+                 <h2 class="text-2xl font-bold text-[var(--text-primary)]">番茄钟</h2>
+                 <button id="close-pomodoro-modal-btn" class="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-3xl">&times;</button>
+            </div>
+            <div class="p-4 rounded-lg border border-[var(--glass-border)] space-y-3">
+                <h3 class="font-bold text-lg text-[var(--text-primary)]">角色的任务</h3>
+                <div class="text-center">
+                    <p id="char-pomodoro-display" class="text-5xl font-mono text-[var(--text-primary)]">25:00</p>
+                    <p id="char-task-display" class="text-sm text-[var(--text-secondary)] mt-1">未开始</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="char-task-input" class="flex-grow bg-white/30 border border-gray-300/50 rounded-lg px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-secondary)]" placeholder="任务名称 (例如: 看书)">
+                    <input type="number" id="char-duration-input" class="w-24 bg-white/30 border border-gray-300/50 rounded-lg px-3 py-2 text-[var(--text-primary)]" placeholder="分钟" value="25">
+                    <button id="char-pomodoro-btn" class="button-gradient text-white px-4 py-2 rounded-lg">开始</button>
+                </div>
+            </div>
+            <div class="p-4 rounded-lg border border-[var(--glass-border)] space-y-3">
+                <h3 class="font-bold text-lg text-[var(--text-primary)]">你的任务</h3>
+                <div class="text-center">
+                    <p id="user-pomodoro-display" class="text-5xl font-mono text-[var(--text-primary)]">25:00</p>
+                    <p id="user-task-display" class="text-sm text-[var(--text-secondary)] mt-1">未开始</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="user-task-input" class="flex-grow bg-white/30 border border-gray-300/50 rounded-lg px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-secondary)]" placeholder="任务名称 (例如: 写代码)">
+                    <input type="number" id="user-duration-input" class="w-24 bg-white/30 border border-gray-300/50 rounded-lg px-3 py-2 text-[var(--text-primary)]" placeholder="分钟" value="25">
+                    <button id="user-pomodoro-btn" class="button-gradient text-white px-4 py-2 rounded-lg">开始</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    // =========================================================================
+    // 数据库访问统一管理 - 使用主应用的数据库系统
+    // =========================================================================
+    
+    // 互动界面数据管理助手
+    const interactiveDataHelper = {
+        // 等待主应用数据库准备就绪
+        async ensureReady() {
+            try {
+                if (typeof window.ensureDBReady !== 'function') {
+                    throw new Error('主应用数据库管理系统未加载');
+                }
+                await window.ensureDBReady(async () => {
+                    return window.db !== null;
+                }, '互动界面数据库初始化');
+            } catch (error) {
+                console.error('数据库初始化失败:', error);
+                alert('数据库初始化失败，请刷新页面重试');
+                throw error; // Re-throw the error to prevent further execution
+            }
+        },
+
+        // 获取单个联系人数据
+        async getContact(contactName) {
+            await this.ensureReady();
+            return await window.ensureDBReady(async () => {
+                const transaction = window.db.transaction(['contacts'], 'readonly');
+                const store = transaction.objectStore('contacts');
+                const contacts = await window.promisifyRequest(store.getAll(), '获取联系人列表');
+                return contacts.find(c => c.name === contactName);
+            }, `获取联系人 ${contactName}`);
+        },
+
+        // 获取所有联系人数据
+        async getAllContacts() {
+            await this.ensureReady();
+            return await window.ensureDBReady(async () => {
+                const transaction = window.db.transaction(['contacts'], 'readonly');
+                const store = transaction.objectStore('contacts');
+                return await window.promisifyRequest(store.getAll(), '获取所有联系人');
+            }, '获取联系人列表');
+        },
+
+        // 更新联系人数据
+        async updateContact(contactData) {
+            await this.ensureReady();
+            return await window.ensureDBReady(async () => {
+                const transaction = window.db.transaction(['contacts'], 'readwrite');
+                const store = transaction.objectStore('contacts');
+                return await window.promisifyRequest(store.put(contactData), `更新联系人 ${contactData.name}`);
+            }, `保存联系人数据 ${contactData.name}`);
+        }
+    };
+
+
+    // --- 接收父窗口数据 ---
+    let parentAppSettings = null; 
+
+    // --- 数据同步处理 ---
+    async function handleBulkDataSync(data) {
+        console.log('正在处理批量同步数据...', data);
+        const { characters: receivedCharacters, userProfile: receivedUserProfile } = data;
+
+        // 设置用户人设
+        currentUserPersona = { name: receivedUserProfile.name, text: receivedUserProfile.personality };
+        
+        console.log('数据同步完成！角色数据来自主应用contacts表。');
+        
+        // 刷新角色列表（数据已经在主应用中同步）
+        await populateCharacterList(activeCharacterSelect);
+        
+        // 如果有角色，加载第一个角色
+        const chars = await getCharacters();
+        const charNames = Object.keys(chars);
+        if (charNames.length > 0 && !currentCharacterName) {
+            await loadCharacter(charNames[0]);
+        }
+    }
+
+    // --- 消息监听 ---
+    window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || !data.type) return;
+
+        switch (data.type) {
+            case 'BULK_DATA_SYNC':
+                parentAppSettings = {
+                    apiSettings: data.apiSettings,
+                    userPersona: data.userProfile,
+                    character: {}
+                };
+                console.log("已接收并应用全局设置: ", parentAppSettings);
+
+                handleBulkDataSync(data).then(async () => {
+                    const chars = await getCharacters();
+                    const syncedChars = Object.keys(chars);
+                    if (syncedChars.length > 0 && !currentCharacterName) {
+                        await loadCharacter(syncedChars[0]);
+                    }
+                });
+                break;
+            default:
+                console.warn('收到未知的消息类型:', data.type);
+                break;
+        }
+    });
+    
+    // --- DOM Elements ---
+    const getUI = (id) => document.getElementById(id);
+    const body = document.body;
+    const imageContainer = getUI('image-container');
+    const dialogueText = getUI('dialogue-text');
+    const modeToggle = getUI('mode-toggle');
+    const settingsBtn = getUI('settings-btn');
+    const chatBtn = getUI('chat-btn');
+    const diaryBtn = getUI('diary-btn');
+    const settingsModal = getUI('settings-modal');
+    const chatModal = getUI('chat-modal');
+    const diaryModal = getUI('diary-modal');
+    const closeSettingsModalBtn = getUI('close-settings-modal-btn');
+    const closeChatModalBtn = getUI('close-chat-modal-btn');
+    const closeDiaryModalBtn = getUI('close-diary-modal-btn');
+    const uploadPrompt = getUI('upload-prompt');
+    const chatHistoryEl = getUI('chat-history');
+    const chatInput = getUI('chat-input');
+    const chatSendBtn = getUI('chat-send-btn');
+    const settingsContent = getUI('settings-content');
+    const activeCharacterSelect = getUI('active-character-select');
+    const topRightSelectors = getUI('top-right-selectors');
+    const clearChatBtn = getUI('clear-chat-btn');
+    const diaryTitle = getUI('diary-title');
+    const generateDiaryBtn = getUI('generate-diary-btn');
+    const diaryList = getUI('diary-list');
+    const diaryContent = getUI('diary-content');
+    const showDiaryPanelBtn = getUI('show-diary-panel-btn');
+    const diaryListPanel = getUI('diary-list-panel');
+    const diaryPanelOverlay = getUI('diary-panel-overlay');
+    const diaryMainContent = getUI('diary-main-content');
+    const pomodoroBtn = getUI('pomodoro-btn');
+    const pomodoroModal = getUI('pomodoro-modal');
+    const closePomodoroModalBtn = getUI('close-pomodoro-modal-btn');
+    const charPomodoroDisplay = getUI('char-pomodoro-display');
+    const charTaskDisplay = getUI('char-task-display');
+    const charTaskInput = getUI('char-task-input');
+    const charDurationInput = getUI('char-duration-input');
+    const charPomodoroBtn = getUI('char-pomodoro-btn');
+    const userPomodoroDisplay = getUI('user-pomodoro-display');
+    const userTaskDisplay = getUI('user-task-display');
+    const userTaskInput = getUI('user-task-input');
+    const userDurationInput = getUI('user-duration-input');
+    const userPomodoroBtn = getUI('user-pomodoro-btn');
+    const floatingPomodoroDisplay = getUI('floating-pomodoro-display');
+    const floatingCharTimer = getUI('floating-char-timer');
+    const floatingUserTimer = getUI('floating-user-timer');
+    const floatingCharTaskName = getUI('floating-char-task-name');
+    const floatingCharTime = getUI('floating-char-time');
+    const floatingUserTaskName = getUI('floating-user-task-name');
+    const floatingUserTime = getUI('floating-user-time');
+    const ttsAudioPlayer = getUI('tts-audio-player');
+
+    // --- State Variables ---
+    const DEFAULT_ZONES = ["头发", "耳朵", "眼睛", "脸颊", "鼻子", "脖子", "锁骨", "胸口", "小腹", "大臂", "小臂", "胯部", "大腿", "小腿", "脚"];
+    let currentZones = [...DEFAULT_ZONES];
+    let touchHistory = [];
+    let messageHistory = [];
+    const HISTORY_LIMIT = 20; 
+    const CONTEXT_LIMIT = 10;
+    let currentBackgroundFileId = '';
+    let currentUserPersona = { name: '默认', text: '一个温柔的探索者' };
+    let currentCharacterName = '';
+    let currentCharacterPersonaText = '';
+    let currentDiaryDate = '';
+    let pomodoroState = {
+        char: { timerId: null, endTime: 0, task: '', isRunning: false },
+        user: { timerId: null, endTime: 0, task: '', isRunning: false }
+    };
+
+    // --- Templates for Settings Tabs ---
+    const sceneSettingsHTML = `
+        <div id="scene-settings-tab" class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-[var(--text-primary)] mb-2">当前角色</label>
+                <div class="p-3 bg-white/20 border border-gray-300/50 rounded-md">
+                    <div class="text-[var(--text-primary)] font-bold" id="character-name-display">请先选择或同步角色</div>
+                </div>
+            </div>
+            <div>
+                <label for="image-upload" class="block text-sm font-medium text-[var(--text-secondary)]">互动背景图</label>
+                <input type="file" id="image-upload" accept="image/*" class="mt-1 block w-full text-sm text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-white/30 file:text-[var(--text-primary)] hover:file:bg-white/50">
+                <p class="text-xs text-slate-500 mt-1">为该角色上传在互动场景中使用的专属图片。</p>
+                <button id="save-char-btn" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg w-full">保存场景设置</button>
+            </div>
+        </div>`;
+
+    const touchSettingsHTML = `
+        <div id="touch-settings-tab" class="space-y-4 hidden">
+            <div>
+                <label for="custom-zone-name" class="block text-sm font-medium text-[var(--text-secondary)]">添加自定义区域</label>
+                <div class="flex space-x-2 mt-1">
+                    <input type="text" id="custom-zone-name" class="flex-grow px-3 py-2 bg-white/30 border border-gray-300/50 rounded-md shadow-sm text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-color)]" placeholder="例如：手腕">
+                    <button id="add-zone-btn" class="button-gradient text-white font-bold py-2 px-4 rounded-lg">添加</button>
+                </div>
+            </div>
+            <button id="reset-zones-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg mt-4">重置所有触发框</button>
+        </div>`;
+
+    const themeSettingsHTML = `
+        <div id="theme-settings-tab" class="space-y-4 hidden">
+            <div>
+                <label class="block text-sm font-medium text-[var(--text-secondary)] mb-2">主题选择</label>
+                <div class="theme-selector flex space-x-2">
+                    <div data-theme="theme-pink-white" class="selected w-10 h-10 rounded-full bg-gradient-to-br from-pink-200 to-pink-400"></div>
+                    <div data-theme="theme-blue-purple" class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-300 to-purple-500"></div>
+                    <div data-theme="theme-black-white" class="w-10 h-10 rounded-full bg-gradient-to-br from-gray-400 to-gray-800"></div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <label for="tts-toggle" class="text-sm font-medium text-[var(--text-secondary)]">自动播放角色语音</label>
+                <label for="tts-toggle" class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="tts-toggle" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-400 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent-color)]"></div>
+                </label>
+            </div>
+            <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800">
+                <p class="text-sm">语音播放使用主应用设置的Minimax API和角色的语音ID。</p>
+            </div>
+        </div>`;
+    
+    // --- Function Definitions ---
+    const openModal = (modal) => modal.classList.remove('hidden');
+    const closeModal = (modal) => {
+        modal.classList.add('hidden');
+        if (modal === diaryModal) closeDiaryPanel();
+    };
+    const addMessageToChatUI = (sender, text) => {
+        const bubble = document.createElement('div');
+        bubble.className = `w-full flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+        bubble.innerHTML = `<div class="chat-bubble ${sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-char'}">${text.replace(/\n/g, '<br>')}</div>`;
+        chatHistoryEl.appendChild(bubble);
+        chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+    };
+    const applyTheme = (themeClass) => {
+        body.className = themeClass;
+        if (settingsModal.querySelector('.theme-selector')) {
+            settingsModal.querySelectorAll('.theme-selector div').forEach(s => s.classList.remove('selected'));
+            settingsModal.querySelector(`[data-theme="${themeClass}"]`)?.classList.add('selected');
+        }
+    };
+    const sendChatMessage = () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        addMessageToChatUI('user', text);
+        addToHistory(messageHistory, { sender: 'user', text: text });
+        chatInput.value = '';
+        callAI({ type: 'chat', content: text });
+    };
+
+    function attachEventListeners() {
+        settingsBtn.addEventListener('click', openSettings);
+        chatBtn.addEventListener('click', () => openModal(chatModal));
+        diaryBtn.addEventListener('click', openDiaryModal);
+        closeSettingsModalBtn.addEventListener('click', () => closeModal(settingsModal));
+        closeChatModalBtn.addEventListener('click', () => closeModal(chatModal));
+        closeDiaryModalBtn.addEventListener('click', () => closeModal(diaryModal));
+        pomodoroBtn.addEventListener('click', () => openModal(pomodoroModal));
+        closePomodoroModalBtn.addEventListener('click', () => closeModal(pomodoroModal));
+        clearChatBtn.addEventListener('click', clearChatHistory);
+        chatSendBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
+        modeToggle.addEventListener('change', () => {
+            imageContainer.classList.toggle('edit-mode', modeToggle.checked);
+            imageContainer.classList.toggle('use-mode', !modeToggle.checked);
+            topRightSelectors.style.display = modeToggle.checked ? 'flex' : 'none';
+        });
+        activeCharacterSelect.addEventListener('change', (e) => loadCharacter(e.target.value));
+        generateDiaryBtn.addEventListener('click', generateDiary);
+        showDiaryPanelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            diaryModal.classList.add('panel-open');
+            diaryPanelOverlay.classList.remove('hidden');
+        });
+        diaryPanelOverlay.addEventListener('click', closeDiaryPanel);
+        diaryMainContent.addEventListener('click', (e) => {
+            if (diaryModal.classList.contains('panel-open') && !diaryListPanel.contains(e.target)) {
+                closeDiaryPanel();
+            }
+        });
+        charPomodoroBtn.addEventListener('click', () => {
+            if (pomodoroState.char.isRunning) stopTimer('char', false); else startTimer('char');
+        });
+        userPomodoroBtn.addEventListener('click', () => {
+            if (pomodoroState.user.isRunning) stopTimer('user', false); else startTimer('user');
+        });
+    }
+    
+    const openSettings = async () => {
+        settingsContent.innerHTML = sceneSettingsHTML + touchSettingsHTML + themeSettingsHTML;
+        
+        settingsModal.querySelectorAll('.settings-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                settingsModal.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                settingsContent.querySelectorAll('#settings-content > div').forEach(c => c.classList.add('hidden'));
+                getUI(tab.dataset.tab)?.classList.remove('hidden');
+            });
+        });
+        
+        getUI('image-upload').addEventListener('change', handleImageUpload);
+        getUI('save-char-btn').addEventListener('click', saveCurrentCharacter);
+        getUI('add-zone-btn').addEventListener('click', addCustomZone);
+        getUI('reset-zones-btn').addEventListener('click', () => {
+            currentZones = [...DEFAULT_ZONES];
+            createAllZones();
+        });
+        settingsModal.querySelectorAll('.theme-selector div').forEach(selector => {
+            selector.addEventListener('click', async () => {
+                const theme = selector.dataset.theme;
+                applyTheme(theme);
+                await updateCharacterSetting({ theme: theme }, '保存主题设置');
+            });
+        });
+        getUI('tts-toggle').addEventListener('change', async () => {
+            const ttsEnabled = getUI('tts-toggle').checked;
+            await updateCharacterSetting({ ttsEnabled: ttsEnabled }, '保存TTS设置');
+        });
+        
+        getUI('character-name-display').textContent = currentCharacterName || "未选择角色";
+        const characters = await getCharacters();
+        if (currentCharacterName && characters[currentCharacterName]) {
+            getUI('tts-toggle').checked = characters[currentCharacterName].ttsEnabled === true;
+            applyTheme(characters[currentCharacterName].theme || 'theme-pink-white');
+        }
+
+        openModal(settingsModal);
+    };
+
+    const addToHistory = async (historyArray, item) => {
+        historyArray.push(item);
+        if (historyArray.length > HISTORY_LIMIT) historyArray.shift();
+        if (historyArray === messageHistory) {
+            await saveChatHistory();
+        } else if (historyArray === touchHistory) {
+            await saveTouchHistory();
+        }
+    };
+
+    // 通用的角色设置更新函数
+    const updateCharacterSetting = async (updateData, errorContext = '更新角色设置') => {
+        if (!currentCharacterName) return;
+        try {
+            const contact = await interactiveDataHelper.getContact(currentCharacterName);
+            if (contact) {
+                // 批量更新属性
+                Object.assign(contact, updateData);
+                await interactiveDataHelper.updateContact(contact);
+                
+                // 同步到主应用
+                if (window.parent && window.parent !== window) {
+                    const syncData = {
+                        type: 'UPDATE_CONTACT',
+                        contactId: currentCharacterName,
+                        updateData: updateData
+                    };
+                    window.parent.postMessage(syncData, window.location.origin);
+                }
+            }
+        } catch (error) {
+            console.error(`${errorContext}失败:`, error);
+        }
+    };
+
+    const saveChatHistory = async () => {
+        await updateCharacterSetting({ interactiveChatHistory: messageHistory }, '保存聊天记录');
+    };
+
+    const saveTouchHistory = async () => {
+        await updateCharacterSetting({ interactiveTouchHistory: touchHistory }, '保存触摸记录');
+    };
+
+    const loadChatHistory = async () => {
+        if (!currentCharacterName) return;
+        try {
+            const contact = await interactiveDataHelper.getContact(currentCharacterName);
+            messageHistory = contact ? (contact.interactiveChatHistory || []) : [];
+            chatHistoryEl.innerHTML = '';
+            messageHistory.forEach(msg => addMessageToChatUI(msg.sender, msg.text));
+        } catch (error) {
+            console.error('加载聊天记录失败:', error);
+            messageHistory = [];
+        }
+    };
+
+    const loadTouchHistory = async () => {
+        if (!currentCharacterName) return;
+        try {
+            const contact = await interactiveDataHelper.getContact(currentCharacterName);
+            touchHistory = contact ? (contact.interactiveTouchHistory || []) : [];
+        } catch (error) {
+            console.error('加载触摸记录失败:', error);
+            touchHistory = [];
+        }
+    };
+    
+    const clearChatHistory = async () => {
+        if (!currentCharacterName) return alert('没有加载任何角色。');
+        if (confirm(`确定要清除角色"${currentCharacterName}"的所有聊天记录吗？此操作不可撤销。`)) {
+            messageHistory = [];
+            chatHistoryEl.innerHTML = '';
+            await saveChatHistory(); 
+            alert('聊天记录已清除。');
+        }
+    };
+
+    const getDiaryEntries = async () => {
+        if (!currentCharacterName) return {};
+        try {
+            const contact = await interactiveDataHelper.getContact(currentCharacterName);
+            return contact ? (contact.diaryEntries || {}) : {};
+        } catch (error) {
+            console.error('获取日记失败:', error);
+            return {};
+        }
+    };
+
+    const saveDiaryEntry = async (dateKey, content) => {
+        if (!currentCharacterName) return;
+        try {
+            const contact = await interactiveDataHelper.getContact(currentCharacterName);
+            if (!contact) return;
+            
+            // 更新日记记录
+            contact.diaryEntries = contact.diaryEntries || {};
+            contact.diaryEntries[dateKey] = content;
+            
+            // 保存到数据库
+            await interactiveDataHelper.updateContact(contact);
+        } catch (error) {
+            console.error('保存日记失败:', error);
+        }
+    };
+    
+    const deleteDiaryEntry = async (dateKey) => {
+        if (!currentCharacterName) return;
+        if (confirm(`确定要删除 ${dateKey} 的日记吗？`)) {
+            try {
+                const contact = await interactiveDataHelper.getContact(currentCharacterName);
+                if (contact && contact.diaryEntries && contact.diaryEntries[dateKey]) {
+                    delete contact.diaryEntries[dateKey];
+                    await interactiveDataHelper.updateContact(contact);
+                    await populateDiaryList();
+                    if (currentDiaryDate === dateKey) {
+                        const entries = await getDiaryEntries();
+                        const dates = Object.keys(entries).sort((a, b) => new Date(b) - new Date(a));
+                        await loadDiaryContent(dates.length > 0 ? dates[0] : null);
+                    }
+                }
+            } catch (error) {
+                console.error('删除日记失败:', error);
+            }
+        }
+    };
+
+    const clearCharacterForm = (silent = false) => {
+        currentCharacterName = '';
+        currentCharacterPersonaText = '';
+        if(getUI('image-upload')) getUI('image-upload').value = null;
+        currentBackgroundFileId = '';
+        imageContainer.style.backgroundImage = 'none';
+        uploadPrompt.style.display = 'flex';
+        if(getUI('reset-zones-btn')) getUI('reset-zones-btn').click();
+        activeCharacterSelect.selectedIndex = -1;
+        messageHistory = [];
+        touchHistory = [];
+        chatHistoryEl.innerHTML = '';
+        if (!silent) alert('已清空角色表单，您可以创建新角色了。');
+    };
+
+    const getCharacters = async () => {
+        try {
+            const contacts = await interactiveDataHelper.getAllContacts();
+            const charsMap = {};
+            contacts.forEach(contact => {
+                // 只返回私聊类型的联系人（AI角色）
+                if (contact.type === 'private') {
+                    charsMap[contact.name] = {
+                        name: contact.name,
+                        personality: contact.personality,
+                        voiceId: contact.voiceId || '',
+                        backgroundFileId: contact.interactiveBackgroundFileId || '',
+                        theme: contact.theme || 'theme-pink-white',
+                        ttsEnabled: contact.ttsEnabled || false,
+                        zones: contact.touchZones || [],
+                        diaryEntries: contact.diaryEntries || {},
+                        interactiveChatHistory: contact.interactiveChatHistory || [],
+                        interactiveTouchHistory: contact.interactiveTouchHistory || []
+                    };
+                }
+            });
+            return charsMap;
+        } catch (error) {
+            console.error('获取角色数据失败:', error);
+            return {};
+        }
+    };
+
+    const populateCharacterList = async (selectElement) => {
+        const characters = await getCharacters();
+        const currentVal = selectElement.value;
+        selectElement.innerHTML = '';
+        const charNames = Object.keys(characters);
+        if (charNames.length === 0) {
+            selectElement.innerHTML = '<option>无已存角色</option>';
+            selectElement.disabled = true;
+        } else {
+            charNames.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                selectElement.appendChild(option);
+            });
+            selectElement.disabled = false;
+        }
+        if (characters[currentVal]) selectElement.value = currentVal;
+    };
+
+    const getCurrentZoneData = () => Array.from(imageContainer.querySelectorAll('.touch-zone')).map(zoneEl => ({
+        name: zoneEl.dataset.name,
+        x: parseFloat(zoneEl.dataset.x) || 0, y: parseFloat(zoneEl.dataset.y) || 0,
+        width: zoneEl.offsetWidth, height: zoneEl.offsetHeight,
+        angle: parseFloat(zoneEl.dataset.angle) || 0,
+    }));
+
+    const saveCurrentCharacter = async () => {
+        const name = currentCharacterName;
+        if (!name) return alert('没有当前活动角色，无法保存！');
+        
+        try {
+            // 从主应用数据库获取联系人数据
+            const contact = await interactiveDataHelper.getContact(name);
+            if (!contact) {
+                return alert('角色不存在，请先在主应用中创建！');
+            }
+            
+            // 更新互动相关字段
+            contact.theme = body.className;
+            contact.interactiveBackgroundFileId = currentBackgroundFileId;
+            contact.touchZones = getCurrentZoneData();
+            
+            // 获取当前的TTS设置状态
+            const ttsToggle = getUI('tts-toggle');
+            if (ttsToggle) {
+                contact.ttsEnabled = ttsToggle.checked;
+            } else {
+                contact.ttsEnabled = contact.ttsEnabled || false;
+            }
+            
+            // 保存到主应用数据库
+            await interactiveDataHelper.updateContact(contact);
+            
+            // 向主应用发送数据更新通知
+            if (window.parent && window.parent !== window) {
+                const updateData = {
+                    type: 'UPDATE_CONTACT',
+                    contactId: name,
+                    updateData: {
+                        interactiveBackgroundFileId: contact.interactiveBackgroundFileId,
+                        touchZones: contact.touchZones,
+                        theme: contact.theme,
+                        ttsEnabled: contact.ttsEnabled
+                    }
+                };
+                window.parent.postMessage(updateData, window.location.origin);
+                console.log('场景设置已同步到主应用:', updateData);
+            }
+            
+            alert(`角色 "${name}" 的场景设置已保存并同步！`);
+        } catch (error) {
+            console.error('保存角色数据失败:', error);
+            alert(`保存失败: ${error.message}`);
+        }
+    };
+
+    const loadCharacter = async (name) => {
+        const characters = await getCharacters();
+        const charData = characters[name];
+        if (!charData) return console.error(`Character "${name}" not found.`);
+        
+        currentCharacterName = name;
+        currentCharacterPersonaText = charData.personality || '';
+        applyTheme(charData.theme || 'theme-pink-white');
+        
+        if (parentAppSettings) {
+            parentAppSettings.character = {
+                name: charData.name,
+                persona: charData.personality,
+                voiceId: charData.voiceId || ''
+            };
+        }
+        
+        currentBackgroundFileId = charData.backgroundFileId;
+        if (currentBackgroundFileId) {
+            try {
+                const backgroundUrl = await window.ImageStorageAPI.getBackgroundURL(currentCharacterName);
+                if (backgroundUrl) {
+                    imageContainer.style.backgroundImage = `url('${backgroundUrl}')`;
+                    uploadPrompt.style.display = 'none';
+                }
+            } catch (error) {
+                console.warn('加载背景图片失败:', error);
+                imageContainer.style.backgroundImage = 'none';
+                uploadPrompt.style.display = 'flex';
+            }
+        } else {
+            imageContainer.style.backgroundImage = 'none';
+            uploadPrompt.style.display = 'flex';
+        }
+
+        imageContainer.querySelectorAll('.touch-zone').forEach(z => z.remove());
+        if (charData.zones && charData.zones.length > 0) {
+            currentZones = charData.zones.map(z => z.name);
+            charData.zones.forEach(zoneData => createSingleZone(zoneData, true));
+        } else {
+            currentZones = [...DEFAULT_ZONES];
+            createAllZones();
+        }
+        
+        if(activeCharacterSelect.value !== name) activeCharacterSelect.value = name;
+        await loadChatHistory();
+        await loadTouchHistory();
+    };
+
+    const createSingleZone = (zoneData, fromLoad = false) => {
+        const containerRect = imageContainer.getBoundingClientRect();
+        const zone = document.createElement('div');
+        zone.className = 'touch-zone';
+        zone.textContent = zoneData.name;
+        zone.dataset.name = zoneData.name;
+        
+        const zoneWidth = fromLoad ? zoneData.width : 100;
+        const zoneHeight = fromLoad ? zoneData.height : 50;
+        zone.style.width = `${zoneWidth}px`;
+        zone.style.height = `${zoneHeight}px`;
+
+        if (fromLoad) {
+            zone.dataset.x = zoneData.x;
+            zone.dataset.y = zoneData.y;
+            zone.dataset.angle = zoneData.angle;
+        } else {
+            zone.dataset.x = (containerRect.width / 2) - (zoneWidth / 2);
+            zone.dataset.y = (containerRect.height / 2) - (zoneHeight / 2);
+            zone.dataset.angle = 0;
+        }
+        zone.style.transform = `translate(${zone.dataset.x}px, ${zone.dataset.y}px) rotate(${zone.dataset.angle}deg)`;
+        
+        const deleteBtn = document.createElement('div');
+        deleteBtn.className = 'delete-zone-btn';
+        deleteBtn.innerHTML = '&times;';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            currentZones = currentZones.filter(z => z !== zone.dataset.name);
+            zone.remove();
+        });
+
+        zone.appendChild(deleteBtn);
+        zone.appendChild(document.createElement('div')).className = 'resize-handle';
+        zone.appendChild(document.createElement('div')).className = 'rotate-handle';
+        
+        imageContainer.appendChild(zone);
+    };
+
+    const createAllZones = () => {
+        imageContainer.querySelectorAll('.touch-zone').forEach(z => z.remove());
+        currentZones.forEach(name => createSingleZone({name}));
+    };
+    
+    const addCustomZone = () => {
+        const name = getUI('custom-zone-name').value.trim();
+        if (!name) return alert('请输入区域名称！');
+        if (currentZones.includes(name)) return alert('该区域已存在！');
+        currentZones.push(name);
+        createSingleZone({name});
+        getUI('custom-zone-name').value = '';
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        if (!currentCharacterName) {
+            alert('请先选择一个角色！');
+            return;
+        }
+
+        try {
+            // 确保ImageStorageAPI已初始化
+            await window.ImageStorageAPI.init();
+            
+            // 存储背景图片，使用角色名作为backgroundId
+            const fileId = await window.ImageStorageAPI.storeBackground(file, currentCharacterName);
+            
+            // 更新当前状态
+            currentBackgroundFileId = fileId;
+            
+            // 获取并显示背景图片
+            const backgroundUrl = await window.ImageStorageAPI.getBackgroundURL(currentCharacterName);
+            if (backgroundUrl) {
+                imageContainer.style.backgroundImage = `url('${backgroundUrl}')`;
+                uploadPrompt.style.display = 'none';
+            }
+            
+            // 显示成功提示
+            console.log('背景图片上传成功，fileId:', fileId);
+            
+        } catch (error) {
+            console.error('背景图片上传失败:', error);
+            alert(`背景图片上传失败: ${error.message || '未知错误'}`);
+        }
+    };
+    
+    interact('.touch-zone').draggable({
+        listeners: { move(event) {
+            const target = event.target;
+            const x = (parseFloat(target.dataset.x) || 0) + event.dx;
+            const y = (parseFloat(target.dataset.y) || 0) + event.dy;
+            target.style.transform = `translate(${x}px, ${y}px) rotate(${parseFloat(target.dataset.angle) || 0}deg)`;
+            target.dataset.x = x;
+            target.dataset.y = y;
+        }},
+        modifiers: [interact.modifiers.restrictRect({ restriction: 'parent' })],
+        inertia: true
+    }).resizable({
+        edges: { left: true, right: true, bottom: true, top: true },
+        listeners: { move(event) {
+            const target = event.target;
+            let x = (parseFloat(target.dataset.x) || 0);
+            let y = (parseFloat(target.dataset.y) || 0);
+            target.style.width = `${event.rect.width}px`;
+            target.style.height = `${event.rect.height}px`;
+            x += event.deltaRect.left;
+            y += event.deltaRect.top;
+            target.style.transform = `translate(${x}px, ${y}px) rotate(${parseFloat(target.dataset.angle) || 0}deg)`;
+            target.dataset.x = x;
+            target.dataset.y = y;
+        }},
+        modifiers: [interact.modifiers.restrictSize({ min: { width: 30, height: 20 } })],
+    }).on('tap', (event) => {
+        if (imageContainer.classList.contains('edit-mode') || event.target.classList.contains('delete-zone-btn')) return;
+        callAI({ type: 'touch', content: event.currentTarget.dataset.name });
+        event.preventDefault();
+    });
+
+    interact('.rotate-handle').draggable({
+        onstart: (event) => {
+            const box = event.target.parentElement;
+            const rect = box.getBoundingClientRect();
+            box.dataset.centerX = rect.left + rect.width / 2;
+            box.dataset.centerY = rect.top + rect.height / 2;
+        },
+        onmove: (event) => {
+            const box = event.target.parentElement;
+            const angle = (Math.atan2(event.clientY - parseFloat(box.dataset.centerY), event.clientX - parseFloat(box.dataset.centerX)) * (180 / Math.PI)) + 90;
+            box.style.transform = `translate(${parseFloat(box.dataset.x) || 0}px, ${parseFloat(box.dataset.y) || 0}px) rotate(${angle}deg)`;
+            box.dataset.angle = angle;
+        },
+    });
+
+    const formatTime = (seconds) => `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+
+    const updateCountdown = (type) => {
+        const state = pomodoroState[type];
+        const remainingSeconds = Math.round((state.endTime - Date.now()) / 1000);
+        const display = type === 'char' ? charPomodoroDisplay : userPomodoroDisplay;
+        const floatingTimeDisplay = type === 'char' ? floatingCharTime : floatingUserTime;
+
+        if (remainingSeconds < 0) {
+            display.textContent = "00:00";
+            floatingTimeDisplay.textContent = "00:00";
+            stopTimer(type, true);
+            return;
+        }
+        const formattedTime = formatTime(remainingSeconds);
+        display.textContent = formattedTime;
+        floatingTimeDisplay.textContent = formattedTime;
+    };
+
+    const sendEncouragement = async (type) => {
+        if (!pomodoroState[type].isRunning) return;
+        const prompt = `你正在进行一个角色扮演。**你的角色人设是：**\n${currentCharacterPersonaText.trim()}\n**与你互动的用户人设是：**\n${currentUserPersona.text}\n**当前情景：**\n${type === 'user' ? `用户正在专心进行任务：“${pomodoroState[type].task}”。` : `你正在专心进行任务：“${pomodoroState[type].task}”。`}\n**你的任务：**\n时间已经过去了一段时间，请根据你的角色人设，对用户说一句简短、自然、符合人设的鼓励或关心的话，让他/她能继续坚持下去。`;
+        try {
+            const encouragementMessage = await makeApiCall(prompt);
+            dialogueText.textContent = encouragementMessage;
+            addToHistory(messageHistory, { sender: 'char', text: encouragementMessage });
+            addMessageToChatUI('char', `(鼓励) ${encouragementMessage}`);
+        } catch (error) { console.error("Encouragement failed:", error.message); }
+    };
+
+    const startTimer = (type) => {
+        const state = pomodoroState[type];
+        const taskInput = type === 'char' ? charTaskInput : userTaskInput;
+        const durationInput = type === 'char' ? charDurationInput : userDurationInput;
+        const taskDisplay = type === 'char' ? charTaskDisplay : userTaskDisplay;
+        const startBtn = type === 'char' ? charPomodoroBtn : userPomodoroBtn;
+        const floatingTimerBlock = type === 'char' ? floatingCharTimer : floatingUserTimer;
+        const floatingTaskName = type === 'char' ? floatingCharTaskName : floatingUserTaskName;
+
+        const task = taskInput.value.trim();
+        if (!task) return alert('请为任务命名！');
+        const durationMinutes = parseInt(durationInput.value, 10);
+        if (isNaN(durationMinutes) || durationMinutes <= 0) return alert('请输入有效的持续时间（分钟）！');
+
+        stopTimer(type, false);
+        state.isRunning = true;
+        state.task = task;
+        state.endTime = Date.now() + durationMinutes * 60 * 1000;
+        state.timerId = setInterval(() => updateCountdown(type), 1000);
+        state.encouragementId = setInterval(() => sendEncouragement(type), 7 * 60 * 1000); // 7 minutes
+        taskDisplay.textContent = `进行中: ${task}`;
+        startBtn.textContent = '停止';
+        taskInput.disabled = true;
+        durationInput.disabled = true;
+        floatingTaskName.textContent = `${type === 'char' ? '角色' : '你'}: ${task}`;
+        floatingTimerBlock.classList.remove('hidden');
+        floatingPomodoroDisplay.style.display = 'flex';
+        updateCountdown(type);
+    };
+
+    const stopTimer = (type, finished) => {
+        const state = pomodoroState[type];
+        if (!state.isRunning) return;
+        clearInterval(state.timerId);
+        clearInterval(state.encouragementId);
+
+        const taskDisplay = type === 'char' ? charTaskDisplay : userTaskDisplay;
+        const startBtn = type === 'char' ? charPomodoroBtn : userPomodoroBtn;
+        const taskInput = type === 'char' ? charTaskInput : userTaskInput;
+        const durationInput = type === 'char' ? charDurationInput : userDurationInput;
+        const display = type === 'char' ? charPomodoroDisplay : userPomodoroDisplay;
+        const floatingTimerBlock = type === 'char' ? floatingCharTimer : floatingUserTimer;
+        
+        const originalTask = state.task;
+        state.isRunning = false; state.timerId = null; state.encouragementId = null; state.task = '';
+        taskDisplay.textContent = '未开始';
+        startBtn.textContent = '开始';
+        taskInput.disabled = false;
+        durationInput.disabled = false;
+        display.textContent = formatTime(parseInt(durationInput.value, 10) * 60 || 25 * 60);
+        floatingTimerBlock.classList.add('hidden');
+        if (!pomodoroState.char.isRunning && !pomodoroState.user.isRunning) {
+            floatingPomodoroDisplay.style.display = 'none';
+        }
+        if (finished) {
+            const prompt = `你正在进行一个角色扮演。**你的角色人设是：**\n${currentCharacterPersonaText.trim()}\n**与你互动的用户人设是：**\n${currentUserPersona.text}\n**当前情景：**\n${type === 'user' ? `用户刚刚完成了任务：“${originalTask}”。` : `你刚刚完成了任务：“${originalTask}”。`}\n**你的任务：**\n请根据你的角色人设，对此发表一句祝贺或评论。`;
+            callAI({type: 'system', content: prompt});
+        }
+    };
+    
+    const getTodayDateKey = () => new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    const loadDiaryContent = (dateKey) => {
+        if (!dateKey) {
+            currentDiaryDate = getTodayDateKey();
+            diaryTitle.textContent = `角色日记 - ${currentDiaryDate}`;
+            diaryContent.innerHTML = '今天还没有日记。点击右上角按钮生成今日日记。';
+            return;
+        }
+        currentDiaryDate = dateKey;
+        diaryTitle.textContent = `角色日记 - ${dateKey}`;
+        diaryContent.innerHTML = (getDiaryEntries()[dateKey] || '无法找到该日记。').replace(/\n/g, '<br>');
+    };
+    
+    const openDiaryModal = () => {
+        populateDiaryList();
+        const entries = getDiaryEntries();
+        const dates = Object.keys(entries).sort((a, b) => new Date(b) - new Date(a));
+        loadDiaryContent(dates.length > 0 ? dates[0] : null);
+        diaryModal.classList.remove('panel-open');
+        diaryPanelOverlay.classList.add('hidden');
+        openModal(diaryModal);
+    };
+    
+    const closeDiaryPanel = () => {
+        diaryModal.classList.remove('panel-open');
+        diaryPanelOverlay.classList.add('hidden');
+    };
+
+    const populateDiaryList = () => {
+        const entries = getDiaryEntries();
+        const dates = Object.keys(entries).sort((a, b) => new Date(b) - new Date(a));
+        diaryList.innerHTML = '';
+        if (dates.length === 0) return diaryList.innerHTML = '<p class="text-sm text-[var(--text-secondary)] p-2">没有历史日记。</p>';
+        
+        dates.forEach(date => {
+            const item = document.createElement('div');
+            item.className = 'diary-list-item flex justify-between items-center';
+            const dateSpan = document.createElement('span');
+            dateSpan.textContent = date;
+            dateSpan.className = 'flex-grow';
+            dateSpan.onclick = () => { loadDiaryContent(date); closeDiaryPanel(); };
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'text-red-400 hover:text-red-600 p-1 rounded-full';
+            deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>`;
+            deleteBtn.onclick = (e) => { e.stopPropagation(); deleteDiaryEntry(date); };
+            item.appendChild(dateSpan);
+            item.appendChild(deleteBtn);
+            diaryList.appendChild(item);
+        });
+    };
+
+    const generateDiary = async () => {
+        if (!currentCharacterName) return alert("请先加载一个角色。");
+        const dateKey = getTodayDateKey();
+        diaryContent.innerHTML = '正在生成日记...';
+        const prompt = `你正在扮演以下角色，并需要写一篇日记。**你的角色人设是：**\n${currentCharacterPersonaText.trim()}\n**与你互动的用户人设是：**\n${currentUserPersona.text}\n**今天日期：**\n${dateKey}\n**最近发生的事（作为你写日记的参考）：**\n- 我今天在番茄钟里做了：${pomodoroState.char.task || '没有特别安排任务'}\n- Ta今天在番茄钟里做了：${pomodoroState.user.task || '没有特别安排任务'}\n- 最近被触碰的部位: ${touchHistory.slice(-CONTEXT_LIMIT).join(', ') || '无'}\n- 最近对话记录:\n${messageHistory.slice(-CONTEXT_LIMIT).map(m => `${m.sender === 'user' ? 'Ta' : '我'}说: "${m.text}"`).join('\n') || '无'}\n**你的任务：**\n请完全代入你的角色，以日记的形式，写下你对今天（${dateKey}）的感受和思考。日记的开头不必包含日期。日记内容要自然、符合人设，并且要体现出你内心的想法。请直接输出日记内容，不要包含任何额外的解释或标题。`;
+        try {
+            const diaryText = await makeApiCall(prompt);
+            await saveDiaryEntry(dateKey, diaryText);
+            loadDiaryContent(dateKey);
+            populateDiaryList();
+            
+            // 向主应用同步日记数据
+            if (window.parent && window.parent !== window) {
+                const updateData = {
+                    type: 'UPDATE_CONTACT',
+                    contactId: currentCharacterName,
+                    updateData: {
+                        diaryEntries: { [dateKey]: diaryText }
+                    }
+                };
+                window.parent.postMessage(updateData, window.location.origin);
+                console.log('日记数据已同步到主应用');
+            }
+        } catch (error) {
+            diaryContent.innerHTML = `生成日记失败: ${error.message}`;
+        }
+    };
+
+    const filterTextForTts = (text) => text ? text.replace(/\（[^）]*\）/g, "").replace(/\([^)]*\)/g, "").trim() : "";
+
+    const playTtsAudio = async (text) => {
+        if (!text) return;
+        ttsAudioPlayer.pause();
+        ttsAudioPlayer.src = '';
+        if (!parentAppSettings) {
+            return console.warn("TTS Aborted: Parent settings not received.");
+        }
+        const { minimaxGroupId, minimaxApiKey } = parentAppSettings.apiSettings;
+        const { voiceId } = parentAppSettings.character;
+        try {
+            const apiUrl = `https://api.minimax.chat/v1/text_to_speech?GroupId=${minimaxGroupId}`;
+            const requestBody = { "voice_id": voiceId, "text": text, "model": "speech-01", "speed": 1.0, "vol": 1.0, "pitch": 0 };
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${minimaxApiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            if (!response.ok) throw new Error(`语音服务错误: ${response.status} - ${await response.text()}`);
+            const audioBlob = await response.blob();
+            ttsAudioPlayer.src = URL.createObjectURL(audioBlob);
+            await ttsAudioPlayer.play();
+        } catch (error) {
+            console.error('TTS process failed:', error);
+            dialogueText.textContent += ` (语音合成失败)`;
+        }
+    };
+
+    const callAI = async (interaction) => {
+        if (interaction.type === 'touch') await addToHistory(touchHistory, interaction.content);
+        const prompt = `你正在进行一个角色扮演。**你的角色人设是：**\n${currentCharacterPersonaText.trim()}\n**与你互动的用户人设是：**\n${currentUserPersona.text}\n**当前任务状态:**\n- 你的任务: ${pomodoroState.char.isRunning ? `"${pomodoroState.char.task}"` : '无'}\n- 用户的任务: ${pomodoroState.user.isRunning ? `"${pomodoroState.user.task}"` : '无'}\n**上下文参考:**\n- 最近的触碰历史: ${touchHistory.slice(-CONTEXT_LIMIT).join(', ') || '无'}\n- 最近的对话历史:\n${messageHistory.slice(-CONTEXT_LIMIT).map(m => `${m.sender === 'user' ? '用户' : '你'}说: "${m.text}"`).join('\n') || '无'}\n**${interaction.type === 'touch' ? `当前情景：**\n用户轻轻地触碰了你的"${interaction.content}"部位。` : `用户刚刚对你说了：**\n"${interaction.content}"`}\n**你的任务：**\n请完全代入你的角色，只以角色的口吻和身份，对这个动作或这句话做出自然、符合人设且结合上下文的回应。`;
+        dialogueText.textContent = `正在思考...`;
+        try {
+            const reply = await makeApiCall(prompt);
+            dialogueText.textContent = reply;
+            await addToHistory(messageHistory, { sender: 'char', text: reply });
+            if (interaction.type === 'chat') addMessageToChatUI('char', reply);
+            
+            const characters = await getCharacters(); // 异步获取
+            const ttsEnabled = currentCharacterName && characters[currentCharacterName] ? characters[currentCharacterName].ttsEnabled : false;
+            
+            if (ttsEnabled) {
+                await playTtsAudio(filterTextForTts(reply));
+            }
+        } catch (error) {
+            const errorMessage = `请求失败: ${error.message}`;
+            dialogueText.textContent = errorMessage;
+            if (interaction.type === 'chat') addMessageToChatUI('char', errorMessage);
+        }
+    };
+
+    const makeApiCall = async (prompt) => {
+        if (!parentAppSettings || !parentAppSettings.apiSettings) throw new Error('未从主应用获取API配置。');
+        const { url: baseUrl, key, model: selectedModel } = parentAppSettings.apiSettings;
+        if (!baseUrl || !key || !selectedModel) throw new Error('主应用中的API链接、密钥或模型未配置。');
+        if (!currentCharacterPersonaText.trim() || !currentUserPersona.text) throw new Error('角色或用户人设未配置。');
+        try {
+            const messages = [{ role: "user", content: prompt }];
+            const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                body: JSON.stringify({ model: selectedModel, messages: messages, temperature: 0.8, max_tokens: 1500 })
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error?.message || `API 请求失败，状态码: ${response.status}`);
+            }
+            const data = await response.json();
+            if (!data.choices || !data.choices[0]?.message) throw new Error("API返回数据格式不正确。");
+            return data.choices[0].message.content.trim();
+        } catch (error) {
+            console.error('AI call failed:', error);
+            throw error;
+        }
+    };
+
+    const initializeApp = async () => {
+        try {
+            // 等待主应用数据库系统就绪
+            await interactiveDataHelper.ensureReady();
+            
+            attachEventListeners();
+            await populateCharacterList(activeCharacterSelect);
+            
+            // 获取角色列表，如果有角色则加载第一个
+            const chars = await getCharacters();
+            const charNames = Object.keys(chars);
+            
+            if (charNames.length > 0) {
+                await loadCharacter(charNames[0]);
+            }
+            
+            console.log('互动界面初始化完成');
+        } catch (error) {
+            console.error('互动界面初始化失败:', error);
+            alert('初始化失败，请刷新页面重试');
+        }
+    };
+
+    initializeApp();
+});
+</script>
+</body>
+</html>

@@ -2277,36 +2277,63 @@ window.DatabaseManager = {
 // 与 script.js 中的 initializeDatabaseOnce() 协调工作
 if (typeof document !== 'undefined') {
     
-    // 智能等待主应用初始化完成 - 事件+轮询混合机制
+    // 智能等待主应用初始化完成 - 事件+轮询混合机制 [优化版]
     const waitForMainAppInit = async (maxWait = 10000) => {
         const startTime = Date.now();
         
         return new Promise((resolve) => {
             let resolved = false;
             
-            // 方式1：监听数据库就绪事件（最快响应）
-            const eventListener = (event) => {
+            // 方式1：监听主应用初始化完成事件（最准确的信号）
+            const mainAppCompleteListener = (event) => {
                 if (!resolved) {
                     resolved = true;
                     const waitTime = Date.now() - startTime;
-                    console.log(`[智能协调] 通过事件检测到主应用初始化完成，等待时间: ${waitTime}ms`);
-                    window.removeEventListener('databaseReady', eventListener);
+                    const initTime = event.detail?.initTime || 'unknown';
+                    console.log(`[智能协调] 主应用初始化完成事件收到，主应用耗时: ${initTime}ms，协调等待时间: ${waitTime}ms`);
+                    window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                    window.removeEventListener('databaseReady', databaseReadyListener);
                     resolve(true);
                 }
             };
-            window.addEventListener('databaseReady', eventListener);
+            window.addEventListener('mainAppInitComplete', mainAppCompleteListener);
             
-            // 方式2：轮询检查（兜底机制）
-            const checkInterval = 100; // 降低频率，节省资源
+            // 方式2：监听数据库就绪事件（兼容旧版本）
+            const databaseReadyListener = (event) => {
+                if (!resolved) {
+                    resolved = true;
+                    const waitTime = Date.now() - startTime;
+                    console.log(`[智能协调] 数据库就绪事件收到，等待时间: ${waitTime}ms`);
+                    window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                    window.removeEventListener('databaseReady', databaseReadyListener);
+                    resolve(true);
+                }
+            };
+            window.addEventListener('databaseReady', databaseReadyListener);
+            
+            // 方式3：轮询检查（兜底机制）
+            const checkInterval = 200; // 稍微降低频率，减少CPU占用
             const checkReady = () => {
                 if (resolved) return;
+                
+                // 优先检查：主应用是否正在初始化
+                if (window.mainAppInitializing === true) {
+                    const elapsed = Date.now() - startTime;
+                    
+                    // 如果主应用正在初始化，延长等待时间
+                    if (elapsed < maxWait + 5000) { // 额外给5秒缓冲时间
+                        setTimeout(checkReady, checkInterval);
+                        return;
+                    }
+                }
                 
                 // 检查主应用是否已完成初始化
                 if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
                     resolved = true;
                     const waitTime = Date.now() - startTime;
-                    console.log(`[智能协调] 通过轮询检测到主应用初始化完成，等待时间: ${waitTime}ms`);
-                    window.removeEventListener('databaseReady', eventListener);
+                    console.log(`[智能协调] 轮询检测到数据库就绪，等待时间: ${waitTime}ms`);
+                    window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                    window.removeEventListener('databaseReady', databaseReadyListener);
                     resolve(true);
                     return;
                 }
@@ -2315,8 +2342,10 @@ if (typeof document !== 'undefined') {
                 if (Date.now() - startTime > maxWait) {
                     if (!resolved) {
                         resolved = true;
-                        console.warn(`[智能协调] 主应用初始化超时 (${maxWait}ms)，继续执行扩展初始化`);
-                        window.removeEventListener('databaseReady', eventListener);
+                        const isInitializing = window.mainAppInitializing === true ? '（主应用仍在初始化中）' : '（主应用未检测到初始化）';
+                        console.warn(`[智能协调] 等待超时 (${maxWait}ms) ${isInitializing}，启动扩展初始化`);
+                        window.removeEventListener('mainAppInitComplete', mainAppCompleteListener);
+                        window.removeEventListener('databaseReady', databaseReadyListener);
                         resolve(false);
                     }
                     return;
@@ -2332,36 +2361,57 @@ if (typeof document !== 'undefined') {
 
     // 等待主应用初始化完成后再初始化数据库管理器
     const initializeDatabaseManager = async () => {
+        const extStartTime = Date.now();
+        
         try {
+            console.log('[扩展初始化] 开始智能协调流程...');
+            
             // 智能等待主应用完成初始化
             const mainAppReady = await waitForMainAppInit();
             
-            if (!mainAppReady) {
-                console.warn('[智能协调] 主应用初始化可能未完成，但继续执行扩展初始化');
+            if (mainAppReady) {
+                console.log('[扩展初始化] 主应用初始化已完成，开始扩展模块初始化');
+            } else {
+                console.warn('[扩展初始化] 主应用初始化超时，但继续执行扩展初始化（确保应用可用性）');
             }
             
+            console.log('[扩展初始化] 调用 DatabaseManager.init()...');
             const result = await window.DatabaseManager.init();
+            
+            const extTotalTime = Date.now() - extStartTime;
+            
             if (result.success) {
+                console.log(`[扩展初始化] 数据库管理器初始化成功，总耗时: ${extTotalTime}ms`);
+                
                 // 增强API设置模态框
                 if (typeof window.enhanceApiSettingsModal === 'function') {
                     window.enhanceApiSettingsModal();
+                    console.log('[扩展初始化] API设置模态框已增强');
                 }
+                
+                console.log('[扩展初始化] 所有扩展功能初始化完成 ✓');
             } else {
-                console.error('数据库管理器初始化失败:', result.error);
+                console.error('[扩展初始化] 数据库管理器初始化失败:', result.error);
+                console.warn('[扩展初始化] 尽管初始化失败，应用的基础功能仍可能正常工作');
             }
         } catch (error) {
-            console.error('[智能协调] 扩展初始化过程出错:', error);
+            const extTotalTime = Date.now() - extStartTime;
+            console.error(`[扩展初始化] 初始化过程异常 (耗时: ${extTotalTime}ms):`, error);
+            console.warn('[扩展初始化] 扩展功能可能不可用，但主应用功能应该仍然正常');
         }
     };
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-            // 给主应用一个最小启动时间
-            setTimeout(initializeDatabaseManager, 100);
+            // 页面加载完成后立即开始智能协调，不需要额外延时
+            // 智能等待机制会自动处理与主应用的时序协调
+            console.log('[扩展模块] DOM加载完成，启动智能协调机制');
+            initializeDatabaseManager();
         });
     } else {
-        // 页面已加载，立即开始智能等待
-        setTimeout(initializeDatabaseManager, 100);
+        // 页面已加载，立即开始智能协调
+        console.log('[扩展模块] 页面已就绪，启动智能协调机制');
+        initializeDatabaseManager();
     }
 }
 
@@ -2894,32 +2944,50 @@ async function retryWithBackoff(operation, context = '', retries = DB_RETRY_CONF
     }
 }
 
+// 共享的数据库就绪Promise，避免多重轮询
+let sharedDBReadyPromise = null;
+
 /**
- * IndexedDB就绪状态检查
+ * IndexedDB就绪状态检查 - 使用共享Promise避免多重轮询
  */
 function waitForIndexedDBReady(timeout = 30000) {
-    return new Promise((resolve, reject) => {
+    // 如果已经有等待中的Promise，直接返回它
+    if (sharedDBReadyPromise) {
+        return sharedDBReadyPromise;
+    }
+    
+    // 如果数据库已经就绪，立即返回
+    if (window.isIndexedDBReady && window.db) {
+        return Promise.resolve(true);
+    }
+    sharedDBReadyPromise = new Promise((resolve, reject) => {
         const startTime = Date.now();
+        let checkCount = 0;
         
         function checkReady() {
-            console.log(`[DEBUG-FIXED] checkReady检查: window.isIndexedDBReady=${window.isIndexedDBReady}, window.db=${!!window.db}`);
+            checkCount++;
+            
             if (window.isIndexedDBReady && window.db) {
-                console.log('IndexedDB就绪状态检查: 已就绪 [FIXED]');
+                console.log(`[DB等待] 数据库就绪确认`);
+                sharedDBReadyPromise = null; // 清除共享Promise
                 resolve(true);
                 return;
             }
             
             if (Date.now() - startTime > timeout) {
-                console.error('IndexedDB就绪状态检查: 超时');
+                console.error(`[DB等待] 等待超时 (${timeout}ms, 检查了${checkCount}次)`);
+                sharedDBReadyPromise = null; // 清除共享Promise
                 reject(new Error(`IndexedDB就绪检查超时 (${timeout}ms)`));
                 return;
             }
             
-            setTimeout(checkReady, 100);
+            setTimeout(checkReady, 200); // 降低检查频率，减少CPU占用
         }
         
         checkReady();
     });
+    
+    return sharedDBReadyPromise;
 }
 
 /**

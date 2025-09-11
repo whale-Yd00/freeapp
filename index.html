@@ -27,18 +27,13 @@
     
     <link rel="stylesheet" href="style.css">
     
-    <!-- 中文字体CDN导入 -->
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/syst/dist/SourceHanSerifCN/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/lxgwwenkaibright/dist/LXGWBright-Regular/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/dymh/dist/DouyinSansBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hwmct/dist/汇文明朝体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ToneOZ-Pinyin-Kai/dist/ToneOZ-PinyinW-Kai-Simplified/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/hcqyt/dist/ChillRoundFBold/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/ysbzt/dist/峄山碑篆体/result.css' />
-    <link rel='stylesheet' href='https://chinese-fonts-cdn.deno.dev/packages/yfxy/dist/YuFanXinYu-Medium/result.css' />
+    <!-- 字体按需加载 - 移除预加载的CSS，改为动态加载 -->
     
     <script src="config/sync-config.js"></script>
+    <script src="config/environment-config.js"></script>
+    <script src="js/environment-indicator.js"></script>
     <script src="utils/apiConfigManager.js"></script>
+    <script src="utils/fontLoader.js"></script>
 
     <!-- Analytics -->
     <script defer src="https://umami.whale-llt.top/script.js" data-website-id="00c95749-7c0d-4333-9ec1-2ad2701799a3"></script>
@@ -133,6 +128,21 @@
                 </div>
                 
                 <div class="moments-list" id="momentsList" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="interactive-page" id="interactivePage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>互动界面</span>
+                </div>
+                <div class="header-actions">
+                    <div class="sync-btn" onclick="syncInteractiveData()" title="同步角色数据">🔄</div>
+                </div>
+            </div>
+            <div class="interactive-content">
+                <iframe id="interactiveFrame" src="interact.html" style="width: 100%; height: calc(100vh - 60px); border: none;"></iframe>
             </div>
         </div>
 
@@ -865,6 +875,10 @@
         <div class="nav-item" onclick="showPage('momentsPage')" data-umami-event="Nav Discover">
             <div class="nav-icon">🔍</div>
             <div class="nav-text">发现</div>
+        </div>
+        <div class="nav-item" onclick="showPage('interactivePage')" data-umami-event="Nav Interactive">
+            <div class="nav-icon">🎮</div>
+            <div class="nav-text">互动</div>
         </div>
         <div class="nav-item" onclick="showPage('profilePage')" data-umami-event="Nav Profile">
             <div class="nav-icon">👤</div>
