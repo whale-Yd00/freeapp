@@ -1,22 +1,28 @@
-const CACHE_NAME = 'whale-llt-v8';
+const CACHE_NAME = 'whale-llt-test-v5';
 const CACHE_VERSION = Date.now(); // 添加时间戳确保版本唯一性
 const urlsToCache = [
   '/',
   '/index.html',
+  '/interact.html',
+  '/sync-key-generator.html',
   '/style.css',
   '/script.js',
   '/bubble.html',
   '/manifest.json',
   '/js/api.js',
+  '/js/environment-indicator.js',
   '/lib/db.js',
   '/config/sync-config.js',
+  '/config/environment-config.js',
+  '/utils/UnifiedDBManager.js',
   '/utils/apiConfigManager.js',
   '/utils/characterMemory.js',
   '/utils/chatEmojiMigrationManager.js',
-  '/utils/dataMigrator.js',
+  '/utils/colorUtils.js',
   '/utils/fileStorageExporter.js',
   '/utils/fileStorageImporter.js',
-  '/utils/fileStorageManager.js',
+  '/utils/fontLoader.js',
+  '/utils/formatUtils.js',
   '/utils/imageDisplayHelper.js',
   '/utils/imageKeywordGenerator.js',
   '/utils/imageMigrationManager.js',
@@ -24,7 +30,9 @@ const urlsToCache = [
   '/utils/memoryTable.js',
   '/utils/promptBuilder.js',
   '/utils/systemUtilities.js',
+  '/utils/uiEventHandlers.js',
   '/utils/uiManager.js',
+  '/utils/uiUtils.js',
   '/utils/voiceStorageAPI.js',
   'https://cdn.jsdelivr.net/npm/marked/marked.min.js'
 ];

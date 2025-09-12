@@ -13,12 +13,16 @@ class VoiceStorageAPI {
      * 初始化语音存储API
      */
     async init() {
-        // 等待FileStorageManager初始化
-        if (window.FileStorageManager) {
+        // 等待UnifiedDBManager初始化
+        if (window.unifiedDB) {
+            this.fileStorageManager = window.unifiedDB;
+            await this.fileStorageManager.init();
+        } else if (window.FileStorageManager) {
+            // 向后兼容
             this.fileStorageManager = window.FileStorageManager;
             await this.fileStorageManager.init();
         } else {
-            throw new Error('FileStorageManager未初始化');
+            throw new Error('UnifiedDBManager未初始化');
         }
     }
 

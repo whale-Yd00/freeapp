@@ -2,7 +2,7 @@
 // 已将以下功能迁移到专门的utils文件：
 // - 主题管理 → uiManager.js
 // - 文件上传处理 → imageStorageAPI.js  
-// - 数据库管理 → dataMigrator.js
+// - 数据库管理 → UnifiedDBManager.js（统一数据库管理器）
 // - 日志系统 → systemUtilities.js
 // - 颜色工具函数 → colorUtils.js
 // - UI交互工具函数 → uiUtils.js
@@ -115,10 +115,7 @@ window.currentContact = currentContact;
 let editingContact = null;
 window.editingContact = editingContact;
 
-// [DEBUG-MOMENTS-ROLES-START] 数据库初始化竞态条件控制，修复完成后可选择保留
-let isInitializingDatabase = false; // 防止多个组件同时初始化数据库
-let databaseInitializationPromise = null; // 缓存初始化Promise，避免重复初始化
-// [DEBUG-MOMENTS-ROLES-END]
+// 🔥 数据库初始化已统一到 UnifiedDBManager，旧的竞态控制变量已移除
 
 // API配置设置（不包含minimax语音配置）
 let apiSettings = {
@@ -471,7 +468,7 @@ async function init() {
     try {
         console.log('[DEBUG] 开始应用初始化...');
         
-        // [DEBUG-MOMENTS-ROLES-START] 使用统一的数据库初始化，修复完成后可选择保留
+        // 使用统一的数据库初始化
         await executeWithRetry(async () => {
             console.log('[DEBUG] 调用统一的数据库初始化函数');
             
@@ -495,7 +492,7 @@ async function init() {
             console.log('[DEBUG] 可用存储:', Array.from(window.db.objectStoreNames));
             
         }, '应用初始化 - 统一数据库连接');
-        // [DEBUG-MOMENTS-ROLES-END]
+
         
         // 从IndexedDB加载数据
         await loadDataFromDB();
@@ -805,7 +802,7 @@ async function loadDataFromDB() {
         // 更新全局引用
         window.contacts = contacts;
         
-        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
         if (contacts.length > 0) {
             const privateContacts = contacts.filter(c => c.type === 'private');
             console.log('[DEBUG] contacts数据加载详情:', {
@@ -818,7 +815,7 @@ async function loadDataFromDB() {
         } else {
             console.warn('[DEBUG] 数据库中没有找到任何联系人数据');
         }
-        // [DEBUG-MOMENTS-ROLES-END]
+
         
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
@@ -971,177 +968,37 @@ async function saveDataToDB() {
 }
 
 
-// [DEBUG-MOMENTS-ROLES-START] 统一的数据库初始化函数，修复完成后可选择保留
 /**
- * 统一的数据库初始化函数，防止多组件竞态条件
- * 解决 FileStorageManager 和 DataMigrator 同时调用 indexedDB.open() 导致的表结构不完整问题
+ * 🔥 统一数据库初始化函数
+ * 通过 UnifiedDBManager 实现简洁可靠的数据库初始化
  */
 async function initializeDatabaseOnce() {
-    // 如果已经有缓存的初始化Promise，直接返回
-    if (databaseInitializationPromise) {
-        console.log('[DEBUG] 数据库正在初始化中，等待现有初始化完成...');
-        return await databaseInitializationPromise;
-    }
+    console.log('🔥 [数据库初始化] 使用统一数据库管理器初始化...');
     
-    // 如果数据库已经就绪且版本正确，直接返回
-    if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
-        console.log('[DEBUG] 数据库已经初始化完成，跳过重复初始化');
+    try {
+        // 使用统一数据库管理器进行初始化
+        const db = await window.unifiedDB.init();
         
-        // 🔥 即使跳过初始化，也要发送广播通知其他页面
-        try {
-            const dbChannel = new BroadcastChannel('db-init-channel');
-            dbChannel.postMessage({
-                type: 'DB_INITIALIZED',
-                version: window.db.version,
-                timestamp: Date.now(),
-                page: window.location.pathname
-            });
-            console.log('[跨页面广播] 数据库状态已广播（已初始化场景）');
-            setTimeout(() => dbChannel.close(), 100);
-        } catch (e) {
-            console.warn('[跨页面广播] BroadcastChannel不支持或失败:', e);
-        }
-
-        // 🔥 新增：直接在 localStorage 中存储状态供其他页面读取
-        try {
-            const dbStatus = {
-                isReady: true,
-                version: window.db.version,
-                timestamp: Date.now(),
-                page: window.location.pathname
-            };
-            localStorage.setItem('dbStatus', JSON.stringify(dbStatus));
-            console.log('[跨页面状态] 已写入数据库状态到 localStorage');
-        } catch (e) {
-            console.warn('[跨页面状态] localStorage 写入失败:', e);
-        }
-
-        // 🔥 新增：通过 localStorage 触发跨页面同步事件  
-        try {
-            localStorage.setItem('dbSyncTrigger', Date.now().toString());
-            localStorage.removeItem('dbSyncTrigger');
-            console.log('[跨页面同步] 已触发 localStorage 同步事件');
-        } catch (e) {
-            console.warn('[跨页面同步] localStorage 同步失败:', e);
+        console.log('🔥 [数据库初始化] 初始化成功，版本:', db.version);
+        console.log('🔥 [数据库初始化] 可用存储:', Array.from(db.objectStoreNames));
+        
+        // 初始化API配置管理器
+        if (window.apiConfigManager) {
+            try {
+                await window.apiConfigManager.init();
+                console.log('🔥 [数据库初始化] API配置管理器初始化完成');
+            } catch (error) {
+                console.error('🔥 [数据库初始化] API配置管理器初始化失败:', error);
+            }
         }
         
-        return window.db;
+        return db;
+        
+    } catch (error) {
+        console.error('🔥 [数据库初始化] 数据库初始化失败:', error);
+        throw error;
     }
-    
-    console.log('[DEBUG] 开始统一的数据库初始化流程...');
-    
-    // 创建初始化Promise并缓存，确保只有一个初始化过程
-    databaseInitializationPromise = (async () => {
-        try {
-            isInitializingDatabase = true;
-            
-            // 如果有现有连接，先关闭
-            if (window.db) {
-                console.log('[DEBUG] 关闭现有数据库连接进行清理');
-                window.db.close();
-                window.db = null;
-                window.isIndexedDBReady = false;
-            }
-            
-            // 使用 DataMigrator 作为唯一的数据库初始化入口
-            if (!window.dbManager) {
-                console.log('[DEBUG] 创建 DataMigrator 实例');
-                window.dbManager = new IndexedDBManager();
-            }
-            
-            console.log('[DEBUG] 调用 DataMigrator.initDB()');
-            const db = await window.dbManager.initDB();
-            
-            // 验证初始化结果
-            if (!db || !db.objectStoreNames.contains('contacts')) {
-                throw new Error('数据库初始化不完整：缺少 contacts 表');
-            }
-            
-            console.log('[DEBUG] 数据库初始化成功，版本:', db.version);
-            console.log('[DEBUG] 可用的存储:', Array.from(db.objectStoreNames));
-            
-            // 设置全局状态
-            window.db = db;
-            window.isIndexedDBReady = true;
-            console.log('[DEBUG] 数据库状态标志已设置: isIndexedDBReady = true');
-            
-            // 🔥 跨页面广播 - 使用 BroadcastChannel 通知其他页面
-            try {
-                const dbChannel = new BroadcastChannel('db-init-channel');
-                dbChannel.postMessage({
-                    type: 'DB_INITIALIZED',
-                    version: db.version,
-                    timestamp: Date.now(),
-                    page: window.location.pathname
-                });
-                console.log('[跨页面广播] 数据库初始化状态已广播到其他页面');
-                // 发送后关闭通道
-                setTimeout(() => dbChannel.close(), 100);
-            } catch (e) {
-                console.warn('[跨页面广播] BroadcastChannel不支持或失败:', e);
-            }
-
-            // 🔥 新增：直接在 localStorage 中存储状态供其他页面读取
-            try {
-                const dbStatus = {
-                    isReady: true,
-                    version: db.version,
-                    timestamp: Date.now(),
-                    page: window.location.pathname
-                };
-                localStorage.setItem('dbStatus', JSON.stringify(dbStatus));
-                console.log('[跨页面状态] 已写入数据库状态到 localStorage（新初始化场景）');
-            } catch (e) {
-                console.warn('[跨页面状态] localStorage 写入失败:', e);
-            }
-
-            // 🔥 新增：通过 localStorage 触发跨页面同步事件
-            try {
-                localStorage.setItem('dbSyncTrigger', Date.now().toString());
-                localStorage.removeItem('dbSyncTrigger');
-                console.log('[跨页面同步] 已触发 localStorage 同步事件（新初始化场景）');
-            } catch (e) {
-                console.warn('[跨页面同步] localStorage 同步失败:', e);
-            }
-            
-            // 发出初始化完成事件，通知其他组件
-            if (typeof window.dispatchEvent === 'function') {
-                window.dispatchEvent(new CustomEvent('databaseReady', {
-                    detail: { 
-                        db: db, 
-                        version: db.version,
-                        timestamp: Date.now()
-                    }
-                }));
-                console.log('[事件通知] 已发出 databaseReady 事件');
-            }
-            
-            // 初始化API配置管理器
-            if (window.apiConfigManager) {
-                try {
-                    await window.apiConfigManager.init();
-                    console.log('[DEBUG] API配置管理器初始化完成');
-                } catch (error) {
-                    console.error('[DEBUG] API配置管理器初始化失败:', error);
-                }
-            }
-            
-            return db;
-            
-        } catch (error) {
-            console.error('[DEBUG] 统一数据库初始化失败:', error);
-            // 清理状态，允许重试
-            databaseInitializationPromise = null;
-            isInitializingDatabase = false;
-            throw error;
-        } finally {
-            isInitializingDatabase = false;
-        }
-    })();
-    
-    return await databaseInitializationPromise;
 }
-// [DEBUG-MOMENTS-ROLES-END]
 
 
 // --- 论坛功能 ---
@@ -1236,6 +1093,7 @@ async function showPageAsync(pageIdToShow) {
         updateContactListTimes();
     }   
 }
+
 
 function showGeneratePostModal() {
     const select = document.getElementById('postGenCharacterSelect');
@@ -2641,7 +2499,7 @@ async function showManualMomentModal() {
 }
 
 function showGenerateMomentModal() {
-    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
     console.log('[DEBUG] showGenerateMomentModal 被调用');
     console.log('[DEBUG] 打开生成朋友圈模态框时的全局状态:', {
         windowContacts: !!window.contacts,
@@ -2660,7 +2518,7 @@ function showGenerateMomentModal() {
             privateContactsNames: privateContacts.map(c => ({ name: c.name, id: c.id, type: c.type }))
         });
     }
-    // [DEBUG-MOMENTS-ROLES-END]
+
     
     showModal('generateMomentModal');
     
@@ -2677,7 +2535,7 @@ async function loadMomentCharacterOptions() {
     const select = document.getElementById('momentGenCharacterSelect');
     select.innerHTML = '<option value="">加载中...</option>';
     
-    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
     console.log('[DEBUG] loadMomentCharacterOptions 开始执行');
     console.log('[DEBUG] 当前状态:', {
         windowContacts: !!window.contacts,
@@ -2686,7 +2544,7 @@ async function loadMomentCharacterOptions() {
         dbConnected: !!window.db,
         dbReadyState: window.db ? window.db.readyState : 'no-db'
     });
-    // [DEBUG-MOMENTS-ROLES-END]
+
     
     try {
         // 确保数据已经加载完成 - 最多等待10秒
@@ -2720,14 +2578,14 @@ async function loadMomentCharacterOptions() {
         // 更新选择框
         select.innerHTML = '<option value="">请选择...</option>';
         
-        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
         console.log('[DEBUG] 等待完成后的状态:', {
             windowContacts: !!window.contacts,
             contactsLength: window.contacts ? window.contacts.length : 0,
             attempts: attempts,
             timedOut: attempts >= maxAttempts
         });
-        // [DEBUG-MOMENTS-ROLES-END]
+
         
         // 只添加联系人选项（AI角色），不包括"我"
         if (window.contacts && window.contacts.length > 0) {
@@ -2740,15 +2598,15 @@ async function loadMomentCharacterOptions() {
                     select.appendChild(option);
                     addedCount++;
                     
-                    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
                     console.log(`[DEBUG] 添加角色: ${contact.name} (ID: ${contact.id})`);
-                    // [DEBUG-MOMENTS-ROLES-END]
+
                 }
             });
             
-            // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
+
             console.log(`[DEBUG] 成功添加 ${addedCount} 个角色到选择列表`);
-            // [DEBUG-MOMENTS-ROLES-END]
+
             
             if (addedCount === 0) {
                 select.innerHTML = '<option value="">未找到AI角色，请先添加角色</option>';
@@ -9779,8 +9637,8 @@ async function handleShareData() {
     shareBtn.textContent = '生成中...';
 
     try {
-        // 1. 使用你已有的 IndexedDBManager 导出整个数据库的数据
-        const exportData = await dbManager.exportDatabase();
+        // 1. 使用统一数据库管理器导出整个数据库的数据
+        const exportData = await window.unifiedDB.exportDatabase();
 
         // 2. 将数据发送到我们的Vercel中转站
         const response = await fetch('https://transfer.cdsv.cc/api/transfer-data', {
@@ -9879,14 +9737,11 @@ async function handleAutoImport(importId) {
 
         const importData = result.data;
 
-        // 4. 使用你已有的导入逻辑 (dataMigrator.js)
-        if (!window.dbManager) {
-            window.dbManager = new IndexedDBManager();
-        }
-        await dbManager.initDB();
+        // 4. 使用统一数据库管理器进行导入
+        await window.unifiedDB.init();
         
         // 5. 调用导入函数，直接覆盖
-        const importResult = await dbManager.importDatabase(importData, { overwrite: true });
+        const importResult = await window.unifiedDB.importDatabase(importData, { overwrite: true });
 
         if (importResult.success) {
             alert('数据导入成功！页面将自动刷新以应用新数据。');
@@ -12369,10 +12224,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         // 再次检查themeConfig表是否存在
         if (!window.db.objectStoreNames.contains('themeConfig')) {
             console.warn('themeConfig存储不存在，等待数据库升级');
-            // 触发数据库升级
-            if (window.dbManager && window.dbManager.autoUpgradeDatabase) {
+            // 触发数据库升级 - 使用统一数据库管理器
+            if (window.unifiedDB) {
                 try {
-                    await window.dbManager.autoUpgradeDatabase();
+                    await window.unifiedDB.init();
                     // 重新检查
                     if (window.db && window.db.objectStoreNames.contains('themeConfig')) {
                         console.log('数据库升级完成，themeConfig表已创建');
@@ -15868,3 +15723,4 @@ window.showPage = function(pageId) {
 // 暴露互动相关函数到全局
 window.syncInteractiveData = syncInteractiveData;
 window.handleInteractiveDataUpdate = handleInteractiveDataUpdate;
+

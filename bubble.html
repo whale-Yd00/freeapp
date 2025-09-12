@@ -7,8 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入JSZip库用于导入导出功能 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- 引入FileStorageManager相关脚本 -->
-    <script src="utils/fileStorageManager.js"></script>
+    <!-- 🔥 统一数据库管理器 - 替代FileStorageManager -->
+    <script src="utils/UnifiedDBManager.js"></script>
     <script src="utils/fontLoader.js"></script>
     <script src="utils/imageStorageAPI.js"></script>
     <script src="utils/imageDisplayHelper.js"></script>
@@ -391,7 +391,7 @@
                         console.log('使用主应用的现有数据库连接，版本:', db.version);
                     } else {
                         // 如果没有父窗口连接，创建独立连接
-                        fileStorageManager = new FileStorageManager();
+                        fileStorageManager = window.UnifiedDBManager.getInstance();
                         await fileStorageManager.init();
                         db = fileStorageManager.db;
                         console.log('创建独立数据库连接成功');
@@ -399,8 +399,11 @@
                     
                     // 如果还没有fileStorageManager，创建一个并使用现有连接
                     if (!fileStorageManager) {
-                        fileStorageManager = new FileStorageManager();
-                        fileStorageManager.db = db;
+                        fileStorageManager = window.UnifiedDBManager.getInstance();
+                        if (db) {
+                            fileStorageManager.db = db;
+                            fileStorageManager.isReady = true;
+                        }
                         console.log('FileStorageManager初始化成功');
                     }
                     
