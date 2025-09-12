@@ -141,12 +141,13 @@ class EnvironmentConfig {
 
     /**
      * 检查是否应该显示环境指示器
-     * 生产环境永不显示
+     * 只有在生产环境且没有环境标签时才不显示
      */
     static shouldShowEnvironmentIndicator() {
         const config = this.getEnvironment();
-        // 生产环境完全不显示指示器
-        return config.environment !== 'production' && (config.isDevelopment || config.environment === 'staging');
+        // 如果有环境标签，则显示指示器，无论environment值是什么
+        // 只有在生产环境且没有环境标签时才不显示
+        return !(config.environment === 'production' && !config.environmentLabel);
     }
 
     /**
@@ -155,8 +156,9 @@ class EnvironmentConfig {
     static getEnvironmentIndicatorConfig() {
         const config = this.getEnvironment();
         
-        // 生产环境直接返回 null，确保不显示任何指示器
-        if (config.environment === 'production') {
+        // 如果有环境标签（如"测试环境"），则显示指示器，无论environment值是什么
+        // 只有在生产环境且没有环境标签时才不显示
+        if (config.environment === 'production' && !config.environmentLabel) {
             return null;
         }
 
