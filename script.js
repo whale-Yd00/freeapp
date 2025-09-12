@@ -989,7 +989,9 @@ async function initializeDatabaseOnce() {
                 console.log('🔥 [数据库初始化] API配置管理器初始化完成');
             } catch (error) {
                 console.error('🔥 [数据库初始化] API配置管理器初始化失败:', error);
+                throw error; // 重新抛出错误
             }
+        }
         }
         
         return db;
