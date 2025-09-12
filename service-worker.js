@@ -1,4 +1,4 @@
-const CACHE_NAME = 'whale-llt-v10';
+const CACHE_NAME = 'whale-llt-v9';
 const CACHE_VERSION = Date.now(); // 添加时间戳确保版本唯一性
 const urlsToCache = [
   '/',
@@ -30,7 +30,6 @@ const urlsToCache = [
   '/utils/memoryTable.js',
   '/utils/promptBuilder.js',
   '/utils/systemUtilities.js',
-  '/utils/uiEventHandlers.js',
   '/utils/uiManager.js',
   '/utils/uiUtils.js',
   '/utils/voiceStorageAPI.js',

@@ -2,7 +2,7 @@
 // 已将以下功能迁移到专门的utils文件：
 // - 主题管理 → uiManager.js
 // - 文件上传处理 → imageStorageAPI.js  
-// - 数据库管理 → UnifiedDBManager.js（统一数据库管理器）
+// - 数据库管理 → dataMigrator.js
 // - 日志系统 → systemUtilities.js
 // - 颜色工具函数 → colorUtils.js
 // - UI交互工具函数 → uiUtils.js
@@ -468,7 +468,7 @@ async function init() {
     try {
         console.log('[DEBUG] 开始应用初始化...');
         
-        // 使用统一的数据库初始化
+        // [DEBUG-MOMENTS-ROLES-START] 使用统一的数据库初始化，修复完成后可选择保留
         await executeWithRetry(async () => {
             console.log('[DEBUG] 调用统一的数据库初始化函数');
             
@@ -492,7 +492,7 @@ async function init() {
             console.log('[DEBUG] 可用存储:', Array.from(window.db.objectStoreNames));
             
         }, '应用初始化 - 统一数据库连接');
-
+        // [DEBUG-MOMENTS-ROLES-END]
         
         // 从IndexedDB加载数据
         await loadDataFromDB();
@@ -802,7 +802,7 @@ async function loadDataFromDB() {
         // 更新全局引用
         window.contacts = contacts;
         
-
+        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
         if (contacts.length > 0) {
             const privateContacts = contacts.filter(c => c.type === 'private');
             console.log('[DEBUG] contacts数据加载详情:', {
@@ -815,7 +815,7 @@ async function loadDataFromDB() {
         } else {
             console.warn('[DEBUG] 数据库中没有找到任何联系人数据');
         }
-
+        // [DEBUG-MOMENTS-ROLES-END]
         
         // 迁移旧数据格式或添加默认值
         contacts.forEach(contact => {
@@ -969,35 +969,33 @@ async function saveDataToDB() {
 
 
 /**
- * 🔥 统一数据库初始化函数
- * 通过 UnifiedDBManager 实现简洁可靠的数据库初始化
+ * 🔥 简化的数据库初始化函数 - 使用统一数据库管理器
+ * 替代了复杂的 initializeDatabaseOnce 逻辑
  */
 async function initializeDatabaseOnce() {
-    console.log('🔥 [数据库初始化] 使用统一数据库管理器初始化...');
+    console.log('🔥 [简化初始化] 使用统一数据库管理器初始化...');
     
     try {
         // 使用统一数据库管理器进行初始化
         const db = await window.unifiedDB.init();
         
-        console.log('🔥 [数据库初始化] 初始化成功，版本:', db.version);
-        console.log('🔥 [数据库初始化] 可用存储:', Array.from(db.objectStoreNames));
+        console.log('🔥 [简化初始化] 数据库初始化成功，版本:', db.version);
+        console.log('🔥 [简化初始化] 可用存储:', Array.from(db.objectStoreNames));
         
         // 初始化API配置管理器
         if (window.apiConfigManager) {
             try {
                 await window.apiConfigManager.init();
-                console.log('🔥 [数据库初始化] API配置管理器初始化完成');
+                console.log('🔥 [简化初始化] API配置管理器初始化完成');
             } catch (error) {
-                console.error('🔥 [数据库初始化] API配置管理器初始化失败:', error);
-                throw error; // 重新抛出错误
+                console.error('🔥 [简化初始化] API配置管理器初始化失败:', error);
             }
-        }
         }
         
         return db;
         
     } catch (error) {
-        console.error('🔥 [数据库初始化] 数据库初始化失败:', error);
+        console.error('🔥 [简化初始化] 数据库初始化失败:', error);
         throw error;
     }
 }
@@ -2501,7 +2499,7 @@ async function showManualMomentModal() {
 }
 
 function showGenerateMomentModal() {
-
+    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
     console.log('[DEBUG] showGenerateMomentModal 被调用');
     console.log('[DEBUG] 打开生成朋友圈模态框时的全局状态:', {
         windowContacts: !!window.contacts,
@@ -2520,7 +2518,7 @@ function showGenerateMomentModal() {
             privateContactsNames: privateContacts.map(c => ({ name: c.name, id: c.id, type: c.type }))
         });
     }
-
+    // [DEBUG-MOMENTS-ROLES-END]
     
     showModal('generateMomentModal');
     
@@ -2537,7 +2535,7 @@ async function loadMomentCharacterOptions() {
     const select = document.getElementById('momentGenCharacterSelect');
     select.innerHTML = '<option value="">加载中...</option>';
     
-
+    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
     console.log('[DEBUG] loadMomentCharacterOptions 开始执行');
     console.log('[DEBUG] 当前状态:', {
         windowContacts: !!window.contacts,
@@ -2546,7 +2544,7 @@ async function loadMomentCharacterOptions() {
         dbConnected: !!window.db,
         dbReadyState: window.db ? window.db.readyState : 'no-db'
     });
-
+    // [DEBUG-MOMENTS-ROLES-END]
     
     try {
         // 确保数据已经加载完成 - 最多等待10秒
@@ -2580,14 +2578,14 @@ async function loadMomentCharacterOptions() {
         // 更新选择框
         select.innerHTML = '<option value="">请选择...</option>';
         
-
+        // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
         console.log('[DEBUG] 等待完成后的状态:', {
             windowContacts: !!window.contacts,
             contactsLength: window.contacts ? window.contacts.length : 0,
             attempts: attempts,
             timedOut: attempts >= maxAttempts
         });
-
+        // [DEBUG-MOMENTS-ROLES-END]
         
         // 只添加联系人选项（AI角色），不包括"我"
         if (window.contacts && window.contacts.length > 0) {
@@ -2600,15 +2598,15 @@ async function loadMomentCharacterOptions() {
                     select.appendChild(option);
                     addedCount++;
                     
-
+                    // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
                     console.log(`[DEBUG] 添加角色: ${contact.name} (ID: ${contact.id})`);
-
+                    // [DEBUG-MOMENTS-ROLES-END]
                 }
             });
             
-
+            // [DEBUG-MOMENTS-ROLES-START] 调试信息，修复完成后删除
             console.log(`[DEBUG] 成功添加 ${addedCount} 个角色到选择列表`);
-
+            // [DEBUG-MOMENTS-ROLES-END]
             
             if (addedCount === 0) {
                 select.innerHTML = '<option value="">未找到AI角色，请先添加角色</option>';
@@ -9639,8 +9637,8 @@ async function handleShareData() {
     shareBtn.textContent = '生成中...';
 
     try {
-        // 1. 使用统一数据库管理器导出整个数据库的数据
-        const exportData = await window.unifiedDB.exportDatabase();
+        // 1. 使用你已有的 IndexedDBManager 导出整个数据库的数据
+        const exportData = await dbManager.exportDatabase();
 
         // 2. 将数据发送到我们的Vercel中转站
         const response = await fetch('https://transfer.cdsv.cc/api/transfer-data', {
@@ -9739,11 +9737,14 @@ async function handleAutoImport(importId) {
 
         const importData = result.data;
 
-        // 4. 使用统一数据库管理器进行导入
-        await window.unifiedDB.init();
+        // 4. 使用你已有的导入逻辑 (dataMigrator.js)
+        if (!window.dbManager) {
+            window.dbManager = new IndexedDBManager();
+        }
+        await dbManager.initDB();
         
         // 5. 调用导入函数，直接覆盖
-        const importResult = await window.unifiedDB.importDatabase(importData, { overwrite: true });
+        const importResult = await dbManager.importDatabase(importData, { overwrite: true });
 
         if (importResult.success) {
             alert('数据导入成功！页面将自动刷新以应用新数据。');
@@ -12226,10 +12227,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         // 再次检查themeConfig表是否存在
         if (!window.db.objectStoreNames.contains('themeConfig')) {
             console.warn('themeConfig存储不存在，等待数据库升级');
-            // 触发数据库升级 - 使用统一数据库管理器
-            if (window.unifiedDB) {
+            // 触发数据库升级
+            if (window.dbManager && window.dbManager.autoUpgradeDatabase) {
                 try {
-                    await window.unifiedDB.init();
+                    await window.dbManager.autoUpgradeDatabase();
                     // 重新检查
                     if (window.db && window.db.objectStoreNames.contains('themeConfig')) {
                         console.log('数据库升级完成，themeConfig表已创建');

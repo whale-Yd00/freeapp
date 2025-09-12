@@ -13,16 +13,12 @@
  * alerts, confirm dialogs, toast notifications). This violates separation of concerns
  * and harms maintainability and testability.
  * 
- * COMPLETED - Database Unification Achievements:
- * ✅ Successfully unified dataMigrator.js and fileStorageManager.js into single manager
- * ✅ Implemented complete backward compatibility through API mapping
- * ✅ Resolved database initialization race conditions and state synchronization
- * ✅ Maintained all original functionality with improved error handling
- * 
- * FUTURE - Potential Architecture Improvements:
- * • Consider separating UI concerns (alerts, confirmations) from database operations
- * • Add connection pooling for better performance under heavy load
- * • Implement more granular error recovery mechanisms
+ * TODO - Future Refactoring Plan:
+ * 1. Create DatabaseUIManager class for all UI interactions
+ * 2. Keep UnifiedDBManager focused only on pure database operations
+ * 3. Move StorageManager, DatabaseManager UI functions to separate UI layer
+ * 4. Use event system or callbacks for UI notifications instead of direct coupling
+ * 5. Make functions pure and testable by removing side effects
  */
 
 class UnifiedDBManager {
@@ -34,7 +30,7 @@ class UnifiedDBManager {
         this.initPromise = null;
         this.urlCache = new Map(); // 文件URL缓存
         
-        // 定义不参与手动导入导出的存储（图片等大数据）
+        // 定义不参与手动导入导出的存储（图片等大数据） - 与原始dataMigrator.js完全一致
         this.excludedFromManualExport = ['emojiImages', 'fileStorage'];
         
         // 文件类型映射
@@ -48,13 +44,13 @@ class UnifiedDBManager {
             'svg': 'image/svg+xml'
         };
 
-        // 定义完整的数据库模式 - 统一管理所有对象存储
+        // 定义完整的数据库模式 - 与原始dataMigrator.js完全一致
         this.stores = {
             songs: { keyPath: 'id', autoIncrement: true },
             contacts: { keyPath: 'id' },
             apiSettings: { keyPath: 'id' },
             emojis: { keyPath: 'id' },
-            emojiImages: { keyPath: 'tag' }, // 存储表情图片的base64数据（兼容历史数据，新数据使用fileStorage）
+            emojiImages: { keyPath: 'tag' }, // 存储表情图片的base64数据（将逐步迁移到fileStorage）
             backgrounds: { keyPath: 'id' },
             userProfile: { keyPath: 'id' },
             moments: { keyPath: 'id' },
@@ -138,13 +134,13 @@ class UnifiedDBManager {
     }
 
     /**
-     * 创建所有必要的对象存储 - 统一的数据库架构管理
+     * 创建所有必要的对象存储 - 完全遵循原始dataMigrator.js逻辑
      */
     _createStores(db, oldVersion) {
         console.log(`🔥 [UnifiedDB] 数据库升级: 版本${oldVersion} -> 版本${this.version}`);
         
         try {
-            // 处理废弃存储的删除 - 保持数据库架构整洁
+            // 处理废弃存储的删除 - 与原始逻辑完全一致
             if (this.version >= 12) {
                 // 版本12及以上移除了bubbleDesignerStickers
                 if (db.objectStoreNames.contains('bubbleDesignerStickers')) {
@@ -182,7 +178,7 @@ class UnifiedDBManager {
             // 设置全局数据库状态
             window.db = this.db;
             window.isIndexedDBReady = this.isReady;
-            // 统一使用 window.unifiedDB 作为实例引用
+            // 移除混乱的实例赋值 - 统一使用 window.unifiedDB 作为实例引用
             
             // 🔥 简化的跨页面通知：只使用localStorage事件
             try {
@@ -277,7 +273,7 @@ class UnifiedDBManager {
                                 rejectWithCleanup(err);
                             });
                         }
-                        // window.unifiedDB 检查处理所有实例获取情况
+                        // 移除了不可达的 getInstance 逻辑 - window.unifiedDB 检查已经处理了所有情况
                     }
                 } catch (e) {
                     console.warn('🔥 [UnifiedDB] localStorage读取失败:', e);
@@ -426,7 +422,7 @@ class UnifiedDBManager {
     }
 
     /**
-     * 导出整个数据库 - 保持与历史格式的兼容性
+     * 导出整个数据库 - 完全遵循原始dataMigrator.js格式
      */
     async exportDatabase(options = {}) {
         try {
@@ -507,7 +503,7 @@ class UnifiedDBManager {
     }
 
     /**
-     * 导入数据库数据 - 支持版本迁移和数据兼容
+     * 导入数据库数据 - 完全遵循原始dataMigrator.js逻辑
      */
     async importDatabase(importData, options = {}) {
         try {
@@ -631,7 +627,7 @@ class UnifiedDBManager {
     }
 
     /**
-     * 数据迁移函数 - 处理不同版本间的数据兼容性
+     * 数据迁移函数 - 完全遵循原始dataMigrator.js逻辑
      */
     async migrateData(importData) {
         const { _metadata } = importData;
@@ -917,92 +913,6 @@ class UnifiedDBManager {
         const referenceId = `${referenceType}_${referenceKey}`;
         return await this.get('fileReferences', referenceId);
     }
-
-    /**
-     * 删除文件引用
-     */
-    async deleteFileReference(referenceType, referenceKey) {
-        const referenceId = `${referenceType}_${referenceKey}`;
-        return await this.delete('fileReferences', referenceId);
-    }
-
-    /**
-     * 获取文件存储统计信息
-     */
-    async getStorageStats() {
-        if (!this.db) {
-            await this.init();
-        }
-
-        const files = await this.getAll('fileStorage');
-        const stats = {
-            totalFiles: files.length,
-            totalSize: files.reduce((sum, file) => sum + (file.size || 0), 0),
-            typeBreakdown: {}
-        };
-
-        files.forEach(file => {
-            const type = file.type || 'unknown';
-            if (!stats.typeBreakdown[type]) {
-                stats.typeBreakdown[type] = { count: 0, size: 0 };
-            }
-            stats.typeBreakdown[type].count++;
-            stats.typeBreakdown[type].size += file.size || 0;
-        });
-
-        return stats;
-    }
-
-    /**
-     * 清理未使用的文件（垃圾回收）
-     */
-    async cleanupUnusedFiles() {
-        if (!this.db) {
-            await this.init();
-        }
-
-        const allFiles = await this.getAll('fileStorage');
-        const allReferences = await this.getAll('fileReferences');
-        
-        const referencedFileIds = new Set(allReferences.map(ref => ref.fileId));
-        const filesToDelete = allFiles.filter(file => !referencedFileIds.has(file.fileId));
-        
-        if (filesToDelete.length === 0) {
-            return { deletedCount: 0, message: '没有发现未使用的文件' };
-        }
-
-        let deletedCount = 0;
-        let deleteErrors = 0;
-
-        for (const file of filesToDelete) {
-            try {
-                await this.deleteFile(file.fileId);
-                deletedCount++;
-            } catch (error) {
-                console.error(`删除未使用文件失败: ${file.fileId}`, error);
-                deleteErrors++;
-            }
-        }
-
-        return { 
-            deletedCount: deletedCount, 
-            errors: deleteErrors,
-            message: `清理完成，删除了 ${deletedCount} 个未使用的文件` + 
-                    (deleteErrors > 0 ? `，${deleteErrors} 个删除失败` : '') 
-        };
-    }
-
-    /**
-     * 清理所有缓存的URL
-     */
-    revokeAllURLs() {
-        for (const [fileId, url] of this.urlCache) {
-            URL.revokeObjectURL(url);
-        }
-        this.urlCache.clear();
-    }
-
-    // 重复的工具函数已移除，使用上方的定义
 
     // ============================================
     // 向后兼容的辅助方法和错误处理
@@ -1453,20 +1363,16 @@ if (typeof window !== 'undefined') {
                 
                 const exportData = await window.unifiedDB.exportDatabase();
                 
-                // 通过事件通知UI层处理下载
+                // 创建下载链接
                 const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
-                const filename = `freeapp_backup_${new Date().toISOString().slice(0, 10)}.json`;
-                
-                // 发送下载事件 - 让UI层处理实际的下载操作
-                window.dispatchEvent(new CustomEvent('database:downloadFile', {
-                    detail: {
-                        blob: blob,
-                        url: url,
-                        filename: filename,
-                        mimeType: 'application/json'
-                    }
-                }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `freeapp_backup_${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
 
                 return { success: true, message: '数据库导出成功' };
 
@@ -1816,7 +1722,10 @@ if (typeof window !== 'undefined') {
                     }
                 }));
                 
-                // UI操作由uiManager.js处理database:importSuccess事件
+                // 延迟刷新页面以确保用户看到成功消息
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
                 
             } else {
                 throw new Error(result.error || '导入失败');
@@ -1979,17 +1888,14 @@ if (typeof window !== 'undefined') {
 📚 EVENT-DRIVEN UI ARCHITECTURE DOCUMENTATION
 ================================================================================
 
-📋 重大架构更新：UnifiedDBManager现在实现了完全的事件驱动架构！
-所有UI交互（alert、confirm、DOM操作）已被移除，通过自定义事件实现完全分离。
-这解决了架构债务问题，使代码更易测试、维护和扩展。
+本文档说明了重构后的事件驱动UI架构。所有UI交互现在通过自定义事件进行，
+实现了业务逻辑与UI层的完全分离。
 
-🎯 架构重构核心优势：
-- ✅ 纯业务逻辑，完全可单元测试
-- ✅ UI框架无关，可配合任何前端技术栈  
-- ✅ 一致的错误处理和用户交互模式
-- ✅ 非阻塞异步交互，更好的用户体验
-- ✅ 关注点完全分离，遵循单一职责原则
-- ✅ 移除了所有直接DOM操作和浏览器API调用
+🎯 核心优势：
+- ✅ 纯业务逻辑，可单元测试
+- ✅ 灵活的UI实现（可用任何框架）  
+- ✅ 一致的错误处理模式
+- ✅ 更好的用户体验（非阻塞交互）
 
 📋 事件类型汇总：
 
@@ -2018,13 +1924,6 @@ if (typeof window !== 'undefined') {
 - database:repairError - 修复失败
 - database:errorDialog - 显示错误对话框
 
-🎯 新增核心事件（完全解耦UI操作）：
-- database:downloadFile - 文件下载请求（替代直接DOM操作）
-- database:showError - 错误消息显示（替代alert）
-- database:showMessage - 成功/信息消息显示（替代alert）
-- database:confirmOptions - 用户选项确认请求（替代confirm）
-- database:confirmRepair - 修复操作确认请求（替代confirm）
-
 💡 提示词相关事件：
 - prompts:importSuccess - 提示词导入成功
 - prompts:importError - 提示词导入错误
@@ -2050,13 +1949,7 @@ window.addEventListener('fileStorage:importError', (event) => {
         showToast(error.message, 'error');
     } else {
         // 降级到原生对话框
-        // 通过事件发送错误信息，由UI层处理显示
-        window.dispatchEvent(new CustomEvent('database:showError', {
-            detail: {
-                message: error.message,
-                type: 'error'
-            }
-        }));
+        alert(error.message);
     }
 });
 
@@ -2087,17 +1980,8 @@ window.addEventListener('fileStorage:importOptionsNeeded', (event) => {
         });
     } else {
         // 降级到原生对话框
-        // 通过事件请求用户确认，等待UI层响应
-        const confirmResult = await new Promise((resolve) => {
-            window.dispatchEvent(new CustomEvent('database:confirmOptions', {
-                detail: {
-                    messages: messages,
-                    resolve: resolve
-                }
-            }));
-        });
-        
-        const { overwrite, skipMissing } = confirmResult;
+        const overwrite = confirm(messages.overwrite);
+        const skipMissing = confirm(messages.skipMissing);
         resolve({ overwrite, skipMissing });
     }
 });
@@ -2120,13 +2004,7 @@ window.addEventListener('database:importSuccess', (event) => {
     if (typeof showToast === 'function') {
         showToast(message, 'success');
     } else {
-        // 通过事件发送成功信息，由UI层处理显示
-        window.dispatchEvent(new CustomEvent('database:showMessage', {
-            detail: {
-                message: message,
-                type: 'success'
-            }
-        }));
+        alert(message);
     }
     
     // 自动刷新已经在业务逻辑中处理，UI层可以添加额外的视觉反馈
@@ -2152,15 +2030,7 @@ window.addEventListener('database:repairNeeded', (event) => {
             ]
         }).then(resolve);
     } else {
-        // 通过事件请求修复确认，等待UI层响应
-        const shouldRepair = await new Promise((resolve) => {
-            window.dispatchEvent(new CustomEvent('database:confirmRepair', {
-                detail: {
-                    message: message,
-                    resolve: resolve
-                }
-            }));
-        });
+        const shouldRepair = confirm(message);
         resolve(shouldRepair);
     }
 });
@@ -2179,13 +2049,7 @@ window.addEventListener('fileStorage:importSuccess', (event) => {
     } else if (typeof showToast === 'function') {
         showToast(message, 'success');
     } else {
-        // 通过事件发送详细信息，由UI层处理显示
-        window.dispatchEvent(new CustomEvent('database:showMessage', {
-            detail: {
-                message: detailedMessage,
-                type: 'info'
-            }
-        }));
+        alert(detailedMessage);
     }
 });
 
