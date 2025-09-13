@@ -152,9 +152,8 @@ class EnvironmentConfig {
      */
     static shouldShowEnvironmentIndicator() {
         const config = this.getEnvironment();
-        // 如果有环境标签，则显示指示器，无论environment值是什么
-        // 只有在生产环境且没有环境标签时才不显示
-        return !(config.environment === 'production' && !config.environmentLabel);
+        // 生产环境永远不显示环境指示器
+        return config.environment !== 'production';
     }
 
     /**
@@ -163,13 +162,12 @@ class EnvironmentConfig {
     static getEnvironmentIndicatorConfig() {
         const config = this.getEnvironment();
         
-        // 如果有环境标签（如"测试环境"），则显示指示器，无论environment值是什么
-        // 只有在生产环境且没有环境标签时才不显示
-        if (config.environment === 'production' && !config.environmentLabel) {
+        // 生产环境永远不显示环境指示器，无论是否有环境标签
+        if (config.environment === 'production') {
             return null;
         }
 
-        // 简化配置，统一使用橙色样式
+        // 只有非生产环境才显示环境指示器
         return {
             text: config.environmentLabel ? `${config.environmentLabel} - 开发中内容，不代表最终成果` : '开发中内容，不代表最终成果',
             version: config.version,
