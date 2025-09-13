@@ -119,8 +119,15 @@ class EnvironmentConfig {
      * 获取应用版本
      */
     static getVersion() {
+        // 优先使用 git commit hash 的前7位作为版本显示
+        let gitCommit = this.BUILD_TIME_CONFIG.GIT_COMMIT;
+        if (!gitCommit.includes('{{') && gitCommit !== 'unknown' && gitCommit.length >= 7) {
+            return gitCommit.substring(0, 7);
+        }
+        
+        // 如果没有有效的 git commit hash，回退到应用版本号
         let version = this.BUILD_TIME_CONFIG.APP_VERSION;
-        return version.includes('{{') ? '1.0.0' : version;
+        return version.includes('{{') ? 'dev' : version;
     }
 
     /**

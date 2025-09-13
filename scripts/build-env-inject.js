@@ -26,7 +26,7 @@ function getEnvironmentConfig() {
         GIT_COMMIT: process.env.VERCEL_GIT_COMMIT_SHA || 
                    process.env.COMMIT_REF || 
                    process.env.GIT_COMMIT || 
-                   'unknown',
+                   getGitCommitHash(),
         
         // 是否为开发版本
         IS_DEVELOPMENT: (process.env.ENVIRONMENT === 'development' || 
@@ -51,6 +51,22 @@ function getPackageVersion() {
     } catch (error) {
         console.warn('Unable to read package.json version:', error.message);
         return '1.0.0';
+    }
+}
+
+/**
+ * 获取当前 Git 提交哈希
+ */
+function getGitCommitHash() {
+    try {
+        const { execSync } = require('child_process');
+        // 尝试获取当前 Git 提交哈希
+        const gitHash = execSync('git rev-parse HEAD', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+        return gitHash || 'unknown';
+    } catch (error) {
+        // 如果不是 Git 仓库或命令失败，返回 unknown
+        console.warn('Unable to get Git commit hash:', error.message);
+        return 'unknown';
     }
 }
 
