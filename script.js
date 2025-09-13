@@ -1141,9 +1141,34 @@ async function showPageAsync(pageIdToShow) {
     // 切换到联系人列表时手动刷新时间显示
     if (pageIdToShow === 'contactListPage') {
         updateContactListTimes();
-    }   
+    }
+    
+    // 切换到个人信息页面时更新版本号显示
+    if (pageIdToShow === 'profilePage') {
+        updateProfileVersion();
+    }
 }
 
+/**
+ * 更新个人信息页面的版本号显示
+ */
+function updateProfileVersion() {
+    try {
+        // 确保 EnvironmentConfig 已加载
+        if (typeof EnvironmentConfig === 'undefined') {
+            console.warn('EnvironmentConfig not loaded, using fallback version');
+            return;
+        }
+        
+        const versionElement = document.getElementById('profileVersionText');
+        if (versionElement) {
+            const version = EnvironmentConfig.getVersion();
+            versionElement.textContent = version; // 不加 v 前缀，直接显示 commit hash
+        }
+    } catch (error) {
+        console.warn('Failed to update profile version:', error);
+    }
+}
 
 function showGeneratePostModal() {
     const select = document.getElementById('postGenCharacterSelect');
