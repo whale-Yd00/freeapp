@@ -15937,3 +15937,6 @@ async function enhancedTestApiConnection() {
     }
 }
 
+// 将增强测试连接函数暴露到全局作用域
+window.enhancedTestApiConnection = enhancedTestApiConnection;
+
