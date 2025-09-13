@@ -121,7 +121,7 @@ class EnvironmentConfig {
     static getVersion() {
         // 优先使用 git commit hash 的前7位作为版本显示
         let gitCommit = this.BUILD_TIME_CONFIG.GIT_COMMIT;
-        if (!gitCommit.includes('{{') && gitCommit !== 'unknown' && gitCommit.length >= 7) {
+        if (gitCommit !== 'unknown' && gitCommit.length >= 7) {
             return gitCommit.substring(0, 7);
         }
         
