@@ -21,13 +21,51 @@ window.addEventListener('error', function(event) {
     }
 });
 
-// 🛡️ Promise 未捕获错误处理器
+// 🛡️ Promise 未捕获错误处理器（统一处理）
 window.addEventListener('unhandledrejection', function(event) {
-    console.warn('🔧 捕获到未处理的 Promise 错误:', event.reason);
     // 对于某些第三方库的 Promise 错误，我们也安全忽略
     if (event.reason && event.reason.toString().includes('currentScript')) {
+        console.warn('🔧 捕获到未处理的 Promise 错误 (currentScript)，已安全忽略:', event.reason);
         event.preventDefault();
+        return;
     }
+
+    console.error('未处理的Promise拒绝:', {
+        reason: event.reason,
+        promise: event.promise,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 记录到全局错误日志
+    if (!window.errorLog) window.errorLog = [];
+    window.errorLog.push({
+        type: 'unhandledrejection',
+        reason: event.reason?.toString() || 'Unknown',
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 检查是否是API相关的错误，如果是则显示重试对话框
+    const errorMessage = event.reason?.message || event.reason?.toString() || '';
+    const isAPIError = errorMessage.includes('API请求失败') || 
+                      errorMessage.includes('API Error') || 
+                      errorMessage.includes('429') ||
+                      errorMessage.includes('500') ||
+                      errorMessage.includes('503') ||
+                      errorMessage.includes('502') ||
+                      errorMessage.includes('空回') ||
+                      errorMessage.includes('AI回复内容为空') ||
+                      errorMessage.includes('AI未返回有效内容');
+    
+    if (isAPIError && typeof showApiError === 'function') {
+        showApiError(event.reason || new Error(errorMessage));
+    }
+    
+    // 防止控制台显示未处理的错误（已记录）
+    event.preventDefault();
 });
 
 // 已将以下功能迁移到专门的utils文件：
@@ -195,45 +233,7 @@ let hashtagCache = {};
 let audio = null;
 // IndexedDB 实例统一使用 window.db，不再使用局部变量
 
-// 全局错误处理 - 捕获未处理的Promise拒绝
-window.addEventListener('unhandledrejection', function(event) {
-    console.error('未处理的Promise拒绝:', {
-        reason: event.reason,
-        promise: event.promise,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-    });
-    
-    // 记录到全局错误日志
-    if (!window.errorLog) window.errorLog = [];
-    window.errorLog.push({
-        type: 'unhandledrejection',
-        reason: event.reason?.toString() || 'Unknown',
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-    });
-    
-    // 检查是否是API相关的错误，如果是则显示重试对话框
-    const errorMessage = event.reason?.message || event.reason?.toString() || '';
-    const isAPIError = errorMessage.includes('API请求失败') || 
-                      errorMessage.includes('API Error') || 
-                      errorMessage.includes('429') ||
-                      errorMessage.includes('500') ||
-                      errorMessage.includes('503') ||
-                      errorMessage.includes('502') ||
-                      errorMessage.includes('空回') ||
-                      errorMessage.includes('AI回复内容为空') ||
-                      errorMessage.includes('AI未返回有效内容');
-    
-    if (isAPIError && typeof showApiError === 'function') {
-        showApiError(event.reason || new Error(errorMessage));
-    }
-    
-    // 防止控制台显示未处理的错误（已记录）
-    event.preventDefault();
-});
+// 全局错误处理已统一到文件开头的 unhandledrejection 监听器中
 
 // === 图片处理辅助函数 ===
 
