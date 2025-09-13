@@ -1,4 +1,4 @@
-const CACHE_NAME = 'whale-llt-v9';
+const CACHE_NAME = 'whale-llt-v11'; // 🔥 重构后新版本
 const CACHE_VERSION = Date.now(); // 添加时间戳确保版本唯一性
 const FORCE_CACHE_BUST = true; // 🚨 强制清理所有旧缓存
 const MIGRATION_KEY = 'cache-migration-v7-unified'; // 🔑 迁移完成标记
