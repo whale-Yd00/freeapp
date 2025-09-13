@@ -5605,3 +5605,114 @@ body {
         padding: 15px;
     }
 }
+
+/* === 用户体验增强样式 === */
+
+/* API配置流程提示样式 */
+.form-step-hint {
+    display: none;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background-color: #e8f5e8;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #2d5a2d;
+    border-left: 3px solid #28a745;
+    animation: slideInDown 0.3s ease-out;
+}
+
+.form-step-reminder {
+    padding: 10px 15px;
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #856404;
+    margin-bottom: 15px;
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* 按钮步骤标识样式 */
+.form-submit small {
+    opacity: 0.8;
+    font-weight: normal;
+    font-size: 11px;
+}
+
+/* 动画效果 */
+@keyframes slideInDown {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* 提示文字强调样式 */
+.form-step-reminder strong {
+    color: #d4470b;
+    font-weight: 600;
+}
+
+.form-step-hint::before {
+    content: "";
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    background-color: #28a745;
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* 暗色主题适配 */
+.dark-mode .form-step-hint {
+    background-color: #1a2f1a;
+    color: #8bc48b;
+    border-left-color: #28a745;
+}
+
+.dark-mode .form-step-reminder {
+    background-color: #2a2516;
+    color: #d4c669;
+    border-left-color: #ffc107;
+}
+
+.dark-mode .form-step-reminder strong {
+    color: #f8a15b;
+}
+
+/* 最终步骤提示样式 */
+.final-step-hint {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.dark-mode .final-step-hint {
+    background-color: #1a2a3a;
+    color: #66b3ff;
+    border-left-color: #0099ff;
+}

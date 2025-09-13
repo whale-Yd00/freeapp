@@ -46,7 +46,7 @@
             <div class="wechat-header">
                 <div class="header-title">Whale-LLT</div>
                 <div class="header-actions">
-                    <span class="header-icon" onclick="showApiSettingsModal()">⚙️</span>
+                    <span class="header-icon" id="apiSettingsIcon">⚙️</span>
                     <span class="header-icon" id="musicIcon" onclick="showMusicModal()" data-umami-event="Music Open">🎵</span>
                     <span class="header-icon" onclick="showAddContactModal()" data-umami-event="Add Contact Open">➕</span>
                     <span class="header-icon" onclick="showCreateGroupModal()" data-umami-event="Create Group Open">👥</span>
@@ -1179,7 +1179,10 @@
                         <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
                     </div>
                     
-                    <button type="submit" class="form-submit" data-umami-event="Save API Config">保存API配置</button>
+                    <button type="submit" class="form-submit" data-umami-event="Save API Config">保存API配置 <small>(第1步)</small></button>
+                    <div class="form-step-hint" id="configSaveHint" style="display: none; margin-top: 10px; padding: 8px; background-color: #e8f5e8; border-radius: 4px; font-size: 12px; color: #2d5a2d;">
+                        ✅ API配置已保存！接下来：<strong>①选择配置 ②选择模型 ③滑到最后点击"完成设置"</strong>
+                    </div>
                 </form>
                 
                 <!-- 模型和功能配置 -->
@@ -1208,6 +1211,9 @@
                         
                         <div class="config-section">
                             <div class="config-section-title">模型选择</div>
+                            <div class="form-step-reminder" id="modelSelectionReminder" style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107; font-size: 13px; color: #856404;">
+                                💡 <strong>操作流程：</strong>①保存上方API配置 → ②选择API配置 → ③选择模型 → ④滑到最后点击"完成设置"
+                            </div>
                         
                         <div class="form-group">
                             <label class="form-label">主要模型</label>
@@ -1216,7 +1222,7 @@
                                     <option value="">选择API配置</option>
                                 </select>
                                 <select class="form-input model-select" id="primaryModelSelect" onchange="saveModelSelection('primary')">
-                                    <option value="">请先选择API配置</option>
+                                    <option value="">请先完成第1步保存API配置</option>
                                 </select>
                             </div>
                             <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
@@ -1230,7 +1236,7 @@
                                     <option value="sync_with_primary">与主模型保持一致</option>
                                 </select>
                                 <select class="form-input model-select" id="secondaryModelSelect" onchange="saveModelSelection('secondary')">
-                                    <option value="">请先选择API配置</option>
+                                    <option value="">请先完成第1步保存API配置</option>
                                     <option value="sync_with_primary">与主模型保持一致</option>
                                 </select>
                             </div>
@@ -1262,7 +1268,10 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="form-submit" data-umami-event="Save App Settings">保存应用设置</button>
+                    <div class="final-step-hint" style="margin: 15px 0 10px 0; padding: 8px 12px; background-color: #f0f8ff; border-left: 3px solid #0066cc; border-radius: 4px; font-size: 13px; color: #0066cc;">
+                        🎯 <strong>最后一步：</strong>确认已选择配置和模型后，点击下方按钮完成设置！
+                    </div>
+                    <button type="submit" class="form-submit" data-umami-event="Save App Settings">完成设置 <small>(第2步)</small></button>
                 </form>
             </div>
         </div>

@@ -4682,6 +4682,8 @@ async function showApiSettingsModal() {
             // 确保API key状态正确显示
             setTimeout(() => {
                 updateAllKeyStates();
+                // 更新UI提示状态
+                updateUIHintStatus();
             }, 200); // 延迟确保DOM已完全渲染
         }
         
@@ -4694,6 +4696,15 @@ async function showApiSettingsModal() {
 
 // 确保函数在全局作用域可用
 window.showApiSettingsModal = showApiSettingsModal;
+
+// 添加API设置按钮事件监听器（安全的延迟绑定）
+document.addEventListener('DOMContentLoaded', function() {
+    const apiSettingsIcon = document.getElementById('apiSettingsIcon');
+    if (apiSettingsIcon) {
+        apiSettingsIcon.addEventListener('click', showApiSettingsModal);
+        apiSettingsIcon.setAttribute('data-umami-event', 'API Settings Open');
+    }
+});
 
 function showBackgroundModal() {
     // 异步包装函数
@@ -6264,6 +6275,9 @@ async function saveApiConfig(event) {
         
         showToast('API配置保存成功');
         
+        // 显示成功提示并隐藏流程提醒
+        showConfigSaveSuccess();
+        
         // 立即更新全局API设置
         await ensureApiConfigIsUpdated();
         
@@ -6275,6 +6289,11 @@ async function saveApiConfig(event) {
 
 async function saveAppSettings(event) {
     event.preventDefault();
+    
+    // 验证用户流程完整性
+    if (!validateUserFlow()) {
+        return;
+    }
     
     try {
         // 获取表单数据
@@ -6318,6 +6337,9 @@ async function saveAppSettings(event) {
         
         updateContextIndicator();
         showToast('应用设置保存成功');
+        
+        // 显示流程完成消息
+        showFlowCompletionMessage();
         
     } catch (error) {
         console.error('保存应用设置失败:', error);
@@ -15389,7 +15411,7 @@ function clearConfigForm() {
     
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
-    if (primarySelect) primarySelect.innerHTML = '<option value="">请先测试连接</option>';
+    if (primarySelect) primarySelect.innerHTML = '<option value="">请先完成第1步保存API配置</option>';
     if (secondarySelect) secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
 }
 
@@ -15726,4 +15748,117 @@ window.showPage = function(pageId) {
 // 暴露互动相关函数到全局
 window.syncInteractiveData = syncInteractiveData;
 window.handleInteractiveDataUpdate = handleInteractiveDataUpdate;
+
+// === 用户体验增强函数 ===
+
+/**
+ * 显示API配置保存成功状态
+ */
+function showConfigSaveSuccess() {
+    // 显示成功提示
+    const hintElement = document.getElementById('configSaveHint');
+    if (hintElement) {
+        hintElement.style.display = 'block';
+        // 5秒后自动隐藏
+        setTimeout(() => {
+            if (hintElement) {
+                hintElement.style.display = 'none';
+            }
+        }, 5000);
+    }
+    
+    // 隐藏模型选择的提醒
+    const reminderElement = document.getElementById('modelSelectionReminder');
+    if (reminderElement) {
+        reminderElement.style.display = 'none';
+    }
+    
+    // 重新加载模型选择器选项
+    loadApiConfigSelectorsForModels();
+}
+
+/**
+ * 验证用户流程完整性
+ */
+function validateUserFlow() {
+    const primaryConfig = document.getElementById('primaryConfigSelect')?.value;
+    const primaryModel = document.getElementById('primaryModelSelect')?.value;
+    
+    // 检查是否已完成必要的配置步骤
+    if (!primaryConfig) {
+        showToast('⚠️ 请先完成：①保存API配置 → ②选择API配置 → ③选择模型');
+        // 滚动到API配置区域
+        const configForm = document.getElementById('apiConfigForm');
+        if (configForm) {
+            configForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return false;
+    }
+    
+    if (!primaryModel) {
+        showToast('⚠️ 请选择主要模型，然后滑到最后点击"完成设置"');
+        // 滚动到模型选择区域
+        const modelSection = document.getElementById('primaryModelSelect');
+        if (modelSection) {
+            modelSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * 显示流程完成消息
+ */
+function showFlowCompletionMessage() {
+    showToast('🎉 配置完成！您现在可以开始使用AI对话了');
+    
+    // 2秒后询问是否关闭设置窗口
+    setTimeout(() => {
+        const modal = document.getElementById('apiSettingsModal');
+        if (modal && window.getComputedStyle(modal).display !== 'none') {
+            // 询问用户是否关闭设置窗口
+            if (confirm('配置已完成，是否关闭设置窗口开始对话？')) {
+                closeModal('apiSettingsModal');
+            }
+        }
+    }, 2000);
+}
+
+/**
+ * 检查并更新界面提示状态
+ */
+function updateUIHintStatus() {
+    const primaryConfig = document.getElementById('primaryConfigSelect')?.value;
+    const reminderElement = document.getElementById('modelSelectionReminder');
+    const hintElement = document.getElementById('configSaveHint');
+    
+    if (primaryConfig && reminderElement) {
+        // 如果已有API配置，隐藏提醒
+        reminderElement.style.display = 'none';
+    } else if (reminderElement) {
+        // 如果没有API配置，显示提醒
+        reminderElement.style.display = 'block';
+    }
+    
+    // 隐藏成功提示（因为用户可能在修改配置）
+    if (hintElement) {
+        hintElement.style.display = 'none';
+    }
+}
+
+/**
+ * 增强的测试连接函数
+ */
+async function enhancedTestApiConnection() {
+    try {
+        await testApiConnection();
+        // 测试成功后提示用户保存配置
+        showToast('✅ 连接测试成功！请保存API配置继续设置');
+    } catch (error) {
+        console.error('测试连接失败:', error);
+        showToast('❌ 连接测试失败，请检查API URL和Key');
+    }
+}
 
