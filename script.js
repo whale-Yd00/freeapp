@@ -1,4 +1,35 @@
 ﻿// === 核心应用脚本 ===
+
+// 🛡️ 全局错误处理器 - 处理第三方库和浏览器兼容性问题
+window.addEventListener('error', function(event) {
+    // 过滤掉已知的无害错误
+    if (event.message && event.message.includes('document.currentScript')) {
+        console.warn('🔧 捕获到 currentScript 兼容性错误，已安全忽略:', event.message);
+        event.preventDefault(); // 阻止错误冒泡到控制台
+        return true;
+    }
+    
+    // 记录其他真正的错误供调试
+    if (event.error && !event.message.includes('Script error')) {
+        console.error('🐛 全局错误:', {
+            message: event.message,
+            filename: event.filename,
+            line: event.lineno,
+            column: event.colno,
+            error: event.error
+        });
+    }
+});
+
+// 🛡️ Promise 未捕获错误处理器
+window.addEventListener('unhandledrejection', function(event) {
+    console.warn('🔧 捕获到未处理的 Promise 错误:', event.reason);
+    // 对于某些第三方库的 Promise 错误，我们也安全忽略
+    if (event.reason && event.reason.toString().includes('currentScript')) {
+        event.preventDefault();
+    }
+});
+
 // 已将以下功能迁移到专门的utils文件：
 // - 主题管理 → uiManager.js
 // - 文件上传处理 → imageStorageAPI.js  
