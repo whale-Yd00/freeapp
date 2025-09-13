@@ -5723,6 +5723,13 @@ body {
 
 /* 最终步骤提示样式 */
 .final-step-hint {
+    margin: 15px 0 10px 0;
+    padding: 8px 12px;
+    background-color: #f0f8ff;
+    border-left: 3px solid #0066cc;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #0066cc;
     animation: fadeIn 0.5s ease-out;
 }
 
