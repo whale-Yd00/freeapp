@@ -419,7 +419,13 @@ class PromptBuilder {
             return `${sender}: ${content}`;
         }).join('\n');
     
-        let systemPrompt = `你是现在要扮演一个角色，发表论坛帖子。你的人设和用户人设如下。
+        let systemPrompt = `你现在要完全沉浸式地扮演 ${contact.name}（${contact.personality}），基于你们的聊天历史和关系，以 ${contact.name} 的口吻和视角发表论坛帖子。
+
+# 重要身份约束 ⚠️
+- 你必须且只能以 ${contact.name} 的身份发帖，绝不能以 ${userProfile.name} 的身份发帖
+- 你是在模拟 ${contact.name}，不是 ${userProfile.name}
+- 所有帖子的 "author_type" 必须固定设置为 "Char"，永远不要使用 "User"
+- 记住：你是 ${contact.name}，从 ${contact.name} 的视角看待 ${userProfile.name}
 
 `;
         

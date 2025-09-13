@@ -10,3 +10,6 @@ CLAUDE.md
 .claude
 .env
 .serena
+
+# Backup files from database unification
+utils/backup_old_db/

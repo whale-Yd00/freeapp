@@ -11,13 +11,12 @@
     <script src="config/environment-config.js"></script>
     <script src="js/environment-indicator.js"></script>
     
-    <!-- FileSystem API Dependencies -->
-    <script src="utils/fileStorageManager.js"></script>
+    <!-- 🔥 统一数据库管理器 - 替代所有数据库相关模块 -->
+    <script src="utils/UnifiedDBManager.js"></script>
+    
+    <!-- 文件和图片处理模块 -->
     <script src="utils/imageStorageAPI.js"></script>
     <script src="utils/imageDisplayHelper.js"></script>
-    
-    <!-- Database Management -->
-    <script src="utils/dataMigrator.js"></script>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -237,18 +236,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // 互动界面数据管理助手
     const interactiveDataHelper = {
         // 等待主应用数据库准备就绪
+        // 🔥 简化的数据库初始化 - 使用统一数据库管理器
         async ensureReady() {
+            if (this.isReady) {
+                return;
+            }
+
+            console.log('🔥 [interact.html] 使用统一数据库管理器等待数据库就绪...');
+            
             try {
-                if (typeof window.ensureDBReady !== 'function') {
-                    throw new Error('主应用数据库管理系统未加载');
-                }
-                await window.ensureDBReady(async () => {
-                    return window.db !== null;
-                }, '互动界面数据库初始化');
+                // 使用统一数据库管理器等待数据库就绪
+                await window.UnifiedDBManager.waitForReady(8000);
+                
+                console.log('🔥 [interact.html] 数据库状态确认:', {
+                    isReady: window.isIndexedDBReady,
+                    dbExists: !!window.db,
+                    dbVersion: window.db?.version
+                });
+                
+                this.isReady = true;
+                console.log('🔥 [interact.html] 互动界面数据库助手已就绪');
+                
             } catch (error) {
-                console.error('数据库初始化失败:', error);
+                console.error('🔥 [interact.html] 数据库初始化失败:', error);
                 alert('数据库初始化失败，请刷新页面重试');
-                throw error; // Re-throw the error to prevent further execution
+                throw error;
             }
         },
 

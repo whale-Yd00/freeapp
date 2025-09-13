@@ -119,8 +119,15 @@ class EnvironmentConfig {
      * 获取应用版本
      */
     static getVersion() {
+        // 优先使用 git commit hash 的前7位作为版本显示
+        let gitCommit = this.BUILD_TIME_CONFIG.GIT_COMMIT;
+        if (gitCommit !== 'unknown' && gitCommit.length >= 7) {
+            return gitCommit.substring(0, 7);
+        }
+        
+        // 如果没有有效的 git commit hash，回退到应用版本号
         let version = this.BUILD_TIME_CONFIG.APP_VERSION;
-        return version.includes('{{') ? '1.0.0' : version;
+        return version.includes('{{') ? 'dev' : version;
     }
 
     /**
@@ -141,12 +148,12 @@ class EnvironmentConfig {
 
     /**
      * 检查是否应该显示环境指示器
-     * 生产环境永不显示
+     * 只有在生产环境且没有环境标签时才不显示
      */
     static shouldShowEnvironmentIndicator() {
         const config = this.getEnvironment();
-        // 生产环境完全不显示指示器
-        return config.environment !== 'production' && (config.isDevelopment || config.environment === 'staging');
+        // 生产环境永远不显示环境指示器
+        return config.environment !== 'production';
     }
 
     /**
@@ -155,12 +162,12 @@ class EnvironmentConfig {
     static getEnvironmentIndicatorConfig() {
         const config = this.getEnvironment();
         
-        // 生产环境直接返回 null，确保不显示任何指示器
+        // 生产环境永远不显示环境指示器，无论是否有环境标签
         if (config.environment === 'production') {
             return null;
         }
 
-        // 简化配置，统一使用橙色样式
+        // 只有非生产环境才显示环境指示器
         return {
             text: config.environmentLabel ? `${config.environmentLabel} - 开发中内容，不代表最终成果` : '开发中内容，不代表最终成果',
             version: config.version,

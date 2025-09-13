@@ -39,9 +39,9 @@ class ImageStorageAPI {
 
     async _initInternal() {
         try {
-            // 确保FileStorageManager已加载
+            // 确保UnifiedDBManager已加载（通过FileStorageManager兼容性映射）
             if (!window.FileStorageManager) {
-                throw new Error('FileStorageManager未加载');
+                throw new Error('UnifiedDBManager未加载或FileStorageManager映射未设置');
             }
 
             this.fileManager = window.FileStorageManager;
@@ -136,7 +136,7 @@ class ImageStorageAPI {
                 throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
             }
             
-            if (error.message && error.message.includes('FileStorageManager未加载')) {
+            if (error.message && (error.message.includes('UnifiedDBManager未加载') || error.message.includes('FileStorageManager未加载'))) {
                 throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
             }
             
@@ -236,7 +236,7 @@ class ImageStorageAPI {
                 throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
             }
             
-            if (error.message && error.message.includes('FileStorageManager未加载')) {
+            if (error.message && (error.message.includes('UnifiedDBManager未加载') || error.message.includes('FileStorageManager未加载'))) {
                 throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
             }
             
@@ -330,7 +330,7 @@ class ImageStorageAPI {
                 throw new DetailedError('DATABASE_ERROR', '数据库操作失败，请刷新页面后重试');
             }
             
-            if (error.message && error.message.includes('FileStorageManager未加载')) {
+            if (error.message && (error.message.includes('UnifiedDBManager未加载') || error.message.includes('FileStorageManager未加载'))) {
                 throw new DetailedError('SYSTEM_ERROR', '文件存储系统未就绪，请刷新页面');
             }
             

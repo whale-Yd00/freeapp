@@ -49,11 +49,11 @@ class FileStorageExporter {
         }
 
         if (!this.fileManager) {
-            if (window.FileStorageManager) {
-                this.fileManager = window.FileStorageManager;
+            if (window.unifiedDB) {
+                this.fileManager = window.unifiedDB;
                 await this.fileManager.init();
             } else {
-                throw new Error('FileStorageManager未加载');
+                throw new Error('UnifiedDBManager未加载');
             }
         }
 

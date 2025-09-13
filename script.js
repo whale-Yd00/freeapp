@@ -1,4 +1,73 @@
 ﻿// === 核心应用脚本 ===
+
+// 🛡️ 全局错误处理器 - 处理第三方库和浏览器兼容性问题
+window.addEventListener('error', function(event) {
+    // 过滤掉已知的无害错误
+    if (event.message && event.message.includes('document.currentScript')) {
+        console.warn('🔧 捕获到 currentScript 兼容性错误，已安全忽略:', event.message);
+        event.preventDefault(); // 阻止错误冒泡到控制台
+        return true;
+    }
+    
+    // 记录其他真正的错误供调试
+    if (event.error && !event.message.includes('Script error')) {
+        console.error('🐛 全局错误:', {
+            message: event.message,
+            filename: event.filename,
+            line: event.lineno,
+            column: event.colno,
+            error: event.error
+        });
+    }
+});
+
+// 🛡️ Promise 未捕获错误处理器（统一处理）
+window.addEventListener('unhandledrejection', function(event) {
+    // 对于某些第三方库的 Promise 错误，我们也安全忽略
+    if (event.reason && event.reason.toString().includes('currentScript')) {
+        console.warn('🔧 捕获到未处理的 Promise 错误 (currentScript)，已安全忽略:', event.reason);
+        event.preventDefault();
+        return;
+    }
+
+    console.error('未处理的Promise拒绝:', {
+        reason: event.reason,
+        promise: event.promise,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 记录到全局错误日志
+    if (!window.errorLog) window.errorLog = [];
+    window.errorLog.push({
+        type: 'unhandledrejection',
+        reason: event.reason?.toString() || 'Unknown',
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href
+    });
+    
+    // 检查是否是API相关的错误，如果是则显示重试对话框
+    const errorMessage = event.reason?.message || event.reason?.toString() || '';
+    const isAPIError = errorMessage.includes('API请求失败') || 
+                      errorMessage.includes('API Error') || 
+                      errorMessage.includes('429') ||
+                      errorMessage.includes('500') ||
+                      errorMessage.includes('503') ||
+                      errorMessage.includes('502') ||
+                      errorMessage.includes('空回') ||
+                      errorMessage.includes('AI回复内容为空') ||
+                      errorMessage.includes('AI未返回有效内容');
+    
+    if (isAPIError && typeof showApiError === 'function') {
+        showApiError(event.reason || new Error(errorMessage));
+    }
+    
+    // 防止控制台显示未处理的错误（已记录）
+    event.preventDefault();
+});
+
 // 已将以下功能迁移到专门的utils文件：
 // - 主题管理 → uiManager.js
 // - 文件上传处理 → imageStorageAPI.js  
@@ -115,10 +184,7 @@ window.currentContact = currentContact;
 let editingContact = null;
 window.editingContact = editingContact;
 
-// [DEBUG-MOMENTS-ROLES-START] 数据库初始化竞态条件控制，修复完成后可选择保留
-let isInitializingDatabase = false; // 防止多个组件同时初始化数据库
-let databaseInitializationPromise = null; // 缓存初始化Promise，避免重复初始化
-// [DEBUG-MOMENTS-ROLES-END]
+// 🔥 数据库初始化已统一到 UnifiedDBManager，旧的竞态控制变量已移除
 
 // API配置设置（不包含minimax语音配置）
 let apiSettings = {
@@ -167,45 +233,7 @@ let hashtagCache = {};
 let audio = null;
 // IndexedDB 实例统一使用 window.db，不再使用局部变量
 
-// 全局错误处理 - 捕获未处理的Promise拒绝
-window.addEventListener('unhandledrejection', function(event) {
-    console.error('未处理的Promise拒绝:', {
-        reason: event.reason,
-        promise: event.promise,
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-    });
-    
-    // 记录到全局错误日志
-    if (!window.errorLog) window.errorLog = [];
-    window.errorLog.push({
-        type: 'unhandledrejection',
-        reason: event.reason?.toString() || 'Unknown',
-        timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-    });
-    
-    // 检查是否是API相关的错误，如果是则显示重试对话框
-    const errorMessage = event.reason?.message || event.reason?.toString() || '';
-    const isAPIError = errorMessage.includes('API请求失败') || 
-                      errorMessage.includes('API Error') || 
-                      errorMessage.includes('429') ||
-                      errorMessage.includes('500') ||
-                      errorMessage.includes('503') ||
-                      errorMessage.includes('502') ||
-                      errorMessage.includes('空回') ||
-                      errorMessage.includes('AI回复内容为空') ||
-                      errorMessage.includes('AI未返回有效内容');
-    
-    if (isAPIError && typeof showApiError === 'function') {
-        showApiError(event.reason || new Error(errorMessage));
-    }
-    
-    // 防止控制台显示未处理的错误（已记录）
-    event.preventDefault();
-});
+// 全局错误处理已统一到文件开头的 unhandledrejection 监听器中
 
 // === 图片处理辅助函数 ===
 
@@ -347,6 +375,25 @@ if ('serviceWorker' in navigator) {
     }).catch(registrationError => {
       console.log('Service Worker 注册失败: ', registrationError);
     });
+  });
+
+  // 🔥 监听来自 Service Worker 的缓存清理消息
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'CACHE_BUSTED') {
+      console.log('🔥 收到缓存清理通知:', event.data.message);
+      console.log('🔄 准备重新加载页面以应用数据库重构...');
+      
+      // 显示用户友好的提示
+      if (typeof showToast === 'function') {
+        showToast('检测到系统更新，正在重新加载...', 'info');
+      }
+      
+      // 延迟 1 秒后重新加载，给用户看到提示的时间
+      setTimeout(() => {
+        console.log('🔄 强制重新加载页面');
+        window.location.reload(true); // 强制从服务器重新加载
+      }, 1000);
+    }
   });
 }
 
@@ -971,99 +1018,37 @@ async function saveDataToDB() {
 }
 
 
-// [DEBUG-MOMENTS-ROLES-START] 统一的数据库初始化函数，修复完成后可选择保留
 /**
- * 统一的数据库初始化函数，防止多组件竞态条件
- * 解决 FileStorageManager 和 DataMigrator 同时调用 indexedDB.open() 导致的表结构不完整问题
+ * 🔥 简化的数据库初始化函数 - 使用统一数据库管理器
+ * 替代了复杂的 initializeDatabaseOnce 逻辑
  */
 async function initializeDatabaseOnce() {
-    // 如果已经有缓存的初始化Promise，直接返回
-    if (databaseInitializationPromise) {
-        console.log('[DEBUG] 数据库正在初始化中，等待现有初始化完成...');
-        return await databaseInitializationPromise;
-    }
+    console.log('🔥 [简化初始化] 使用统一数据库管理器初始化...');
     
-    // 如果数据库已经就绪且版本正确，直接返回
-    if (window.isIndexedDBReady && window.db && window.db.version >= 13) {
-        console.log('[DEBUG] 数据库已经初始化完成，跳过重复初始化');
-        return window.db;
-    }
-    
-    console.log('[DEBUG] 开始统一的数据库初始化流程...');
-    
-    // 创建初始化Promise并缓存，确保只有一个初始化过程
-    databaseInitializationPromise = (async () => {
-        try {
-            isInitializingDatabase = true;
-            
-            // 如果有现有连接，先关闭
-            if (window.db) {
-                console.log('[DEBUG] 关闭现有数据库连接进行清理');
-                window.db.close();
-                window.db = null;
-                window.isIndexedDBReady = false;
+    try {
+        // 使用统一数据库管理器进行初始化
+        const db = await window.unifiedDB.init();
+        
+        console.log('🔥 [简化初始化] 数据库初始化成功，版本:', db.version);
+        console.log('🔥 [简化初始化] 可用存储:', Array.from(db.objectStoreNames));
+        
+        // 初始化API配置管理器
+        if (window.apiConfigManager) {
+            try {
+                await window.apiConfigManager.init();
+                console.log('🔥 [简化初始化] API配置管理器初始化完成');
+            } catch (error) {
+                console.error('🔥 [简化初始化] API配置管理器初始化失败:', error);
             }
-            
-            // 使用 DataMigrator 作为唯一的数据库初始化入口
-            if (!window.dbManager) {
-                console.log('[DEBUG] 创建 DataMigrator 实例');
-                window.dbManager = new IndexedDBManager();
-            }
-            
-            console.log('[DEBUG] 调用 DataMigrator.initDB()');
-            const db = await window.dbManager.initDB();
-            
-            // 验证初始化结果
-            if (!db || !db.objectStoreNames.contains('contacts')) {
-                throw new Error('数据库初始化不完整：缺少 contacts 表');
-            }
-            
-            console.log('[DEBUG] 数据库初始化成功，版本:', db.version);
-            console.log('[DEBUG] 可用的存储:', Array.from(db.objectStoreNames));
-            
-            // 设置全局状态
-            window.db = db;
-            window.isIndexedDBReady = true;
-            console.log('[DEBUG] 数据库状态标志已设置: isIndexedDBReady = true');
-            
-            // 发出初始化完成事件，通知其他组件
-            if (typeof window.dispatchEvent === 'function') {
-                window.dispatchEvent(new CustomEvent('databaseReady', {
-                    detail: { 
-                        db: db, 
-                        version: db.version,
-                        timestamp: Date.now()
-                    }
-                }));
-                console.log('[事件通知] 已发出 databaseReady 事件');
-            }
-            
-            // 初始化API配置管理器
-            if (window.apiConfigManager) {
-                try {
-                    await window.apiConfigManager.init();
-                    console.log('[DEBUG] API配置管理器初始化完成');
-                } catch (error) {
-                    console.error('[DEBUG] API配置管理器初始化失败:', error);
-                }
-            }
-            
-            return db;
-            
-        } catch (error) {
-            console.error('[DEBUG] 统一数据库初始化失败:', error);
-            // 清理状态，允许重试
-            databaseInitializationPromise = null;
-            isInitializingDatabase = false;
-            throw error;
-        } finally {
-            isInitializingDatabase = false;
         }
-    })();
-    
-    return await databaseInitializationPromise;
+        
+        return db;
+        
+    } catch (error) {
+        console.error('🔥 [简化初始化] 数据库初始化失败:', error);
+        throw error;
+    }
 }
-// [DEBUG-MOMENTS-ROLES-END]
 
 
 // --- 论坛功能 ---
@@ -1156,7 +1141,33 @@ async function showPageAsync(pageIdToShow) {
     // 切换到联系人列表时手动刷新时间显示
     if (pageIdToShow === 'contactListPage') {
         updateContactListTimes();
-    }   
+    }
+    
+    // 切换到个人信息页面时更新版本号显示
+    if (pageIdToShow === 'profilePage') {
+        updateProfileVersion();
+    }
+}
+
+/**
+ * 更新个人信息页面的版本号显示
+ */
+function updateProfileVersion() {
+    try {
+        // 确保 EnvironmentConfig 已加载
+        if (typeof EnvironmentConfig === 'undefined') {
+            console.warn('EnvironmentConfig not loaded, using fallback version');
+            return;
+        }
+        
+        const versionElement = document.getElementById('profileVersionText');
+        if (versionElement) {
+            const version = EnvironmentConfig.getVersion();
+            versionElement.textContent = version; // 不加 v 前缀，直接显示 commit hash
+        }
+    } catch (error) {
+        console.warn('Failed to update profile version:', error);
+    }
 }
 
 function showGeneratePostModal() {
@@ -4746,6 +4757,8 @@ async function showApiSettingsModal() {
             // 确保API key状态正确显示
             setTimeout(() => {
                 updateAllKeyStates();
+                // 更新UI提示状态
+                updateUIHintStatus();
             }, 200); // 延迟确保DOM已完全渲染
         }
         
@@ -4758,6 +4771,15 @@ async function showApiSettingsModal() {
 
 // 确保函数在全局作用域可用
 window.showApiSettingsModal = showApiSettingsModal;
+
+// 添加API设置按钮事件监听器（安全的延迟绑定）
+document.addEventListener('DOMContentLoaded', function() {
+    const apiSettingsIcon = document.getElementById('apiSettingsIcon');
+    if (apiSettingsIcon) {
+        apiSettingsIcon.addEventListener('click', showApiSettingsModal);
+        apiSettingsIcon.setAttribute('data-umami-event', 'API Settings Open');
+    }
+});
 
 function showBackgroundModal() {
     // 异步包装函数
@@ -6328,6 +6350,9 @@ async function saveApiConfig(event) {
         
         showToast('API配置保存成功');
         
+        // 显示成功提示并隐藏流程提醒
+        showConfigSaveSuccess();
+        
         // 立即更新全局API设置
         await ensureApiConfigIsUpdated();
         
@@ -6339,6 +6364,11 @@ async function saveApiConfig(event) {
 
 async function saveAppSettings(event) {
     event.preventDefault();
+    
+    // 验证用户流程完整性
+    if (!validateUserFlow()) {
+        return;
+    }
     
     try {
         // 获取表单数据
@@ -6382,6 +6412,9 @@ async function saveAppSettings(event) {
         
         updateContextIndicator();
         showToast('应用设置保存成功');
+        
+        // 显示流程完成消息
+        showFlowCompletionMessage();
         
     } catch (error) {
         console.error('保存应用设置失败:', error);
@@ -15453,7 +15486,7 @@ function clearConfigForm() {
     
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
-    if (primarySelect) primarySelect.innerHTML = '<option value="">请先测试连接</option>';
+    if (primarySelect) primarySelect.innerHTML = '<option value="">请先完成第1步保存API配置</option>';
     if (secondarySelect) secondarySelect.innerHTML = '<option value="sync_with_primary">与主模型保持一致</option>';
 }
 
@@ -15790,3 +15823,120 @@ window.showPage = function(pageId) {
 // 暴露互动相关函数到全局
 window.syncInteractiveData = syncInteractiveData;
 window.handleInteractiveDataUpdate = handleInteractiveDataUpdate;
+
+// === 用户体验增强函数 ===
+
+/**
+ * 显示API配置保存成功状态
+ */
+function showConfigSaveSuccess() {
+    // 显示成功提示
+    const hintElement = document.getElementById('configSaveHint');
+    if (hintElement) {
+        hintElement.style.display = 'block';
+        // 5秒后自动隐藏
+        setTimeout(() => {
+            if (hintElement) {
+                hintElement.style.display = 'none';
+            }
+        }, 5000);
+    }
+    
+    // 隐藏模型选择的提醒
+    const reminderElement = document.getElementById('modelSelectionReminder');
+    if (reminderElement) {
+        reminderElement.style.display = 'none';
+    }
+    
+    // 重新加载模型选择器选项
+    loadApiConfigSelectorsForModels();
+}
+
+/**
+ * 验证用户流程完整性
+ */
+function validateUserFlow() {
+    const primaryConfig = document.getElementById('primaryConfigSelect')?.value;
+    const primaryModel = document.getElementById('primaryModelSelect')?.value;
+    
+    // 检查是否已完成必要的配置步骤
+    if (!primaryConfig) {
+        showToast('⚠️ 请先完成：①保存API配置 → ②选择API配置 → ③选择模型');
+        // 滚动到API配置区域
+        const configForm = document.getElementById('apiConfigForm');
+        if (configForm) {
+            configForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return false;
+    }
+    
+    if (!primaryModel) {
+        showToast('⚠️ 请选择主要模型，然后滑到最后点击"完成设置"');
+        // 滚动到模型选择区域
+        const modelSection = document.getElementById('primaryModelSelect');
+        if (modelSection) {
+            modelSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return false;
+    }
+    
+    return true;
+}
+
+/**
+ * 显示流程完成消息
+ */
+function showFlowCompletionMessage() {
+    showToast('🎉 配置完成！您现在可以开始使用AI对话了');
+    
+    // 2秒后询问是否关闭设置窗口
+    setTimeout(() => {
+        const modal = document.getElementById('apiSettingsModal');
+        if (modal && window.getComputedStyle(modal).display !== 'none') {
+            // 询问用户是否关闭设置窗口
+            if (confirm('配置已完成，是否关闭设置窗口开始对话？')) {
+                closeModal('apiSettingsModal');
+            }
+        }
+    }, 2000);
+}
+
+/**
+ * 检查并更新界面提示状态
+ */
+function updateUIHintStatus() {
+    const primaryConfig = document.getElementById('primaryConfigSelect')?.value;
+    const reminderElement = document.getElementById('modelSelectionReminder');
+    const hintElement = document.getElementById('configSaveHint');
+    
+    if (primaryConfig && reminderElement) {
+        // 如果已有API配置，隐藏提醒
+        reminderElement.style.display = 'none';
+    } else if (reminderElement) {
+        // 如果没有API配置，显示提醒
+        reminderElement.style.display = 'block';
+    }
+    
+    // 隐藏成功提示（因为用户可能在修改配置）
+    if (hintElement) {
+        hintElement.style.display = 'none';
+    }
+}
+
+/**
+ * 增强的测试连接函数
+ */
+async function enhancedTestApiConnection() {
+    try {
+        await testApiConnection();
+        // 测试成功后提示用户保存配置
+        showToast('✅ 连接测试成功！请保存API配置继续设置');
+    } catch (error) {
+        console.error('测试连接失败:', error);
+        showToast('❌ 连接测试失败，请检查API URL和Key');
+    }
+}
+
+// 将增强测试连接函数暴露到全局作用域
+window.enhancedTestApiConnection = enhancedTestApiConnection;
+

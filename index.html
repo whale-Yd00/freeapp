@@ -46,7 +46,7 @@
             <div class="wechat-header">
                 <div class="header-title">Whale-LLT</div>
                 <div class="header-actions">
-                    <span class="header-icon" onclick="showApiSettingsModal()">⚙️</span>
+                    <span class="header-icon" id="apiSettingsIcon">⚙️</span>
                     <span class="header-icon" id="musicIcon" onclick="showMusicModal()" data-umami-event="Music Open">🎵</span>
                     <span class="header-icon" onclick="showAddContactModal()" data-umami-event="Add Contact Open">➕</span>
                     <span class="header-icon" onclick="showCreateGroupModal()" data-umami-event="Create Group Open">👥</span>
@@ -187,6 +187,11 @@
                 data-umami-event="Debug Log Open">
                     <div class="profile-item-label">查看调试日志</div>
                     <div class="profile-item-arrow">›</div>
+                </div>
+                
+                <!-- 版本号显示 -->
+                <div class="profile-version" id="profileVersion">
+                    <span id="profileVersionText">-</span>
                 </div>
             </div>
         </div>
@@ -1176,10 +1181,13 @@
                             </div>
                         </div>
                         
-                        <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
+                        <button type="button" class="form-submit" onclick="enhancedTestApiConnection()" style="margin-bottom: 10px;" data-umami-event="Test API Connection">测试连接</button>
                     </div>
                     
-                    <button type="submit" class="form-submit" data-umami-event="Save API Config">保存API配置</button>
+                    <button type="submit" class="form-submit" data-umami-event="Save API Config">保存API配置 <small>(第1步)</small></button>
+                    <div class="form-step-hint" id="configSaveHint">
+                        ✅ API配置已保存！接下来：<strong>①选择配置 ②选择模型 ③滑到最后点击"完成设置"</strong>
+                    </div>
                 </form>
                 
                 <!-- 模型和功能配置 -->
@@ -1208,6 +1216,9 @@
                         
                         <div class="config-section">
                             <div class="config-section-title">模型选择</div>
+                            <div class="form-step-reminder" id="modelSelectionReminder">
+                                💡 <strong>操作流程：</strong>①保存上方API配置 → ②选择API配置 → ③选择模型 → ④滑到最后点击"完成设置"
+                            </div>
                         
                         <div class="form-group">
                             <label class="form-label">主要模型</label>
@@ -1216,7 +1227,7 @@
                                     <option value="">选择API配置</option>
                                 </select>
                                 <select class="form-input model-select" id="primaryModelSelect" onchange="saveModelSelection('primary')">
-                                    <option value="">请先选择API配置</option>
+                                    <option value="">请先完成第1步保存API配置</option>
                                 </select>
                             </div>
                             <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
@@ -1230,7 +1241,7 @@
                                     <option value="sync_with_primary">与主模型保持一致</option>
                                 </select>
                                 <select class="form-input model-select" id="secondaryModelSelect" onchange="saveModelSelection('secondary')">
-                                    <option value="">请先选择API配置</option>
+                                    <option value="">请先完成第1步保存API配置</option>
                                     <option value="sync_with_primary">与主模型保持一致</option>
                                 </select>
                             </div>
@@ -1262,7 +1273,10 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="form-submit" data-umami-event="Save App Settings">保存应用设置</button>
+                    <div class="final-step-hint">
+                        🎯 <strong>最后一步：</strong>确认已选择配置和模型后，点击下方按钮完成设置！
+                    </div>
+                    <button type="submit" class="form-submit" data-umami-event="Save App Settings">完成设置 <small>(第2步)</small></button>
                 </form>
             </div>
         </div>
@@ -1672,16 +1686,20 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <!-- 🔥 统一数据库管理器 - 替代所有数据库相关模块 -->
+    <script src="utils/UnifiedDBManager.js"></script>
+    
+    <!-- 应用核心模块 -->
     <script src="utils/uiManager.js"></script>
     <script src="js/api.js"></script>
-    <script src="utils/dataMigrator.js"></script>
     <script src="utils/colorUtils.js"></script>
     <script src="utils/uiUtils.js"></script>
     <script src="utils/formatUtils.js"></script>
     <script src="script.js?v=1.3"></script>
     <script src="utils/promptBuilder.js?v=1.1"></script>
     <script src="utils/memoryTable.js?v=1.1"></script>
-    <script src="utils/fileStorageManager.js"></script>
+    
+    <!-- 图片和文件处理模块 -->
     <script src="utils/imageStorageAPI.js"></script>
     <script src="utils/imageDisplayHelper.js"></script>
     <script src="utils/imageMigrationManager.js"></script>
@@ -1689,6 +1707,8 @@
     <script src="utils/voiceStorageAPI.js"></script>
     <script src="utils/fileStorageExporter.js"></script>
     <script src="utils/fileStorageImporter.js"></script>
+    
+    <!-- 工具模块 -->
     <script src="utils/systemUtilities.js"></script>
     <script src="utils/characterMemory.js"></script>
     <script src="utils/imageKeywordGenerator.js"></script>

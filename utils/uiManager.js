@@ -3,6 +3,7 @@
  * 包含视口管理、主题管理、输入处理、浏览器兼容性等功能
  */
 
+// === 视口管理系统 ===
 class ViewportManager {
     constructor() {
         this.init();
@@ -282,6 +283,476 @@ class ThemeManager {
     }
 }
 
+// === 数据库相关UI管理系统 ===
+
+class UIManager {
+    constructor() {
+        this.eventListeners = new Map();
+        this.initializeEventListeners();
+    }
+
+    /**
+     * 初始化事件监听器
+     */
+    initializeEventListeners() {
+        // 监听数据库事件
+        window.addEventListener('database:exportStart', () => {
+            this.showMessage('正在导出数据库...', 'info');
+        });
+
+        window.addEventListener('database:exportSuccess', () => {
+            this.showMessage('数据库导出成功！', 'success');
+        });
+
+        window.addEventListener('database:exportError', (event) => {
+            this.showMessage(`导出失败: ${event.detail.error}`, 'error');
+        });
+
+        window.addEventListener('database:importStart', () => {
+            this.showMessage('正在导入数据库...', 'info');
+        });
+
+        window.addEventListener('database:importSuccess', () => {
+            this.showMessage('数据库导入成功！页面将在3秒后自动刷新...', 'success');
+            setTimeout(() => window.location.reload(), 3000);
+        });
+
+        window.addEventListener('database:importError', (event) => {
+            this.showMessage(`导入失败: ${event.detail.error}`, 'error');
+        });
+
+        window.addEventListener('database:importConfirmationNeeded', async (event) => {
+            const { file, resolve } = event.detail;
+            const confirmed = await this.confirmDatabaseImport();
+            resolve(confirmed);
+        });
+
+        window.addEventListener('database:repairNeeded', async (event) => {
+            const { missingStores, resolve } = event.detail;
+            const shouldRepair = await this.confirmDatabaseRepair(missingStores);
+            resolve(shouldRepair);
+        });
+
+        window.addEventListener('database:repairSuccess', (event) => {
+            this.showMessage(event.detail.message, 'success');
+        });
+
+        window.addEventListener('database:repairError', (event) => {
+            this.showMessage(`数据库修复失败: ${event.detail.error}`, 'error');
+        });
+
+        // 监听存储管理事件
+        window.addEventListener('storage:persistentGranted', (event) => {
+            this.showMessage('持久化存储申请成功！数据库将受到更好保护', 'success');
+            this.updatePersistentStatusIndicator(event.detail);
+        });
+
+        window.addEventListener('storage:persistentDenied', (event) => {
+            this.showMessage('持久化存储申请被拒绝，请检查浏览器设置', 'warning');
+            this.updatePersistentStatusIndicator(event.detail);
+        });
+
+        window.addEventListener('storage:persistentUnsupported', () => {
+            this.showMessage('您的浏览器不支持持久化存储功能', 'warning');
+        });
+
+        window.addEventListener('storage:persistentError', (event) => {
+            this.showMessage(`申请持久化存储失败: ${event.detail.error}`, 'error');
+        });
+
+        window.addEventListener('storage:statsRefreshNeeded', async () => {
+            // 触发统计信息刷新
+            if (typeof window.refreshDatabaseStats === 'function') {
+                await window.refreshDatabaseStats();
+            }
+        });
+
+        // 监听数据库统计刷新事件
+        window.addEventListener('database:statsRefreshStart', () => {
+            this.updateRefreshButtonState(true);
+        });
+
+        window.addEventListener('database:statsRefreshSuccess', (event) => {
+            const { result, persistentResult } = event.detail;
+            this.updatePersistentStatusIndicator(persistentResult);
+            this.updateDatabaseStats(result, persistentResult);
+            this.updateRefreshButtonState(false);
+        });
+
+        window.addEventListener('database:statsRefreshError', (event) => {
+            const { error } = event.detail;
+            const statsContent = document.getElementById('databaseStatsContent');
+            if (statsContent) {
+                statsContent.innerHTML = `<div class="error">获取统计信息失败: ${error}</div>`;
+            }
+            this.updateRefreshButtonState(false);
+        });
+
+        // 监听文件处理完成事件，清空文件输入
+        window.addEventListener('database:fileProcessed', (event) => {
+            const { inputId } = event.detail;
+            if (inputId) {
+                this.clearFileInput(inputId);
+            }
+        });
+
+        // 监听文件存储导出选项面板操作事件
+        window.addEventListener('fileStorage:hideExportOptions', () => {
+            this.hideFileExportOptions();
+        });
+
+        // 监听文件存储导入选项请求事件
+        window.addEventListener('fileStorage:importOptionsNeeded', async (event) => {
+            const { resolve, messages } = event.detail;
+            const options = await this.getFileStorageImportOptions(messages);
+            resolve(options);
+        });
+
+        // 监听文件存储文件处理完成事件，清空文件输入
+        window.addEventListener('fileStorage:fileProcessed', (event) => {
+            const { inputId } = event.detail;
+            if (inputId) {
+                this.clearFileInput(inputId);
+            }
+        });
+
+        // 监听文件存储导出配置请求事件
+        window.addEventListener('fileStorage:exportConfigNeeded', (event) => {
+            const { resolve } = event.detail;
+            const config = this.getFileExportConfig();
+            resolve(config);
+        });
+    }
+
+    /**
+     * 显示消息给用户
+     */
+    showMessage(message, type = 'info') {
+        if (typeof showToast === 'function') {
+            showToast(message, type);
+        } else {
+            // 降级到原生 alert
+            alert(message);
+        }
+    }
+
+    /**
+     * 显示确认对话框
+     */
+    async showConfirmDialog(message, title = '确认') {
+        return confirm(message);
+    }
+
+    /**
+     * 显示数据库导入确认流程
+     */
+    async confirmDatabaseImport() {
+        const firstConfirmMessage = '导入数据库将完全覆盖现有数据！\n\n这将删除：\n• 所有聊天记录和联系人\n• 用户资料和设置\n• 朋友圈动态和论坛帖子\n• 音乐库和表情包\n\n确定要继续吗？';
+        
+        if (!await this.showConfirmDialog(firstConfirmMessage)) {
+            return false;
+        }
+        
+        const secondConfirmMessage = '这是最后确认！\n\n导入操作不可撤销，所有现有数据将被永久删除。\n\n您真的确定要继续吗？';
+        
+        return await this.showConfirmDialog(secondConfirmMessage);
+    }
+
+    /**
+     * 显示数据库修复确认
+     */
+    async confirmDatabaseRepair(missingStores) {
+        const message = `检测到数据库结构不完整，缺失以下存储:\n${missingStores.join(', ')}\n\n是否尝试修复？`;
+        return await this.showConfirmDialog(message, '数据库修复');
+    }
+
+    /**
+     * 显示文件存储导入选项
+     */
+    async getFileStorageImportOptions(messages = null) {
+        const overwriteMessage = messages?.overwrite || 
+            '文件存储导入选项：\n\n点击"确定"覆盖现有文件\n点击"取消"保留现有文件（仅导入新文件）\n\n注意：覆盖模式将删除所有现有的头像、背景、表情等文件！';
+        const overwrite = await this.showConfirmDialog(overwriteMessage);
+        
+        const missingMessage = messages?.skipMissing || 
+            '对于缺失的文件引用：\n\n点击"确定"跳过缺失的文件\n点击"取消"尝试创建占位符\n\n建议选择"确定"跳过缺失文件';
+        const skipMissing = await this.showConfirmDialog(missingMessage);
+        
+        return { overwrite, skipMissing };
+    }
+
+    /**
+     * 获取文件导出配置
+     */
+    getFileExportConfig() {
+        return {
+            includeAvatars: this.getCheckboxValue('exportAvatars', true),
+            includeBackgrounds: this.getCheckboxValue('exportBackgrounds', true),
+            includeEmojis: this.getCheckboxValue('exportEmojis', true),
+            includeMomentImages: this.getCheckboxValue('exportMomentImages', true),
+            includeWeiboImages: this.getCheckboxValue('exportWeiboImages', true),
+            includeUserBanner: this.getCheckboxValue('exportUserBanner', true)
+        };
+    }
+
+    /**
+     * 获取复选框值的辅助方法
+     */
+    getCheckboxValue(id, defaultValue = false) {
+        const element = document.getElementById(id);
+        return element ? element.checked : defaultValue;
+    }
+
+    /**
+     * 触发文件选择
+     */
+    triggerFileSelect(inputId = 'importFileInput') {
+        const fileInput = document.getElementById(inputId);
+        if (fileInput) {
+            fileInput.click();
+        } else {
+            this.showMessage(`未找到文件输入元素：${inputId}`, 'error');
+        }
+    }
+
+    /**
+     * 显示/隐藏模态框
+     */
+    showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    hideModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    }
+
+    /**
+     * 显示持久化存储信息模态框
+     */
+    showPersistentStorageInfo() {
+        this.showModal('persistentStorageInfoModal');
+    }
+
+    /**
+     * 隐藏持久化存储信息模态框
+     */
+    hidePersistentStorageInfo() {
+        this.hideModal('persistentStorageInfoModal');
+    }
+
+    /**
+     * 更新持久化状态指示器
+     */
+    updatePersistentStatusIndicator(persistentResult) {
+        const persistentIndicator = document.getElementById('persistentStatusIndicator');
+        if (!persistentIndicator) return;
+
+        let status = 'unknown';
+        let content = '❓状态未知';
+        
+        if (persistentResult.success) {
+            if (persistentResult.isPersistent) {
+                status = 'persistent';
+                content = '🎉🟢数据已持久存储';
+            } else {
+                status = 'not-persistent';
+                content = '❤️‍🩹🟡数据未持久存储';
+            }
+        }
+        
+        persistentIndicator.dataset.status = status;
+        persistentIndicator.innerHTML = content;
+    }
+
+    /**
+     * 更新数据库统计显示
+     */
+    updateDatabaseStats(result, persistentResult) {
+        const statsContent = document.getElementById('databaseStatsContent');
+        if (!statsContent) return;
+
+        if (result.success) {
+            const stats = result.stats;
+            let statsHtml = '';
+            
+            const storeLabels = {
+                'contacts': '联系人/群聊',
+                'songs': '音乐文件', 
+                'apiSettings': 'API设置',
+                'emojis': '表情包',
+                'emojiImages': '表情图片',
+                'backgrounds': '聊天背景',
+                'userProfile': '用户资料',
+                'moments': '朋友圈',
+                'weiboPosts': '论坛帖子',
+                'hashtagCache': '话题缓存',
+                'characterMemories': '角色记忆',
+                'globalMemory': '全局记忆',
+                'conversationCounters': '对话计数器',
+                'memoryProcessedIndex': '记忆处理索引',
+                'fileStorage': '文件存储',
+                'fileReferences': '文件引用',
+                'themeConfig': '主题配置'
+            };
+            
+            for (const [storeName, count] of Object.entries(stats)) {
+                const displayName = storeLabels[storeName] || storeName;
+                statsHtml += `<div class="stat-item">
+                    <span class="stat-name">${displayName}</span>
+                    <span class="stat-count">${count} 条记录</span>
+                </div>`;
+            }
+            
+            // 添加持久化存储状态信息
+            if (persistentResult && persistentResult.success && persistentResult.estimate) {
+                const estimate = persistentResult.estimate;
+                const usedMB = estimate.usage ? (estimate.usage / 1024 / 1024).toFixed(2) : '未知';
+                const quotaMB = estimate.quota ? (estimate.quota / 1024 / 1024).toFixed(2) : '未知';
+                
+                statsHtml += `
+                <div class="storage-info">
+                    <div class="stat-item">
+                        <span class="stat-name">存储使用量</span>
+                        <span class="stat-count">${usedMB} MB</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-name">存储配额</span>
+                        <span class="stat-count">${quotaMB} MB</span>
+                    </div>
+                </div>`;
+            }
+            
+            statsContent.innerHTML = statsHtml;
+            
+        } else {
+            statsContent.innerHTML = `<div class="error">获取统计信息失败: ${result.error}</div>`;
+        }
+    }
+
+    /**
+     * 更新刷新按钮状态
+     */
+    updateRefreshButtonState(isLoading, buttonSelector = '.refresh-stats-btn') {
+        const refreshBtn = document.querySelector(buttonSelector);
+        if (refreshBtn) {
+            refreshBtn.textContent = isLoading ? '刷新中...' : '刷新统计';
+            refreshBtn.disabled = isLoading;
+        }
+    }
+
+    /**
+     * 显示/隐藏文件导出选项面板
+     */
+    showFileExportOptions() {
+        const optionsPanel = document.getElementById('fileExportOptions');
+        if (optionsPanel) {
+            optionsPanel.style.display = 'block';
+        }
+    }
+
+    hideFileExportOptions() {
+        const optionsPanel = document.getElementById('fileExportOptions');
+        if (optionsPanel) {
+            optionsPanel.style.display = 'none';
+        }
+    }
+
+    /**
+     * 验证文件类型
+     */
+    validateFileType(file, expectedExtensions = ['.zip']) {
+        const fileName = file.name.toLowerCase();
+        const isValid = expectedExtensions.some(ext => fileName.endsWith(ext));
+        
+        if (!isValid) {
+            const expectedTypes = expectedExtensions.join(', ');
+            this.showMessage(`请选择 ${expectedTypes} 格式的文件`, 'error');
+        }
+        
+        return isValid;
+    }
+
+    /**
+     * 清空文件输入
+     */
+    clearFileInput(inputId) {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.value = '';
+        }
+    }
+
+    /**
+     * 触发文件选择 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    triggerFileSelect(inputId = 'importFileInput') {
+        const fileInput = document.getElementById(inputId);
+        if (fileInput) {
+            fileInput.click();
+        } else {
+            this.showMessage(`未找到文件输入元素：${inputId}`, 'error');
+        }
+    }
+
+    /**
+     * 触发文件存储导入 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    triggerFileStorageImport(inputId = 'fileStorageImportInput') {
+        const fileInput = document.getElementById(inputId);
+        if (fileInput) {
+            fileInput.click();
+        } else {
+            this.showMessage(`未找到文件存储导入输入元素：${inputId}`, 'error');
+        }
+    }
+
+    /**
+     * 刷新数据库统计信息 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    async refreshDatabaseStats() {
+        // This will trigger the events that the UIManager is listening to.
+        await window.AppDB.refreshDatabaseStats();
+    }
+
+    /**
+     * 处理文件选择 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    async handleFileSelect(event) {
+        // Call the business logic function which will dispatch events for UI updates.
+        await window.AppDB.handleFileSelect(event);
+    }
+
+    /**
+     * 确认文件导出 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    async confirmFileExport() {
+        await window.AppDB.confirmFileExport();
+    }
+
+    /**
+     * 取消文件导出 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    cancelFileExport() {
+        window.AppDB.cancelFileExport();
+    }
+
+    /**
+     * 处理文件存储选择 - 从UnifiedDBManager.js移动过来的UI逻辑
+     */
+    async handleFileStorageSelect(event) {
+        // Call the business logic function which will dispatch events for UI updates.
+        await window.AppDB.handleFileStorageSelect(event);
+    }
+}
+
 // === 输入处理和浏览器兼容性系统 ===
 
 // 浏览器兼容性检测
@@ -336,7 +807,7 @@ function safeFocus(element, options = {}) {
             element.focus({ preventScroll: true });
             
             // 如果需要滚动到可视区域，使用viewportManager的方法
-            if (!preventScroll && window.viewportManager) {
+            if (!preventScroll && window.UIManager && window.UIManager.viewportManager) {
                 // 延迟一下，让focus事件先完成
                 setTimeout(() => {
                     window.UIManager.viewportManager.scrollToActiveInput();
@@ -495,7 +966,10 @@ function getCurrentTheme() {
     return window.UIManager.themeManager.getCurrentTheme();
 }
 
-// 初始化UI管理器
+// 创建全局UI管理器实例
+const uiManager = new UIManager();
+
+// 导出到window对象以便其他模块使用
 if (typeof window !== 'undefined') {
     // 创建统一的UI管理器命名空间
     window.UIManager = {
@@ -511,12 +985,25 @@ if (typeof window !== 'undefined') {
         initializeLongPressBlocking
     };
     
+    // 数据库相关UI管理器实例
+    window.uiManager = uiManager;
+    
     // 为了向后兼容，保留一些关键的全局引用
-// TODO: Remove these global assignments once all code is updated to use UIManager.
-window.viewportManager = window.UIManager.viewportManager;
-window.themeManager = window.UIManager.themeManager;
-window.switchTheme = switchTheme;
-window.getCurrentTheme = getCurrentTheme;
+    window.viewportManager = window.UIManager.viewportManager;
+    window.themeManager = window.UIManager.themeManager;
+    window.switchTheme = switchTheme;
+    window.getCurrentTheme = getCurrentTheme;
+    
+    // 数据库UI功能的全局引用（向后兼容）
+    window.refreshDatabaseStats = () => uiManager.refreshDatabaseStats();
+    window.handleFileSelect = (event) => uiManager.handleFileSelect(event);
+    window.confirmFileExport = () => uiManager.confirmFileExport();
+    window.cancelFileExport = () => uiManager.cancelFileExport();
+    window.handleFileStorageImport = (event) => uiManager.handleFileStorageSelect(event);
+    
+    // 文件触发函数
+    window.triggerFileSelect = () => uiManager.triggerFileSelect();
+    window.triggerFileStorageImport = () => uiManager.triggerFileStorageImport();
     
     // 自动初始化
     window.UIManager.themeManager.init();
@@ -528,4 +1015,12 @@ window.getCurrentTheme = getCurrentTheme;
     } else {
         window.UIManager.initializeLongPressBlocking();
     }
+    
+    console.log('🎨 [UIManager] ViewportManager已恢复，负责处理移动端视口管理和键盘弹出适配');
+    console.log('🎨 [UIManager] UI管理器已创建，负责处理所有用户界面交互');
+}
+
+// ES Module导出（如果支持）
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { UIManager, uiManager };
 }
