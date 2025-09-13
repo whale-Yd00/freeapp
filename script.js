@@ -345,6 +345,25 @@ if ('serviceWorker' in navigator) {
       console.log('Service Worker 注册失败: ', registrationError);
     });
   });
+
+  // 🔥 监听来自 Service Worker 的缓存清理消息
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'CACHE_BUSTED') {
+      console.log('🔥 收到缓存清理通知:', event.data.message);
+      console.log('🔄 准备重新加载页面以应用数据库重构...');
+      
+      // 显示用户友好的提示
+      if (typeof showToast === 'function') {
+        showToast('检测到系统更新，正在重新加载...', 'info');
+      }
+      
+      // 延迟 1 秒后重新加载，给用户看到提示的时间
+      setTimeout(() => {
+        console.log('🔄 强制重新加载页面');
+        window.location.reload(true); // 强制从服务器重新加载
+      }, 1000);
+    }
+  });
 }
 
 // --- 初始化进度显示函数 ---
