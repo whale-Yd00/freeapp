@@ -95,8 +95,6 @@ TO：（2025-8-05 11：36分加入本项目）
 11.网页版bug修复
 12.语音消息网页版兼容
 
-项目github库：https://github.com/whale-Yd00/freeapp（内容还在整理，整理完毕后后改为public）
-
 具体部署教程发布于小红书whale账号下
 
 本项目仅供交流学习
