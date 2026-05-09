@@ -102,7 +102,4 @@ npx cap open android
 
 ## 后续开发建议
 
-- 考虑添加推送通知功能（Firebase Cloud Messaging）
 - 优化设备深色模式适配
-- 实现后台任务和服务
-- 添加应用内更新功能
