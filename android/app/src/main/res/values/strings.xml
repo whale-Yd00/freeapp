@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">玄鲸虚拟聊天陪伴实时互动</string>
+    <string name="title_activity_main">玄鲸虚拟聊天陪伴实时互动</string>
+    <string name="package_name">com.whale.llt</string>
+    <string name="custom_url_scheme">com.whale.llt</string>
+</resources>

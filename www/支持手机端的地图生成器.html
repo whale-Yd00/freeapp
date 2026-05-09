@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>世界书地图编辑器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f7;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .app-container {
+            display: flex;
+            height: 100vh;
+            position: relative;
+            flex-direction: column;
+        }
+        
+        /* 地图容器 */
+        .map-container {
+            flex: 1;
+            position: relative;
+            background-color: #e5e5e7;
+            overflow: hidden;
+        }
+        
+        #mapCanvas {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+            touch-action: none; /* 防止默认触摸行为 */
+        }
+        
+        #mapCanvas:active {
+            cursor: grabbing;
+        }
+        
+        /* 搜索栏 */
+        .search-bar {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            background: white;
+            border-radius: 12px;
+            padding: 10px 15px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        .search-icon {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            opacity: 0.5;
+        }
+        
+        .search-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .search-input::placeholder {
+            color: #999;
+        }
+        
+        /* 地点标记 */
+        .location-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .location-marker:hover {
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+        
+        .location-marker-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #FFD700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            color: #333;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .location-marker-label {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* NPC标记 */
+        .npc-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+        }
+        
+        .npc-marker-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #333;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        /* 右侧面板 */
+        .side-panel {
+            width: 100%;
+            background: white;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s;
+            position: fixed;
+            bottom: 0;
+            height: 65vh;
+            z-index: 1000;
+            transform: translateY(100%);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .side-panel.show {
+            transform: translateY(0);
+        }
+        
+        /* 标签页 */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e5e5e7;
+            background: #f9f9f9;
+            position: relative;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: #333;
+            background: white;
+            font-weight: 600;
+            border-bottom: 2px solid #FFD700;
+        }
+        
+        /* 面板内容 */
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        /* 表单样式 */
+        .form-section {
+            margin-bottom: 24px;
+        }
+        
+        .form-section h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .form-input,
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #e5e5e7;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+            background: #f9f9f9;
+        }
+        
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #FFD700;
+            background: white;
+        }
+        
+        .form-textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        /* 坐标输入 */
+        .coordinate-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        
+        /* 按钮样式 */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #FFD700;
+            color: #333;
+            width: 100%;
+        }
+        
+        .btn-primary:hover {
+            background: #FFC700;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+        
+        .btn-danger {
+            background: #ff4444;
+            color: white;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+        
+        /* 列表项 */
+        .list-item {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+        
+        .list-item:hover {
+            background: #f0f0f0;
+            transform: translateX(-4px);
+        }
+        
+        .list-item-info h4 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .list-item-info p {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        /* 底部操作栏 */
+        .bottom-bar {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            right: 12px;
+            background: white;
+            border-radius: 12px;
+            padding: 12px 16px;
+            box-shadow: 0 -2px 12px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        /* 输出面板 */
+        .output-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            transform: translateY(100%);
+            transition: transform 0.3s;
+            z-index: 2000;
+            max-height: 70vh;
+        }
+        
+        .output-panel.show {
+            transform: translateY(0);
+        }
+        
+        .output-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e5e7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .output-content {
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(70vh - 80px);
+        }
+        
+        .output-text {
+            background: #f5f5f7;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        /* 自定义字段 */
+        .custom-field {
+            display: grid;
+            grid-template-columns: 1fr 2fr auto;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        
+        .add-field-btn {
+            background: #e5e5e7;
+            color: #666;
+            font-size: 14px;
+            padding: 8px 16px;
+            margin-top: 8px;
+        }
+        
+        .add-field-btn:hover {
+            background: #d5d5d7;
+        }
+        
+        /* 距离标尺 */
+        .distance-ruler {
+            position: absolute;
+            bottom: 70px;
+            right: 12px;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #666;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 99;
+        }
+        
+        /* 缩放控制 */
+        .zoom-controls {
+            position: absolute;
+            bottom: 110px;
+            right: 12px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 99;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            font-size: 18px;
+            color: #666;
+        }
+        
+        .zoom-btn:first-child {
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            border-bottom: 1px solid #e5e5e7;
+        }
+        
+        .zoom-btn:last-child {
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+        
+        .zoom-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        /* 移动端特有的面板切换按钮 */
+        .panel-toggle-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 101;
+        }
+        
+        /* 关闭侧边栏按钮 */
+        .close-panel-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: none;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 1001;
+            color: #666;
+        }
+        
+        /* 移动端优化 */
+        .mobile-only {
+            display: none;
+        }
+        
+        /* 响应式 */
+        @media (min-width: 769px) {
+            .app-container {
+                flex-direction: row;
+            }
+            
+            .side-panel {
+                width: 400px;
+                position: relative;
+                height: 100%;
+                transform: none;
+                box-shadow: -2px 0 12px rgba(0,0,0,0.1);
+                border-radius: 0;
+                z-index: auto;
+            }
+            
+            .side-panel.hidden {
+                transform: translateX(100%);
+            }
+            
+            .side-panel.show {
+                transform: none;
+            }
+            
+            .bottom-bar {
+                right: 420px;
+            }
+            
+            .bottom-bar.full-width {
+                right: 20px;
+            }
+            
+            .panel-toggle-btn {
+                display: none;
+            }
+            
+            .close-panel-btn {
+                display: none;
+            }
+            
+            .mobile-only {
+                display: none !important;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-only {
+                display: block;
+            }
+            
+            .search-bar {
+                top: 60px;
+            }
+            
+            .bottom-bar {
+                bottom: 80px;
+            }
+            
+            .distance-ruler {
+                bottom: 140px;
+            }
+            
+            .zoom-controls {
+                bottom: 180px;
+            }
+            
+            .panel-toggle-btn {
+                display: flex;
+            }
+            
+            .close-panel-btn {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 地图区域 -->
+        <div class="map-container">
+            <canvas id="mapCanvas"></canvas>
+            
+            <!-- 搜索栏 -->
+            <div class="search-bar">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="M21 21l-4.35-4.35"></path>
+                </svg>
+                <input type="text" class="search-input" placeholder="搜索地点或NPC..." id="searchInput">
+            </div>
+            
+            <!-- 缩放控制 -->
+            <div class="zoom-controls">
+                <button class="zoom-btn" onclick="zoomIn()">+</button>
+                <button class="zoom-btn" onclick="zoomOut()">−</button>
+            </div>
+            
+            <!-- 距离标尺 -->
+            <div class="distance-ruler" id="distanceRuler">
+                <span>1格 = 1公里</span>
+            </div>
+            
+            <!-- 面板切换按钮（移动端） -->
+            <button class="panel-toggle-btn mobile-only" onclick="toggleMobilePanel()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"></path>
+                </svg>
+            </button>
+            
+            <!-- 底部操作栏 -->
+            <div class="bottom-bar" id="bottomBar">
+                <div>
+                    <span style="font-weight: 600; font-size: 14px;">世界书编辑器</span>
+                    <span style="color: #666; margin-left: 8px; font-size: 13px;">
+                        <span id="locationCount">0</span>地点, 
+                        <span id="npcCount">0</span>NPC
+                    </span>
+                </div>
+                <button class="btn btn-primary" style="width: auto; padding: 8px 16px; font-size: 14px;" onclick="toggleOutput()">生成世界书</button>
+            </div>
+        </div>
+        
+        <!-- 右侧面板（移动端从底部弹出） -->
+        <div class="side-panel" id="sidePanel">
+            <!-- 关闭按钮（移动端） -->
+            <button class="close-panel-btn mobile-only" onclick="toggleMobilePanel()">×</button>
+            
+            <!-- 标签页 -->
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('location')">地点</button>
+                <button class="tab" onclick="switchTab('npc')">NPC</button>
+                <button class="tab" onclick="switchTab('list')">列表</button>
+            </div>
+            
+            <!-- 面板内容 -->
+            <div class="panel-content">
+                <!-- 地点表单 -->
+                <div id="locationTab" class="tab-content">
+                    <div class="form-section">
+                        <h3>添加新地点</h3>
+                        
+                        <div class="form-group">
+                            <label class="form-label">地点名称</label>
+                            <input type="text" class="form-input" id="locationName" placeholder="例如：中央公园">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">坐标位置</label>
+                            <div class="coordinate-inputs">
+                                <input type="number" class="form-input" id="locationX" placeholder="X坐标">
+                                <input type="number" class="form-input" id="locationY" placeholder="Y坐标">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">地点类型</label>
+                            <input type="text" class="form-input" id="locationType" placeholder="例如：公园、商业区">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">地点特色</label>
+                            <textarea class="form-textarea" id="locationFeatures" placeholder="描述这个地点的特色..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">常见活动</label>
+                            <textarea class="form-textarea" id="locationActivities" placeholder="在这里常见的活动..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">常驻NPC（用逗号分隔）</label>
+                            <input type="text" class="form-input" id="locationNPCs" placeholder="例如：张三, 李四">
+                        </div>
+                        
+                        <div class="form-section">
+                            <h3>自定义属性</h3>
+                            <div id="locationCustomFields"></div>
+                            <button class="btn add-field-btn" onclick="addLocationCustomField()">+ 添加属性</button>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="addLocation()">添加地点</button>
+                    </div>
+                </div>
+                
+                <!-- NPC表单 -->
+                <div id="npcTab" class="tab-content" style="display: none;">
+                    <div class="form-section">
+                        <h3>添加新NPC</h3>
+                        
+                        <div class="form-group">
+                            <label class="form-label">NPC名称</label>
+                            <input type="text" class="form-input" id="npcName" placeholder="例如：张三">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">别名（用逗号分隔）</label>
+                            <input type="text" class="form-input" id="npcAliases" placeholder="例如：老张, 张老板">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">基本信息</label>
+                            <div class="coordinate-inputs">
+                                <input type="number" class="form-input" id="npcAge" placeholder="年龄">
+                                <select class="form-select" id="npcGender">
+                                    <option value="">选择性别</option>
+                                    <option value="男">男</option>
+                                    <option value="女">女</option>
+                                    <option value="其他">其他</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">职业</label>
+                            <input type="text" class="form-input" id="npcOccupation" placeholder="例如：咖啡店老板">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">性格特征</label>
+                            <textarea class="form-textarea" id="npcPersonality" placeholder="描述NPC的性格特征..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">主要活动地点</label>
+                            <input type="text" class="form-input" id="npcMainLocation" placeholder="例如：中央咖啡馆">
+                        </div>
+                        
+                        <div class="form-section">
+                            <h3>自定义属性</h3>
+                            <div id="npcCustomFields"></div>
+                            <button class="btn add-field-btn" onclick="addNPCCustomField()">+ 添加属性</button>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="addNPC()">添加NPC</button>
+                    </div>
+                </div>
+                
+                <!-- 列表视图 -->
+                <div id="listTab" class="tab-content" style="display: none;">
+                    <div class="form-section">
+                        <h3>地点列表</h3>
+                        <div id="locationList"></div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3>NPC列表</h3>
+                        <div id="npcList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 输出面板 -->
+        <div class="output-panel" id="outputPanel">
+            <div class="output-header">
+                <h3>生成的世界书</h3>
+                <div>
+                    <button class="btn btn-secondary" onclick="copyOutput()">复制</button>
+                    <button class="btn btn-secondary" onclick="toggleOutput()">关闭</button>
+                </div>
+            </div>
+            <div class="output-content">
+                <div class="output-text" id="outputText"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 全局变量
+        let locations = [];
+        let npcs = [];
+        let locationCustomFieldCount = 0;
+        let npcCustomFieldCount = 0;
+        let mapOffset = { x: 0, y: 0 };
+        let isDragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let scale = 40; // 1公里 = 40像素
+        const minScale = 5;   // 最小缩放 (1公里 = 5像素)
+        const maxScale = 200; // 最大缩放 (1公里 = 200像素)
+        
+        // 获取画布和上下文
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 设置画布大小
+        function resizeCanvas() {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            drawMap();
+        }
+        
+        // 更新距离标尺显示
+        function updateDistanceRuler() {
+            const ruler = document.getElementById('distanceRuler');
+            if (scale >= 100) {
+                ruler.innerHTML = '<span>1格 = 0.2公里</span>';
+            } else if (scale >= 50) {
+                ruler.innerHTML = '<span>1格 = 0.5公里</span>';
+            } else if (scale >= 20) {
+                ruler.innerHTML = '<span>1格 = 1公里</span>';
+            } else if (scale >= 10) {
+                ruler.innerHTML = '<span>1格 = 2公里</span>';
+            } else {
+                ruler.innerHTML = '<span>1格 = 5公里</span>';
+            }
+        }
+        
+        // 绘制地图
+        function drawMap() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 设置中心点
+            const centerX = canvas.width / 2 + mapOffset.x;
+            const centerY = canvas.height / 2 + mapOffset.y;
+            
+            // 根据缩放级别调整网格间距
+            let gridScale = scale;
+            if (scale < 10) {
+                gridScale = scale * 5; // 当缩放很小时，网格间距变大
+            } else if (scale < 20) {
+                gridScale = scale * 2;
+            } else if (scale > 100) {
+                gridScale = scale / 5; // 当缩放很大时，网格间距变小
+            }
+            
+            // 绘制网格
+            ctx.strokeStyle = '#e5e5e7';
+            ctx.lineWidth = 1;
+            
+            // 计算需要绘制的网格范围
+            const gridStartX = Math.floor(-centerX / gridScale) * gridScale + centerX;
+            const gridStartY = Math.floor(-centerY / gridScale) * gridScale + centerY;
+            
+            // 绘制垂直线
+            for (let x = gridStartX; x < canvas.width; x += gridScale) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            
+            // 绘制水平线
+            for (let y = gridStartY; y < canvas.height; y += gridScale) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // 绘制坐标轴
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 2;
+            
+            // X轴
+            ctx.beginPath();
+            ctx.moveTo(0, centerY);
+            ctx.lineTo(canvas.width, centerY);
+            ctx.stroke();
+            
+            // Y轴
+            ctx.beginPath();
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, canvas.height);
+            ctx.stroke();
+            
+            // 绘制原点
+            ctx.fillStyle = '#666';
+            ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillText('(0,0)', centerX + 5, centerY - 5);
+            
+            // 更新地点标记位置
+            updateMarkers();
+        }
+        
+        // 更新标记位置
+        function updateMarkers() {
+            // 移除所有现有标记
+            document.querySelectorAll('.location-marker, .npc-marker').forEach(el => el.remove());
+            
+            const centerX = canvas.width / 2 + mapOffset.x;
+            const centerY = canvas.height / 2 + mapOffset.y;
+            
+            // 添加地点标记
+            locations.forEach((location, index) => {
+                const marker = createLocationMarker(location, index);
+                const x = centerX + location.x * scale;
+                const y = centerY - location.y * scale;
+                marker.style.left = x + 'px';
+                marker.style.top = y + 'px';
+                document.querySelector('.map-container').appendChild(marker);
+            });
+            
+            // 添加NPC标记（显示在其主要活动地点）
+            npcs.forEach((npc, index) => {
+                const location = locations.find(loc => loc.name === npc.mainLocation);
+                if (location) {
+                    const marker = createNPCMarker(npc, index);
+                    const x = centerX + location.x * scale + 25; // 稍微偏移避免重叠
+                    const y = centerY - location.y * scale - 25;
+                    marker.style.left = x + 'px';
+                    marker.style.top = y + 'px';
+                    document.querySelector('.map-container').appendChild(marker);
+                }
+            });
+        }
+        
+        // 创建地点标记
+        function createLocationMarker(location, index) {
+            const marker = document.createElement('div');
+            marker.className = 'location-marker';
+            marker.innerHTML = `
+                <div class="location-marker-circle">P</div>
+                <div class="location-marker-label">${location.name}</div>
+            `;
+            marker.onclick = () => showLocationInfo(location, index);
+            return marker;
+        }
+        
+        // 创建NPC标记
+        function createNPCMarker(npc, index) {
+            const marker = document.createElement('div');
+            marker.className = 'npc-marker';
+            marker.innerHTML = `
+                <div class="npc-marker-circle">${npc.name[0]}</div>
+            `;
+            marker.onclick = () => showNPCInfo(npc, index);
+            return marker;
+        }
+        
+        // 显示地点信息
+        function showLocationInfo(location, index) {
+            alert(`地点：${location.name}\n坐标：(${location.x}, ${location.y})\n类型：${location.type || '未设置'}\n常驻NPC：${location.npcs || '无'}`);
+        }
+        
+        // 显示NPC信息
+        function showNPCInfo(npc, index) {
+            alert(`NPC：${npc.name}\n职业：${npc.occupation || '未设置'}\n年龄：${npc.age || '未知'}\n主要活动地点：${npc.mainLocation || '未设置'}`);
+        }
+        
+        // 地图拖拽功能
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragStart.x = e.clientX - mapOffset.x;
+            dragStart.y = e.clientY - mapOffset.y;
+            canvas.style.cursor = 'grabbing';
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                mapOffset.x = e.clientX - dragStart.x;
+                mapOffset.y = e.clientY - dragStart.y;
+                drawMap();
+            }
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+            canvas.style.cursor = 'grab';
+        });
+        
+        // 触摸事件支持（移动端）
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1) {
+                isDragging = true;
+                dragStart.x = e.touches[0].clientX - mapOffset.x;
+                dragStart.y = e.touches[0].clientY - mapOffset.y;
+            }
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1 && isDragging) {
+                mapOffset.x = e.touches[0].clientX - dragStart.x;
+                mapOffset.y = e.touches[0].clientY - dragStart.y;
+                drawMap();
+            }
+        });
+        
+        canvas.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+        
+        // 地图缩放功能
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = scale * delta;
+            
+            if (newScale >= minScale && newScale <= maxScale) {
+                // 计算鼠标位置相对于画布的坐标
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                // 计算缩放前后的偏移调整
+                const centerX = canvas.width / 2 + mapOffset.x;
+                const centerY = canvas.height / 2 + mapOffset.y;
+                
+                const worldX = (mouseX - centerX) / scale;
+                const worldY = (mouseY - centerY) / scale;
+                
+                scale = newScale;
+                
+                // 调整偏移以保持鼠标位置不变
+                mapOffset.x = mouseX - worldX * scale - canvas.width / 2;
+                mapOffset.y = mouseY - worldY * scale - canvas.height / 2;
+                
+                updateDistanceRuler();
+                drawMap();
+            }
+        });
+        
+        // 缩放按钮功能
+        function zoomIn() {
+            const newScale = scale * 1.2;
+            if (newScale <= maxScale) {
+                scale = newScale;
+                updateDistanceRuler();
+                drawMap();
+            }
+        }
+        
+        function zoomOut() {
+            const newScale = scale * 0.8;
+            if (newScale >= minScale) {
+                scale = newScale;
+                updateDistanceRuler();
+                drawMap();
+            }
+        }
+        
+        // 移动端面板切换
+        function toggleMobilePanel() {
+            document.getElementById('sidePanel').classList.toggle('show');
+        }
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 显示对应内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(tabName + 'Tab').style.display = 'block';
+        }
+        
+        // 添加地点
+        function addLocation() {
+            const name = document.getElementById('locationName').value;
+            const x = parseFloat(document.getElementById('locationX').value);
+            const y = parseFloat(document.getElementById('locationY').value);
+            const type = document.getElementById('locationType').value;
+            const features = document.getElementById('locationFeatures').value;
+            const activities = document.getElementById('locationActivities').value;
+            const npcs = document.getElementById('locationNPCs').value;
+            
+            if (!name || isNaN(x) || isNaN(y)) {
+                alert('请填写地点名称和有效的坐标！');
+                return;
+            }
+            
+            // 收集自定义字段
+            const customFields = {};
+            const customFieldInputs = document.querySelectorAll('#locationCustomFields .custom-field');
+            customFieldInputs.forEach(field => {
+                const nameInput = field.querySelector('input:first-child');
+                const valueInput = field.querySelector('input:last-child');
+                if (nameInput && valueInput && nameInput.value && valueInput.value) {
+                    customFields[nameInput.value] = valueInput.value;
+                }
+            });
+            
+            const location = {
+                name,
+                x,
+                y,
+                type,
+                features,
+                activities,
+                npcs,
+                customFields
+            };
+            
+            locations.push(location);
+            updateLocationList();
+            updateCounts();
+            clearLocationForm();
+            drawMap();
+        }
+        
+        // 添加NPC
+        function addNPC() {
+            const name = document.getElementById('npcName').value;
+            const aliases = document.getElementById('npcAliases').value;
+            const age = document.getElementById('npcAge').value;
+            const gender = document.getElementById('npcGender').value;
+            const occupation = document.getElementById('npcOccupation').value;
+            const personality = document.getElementById('npcPersonality').value;
+            const mainLocation = document.getElementById('npcMainLocation').value;
+            
+            if (!name) {
+                alert('请填写NPC名称！');
+                return;
+            }
+            
+            // 收集自定义字段
+            const customFields = {};
+            const customFieldInputs = document.querySelectorAll('#npcCustomFields .custom-field');
+            customFieldInputs.forEach(field => {
+                const nameInput = field.querySelector('input:first-child');
+                const valueInput = field.querySelector('input:last-child');
+                if (nameInput && valueInput && nameInput.value && valueInput.value) {
+                    customFields[nameInput.value] = valueInput.value;
+                }
+            });
+            
+            const npc = {
+                name,
+                aliases,
+                age,
+                gender,
+                occupation,
+                personality,
+                mainLocation,
+                customFields
+            };
+            
+            npcs.push(npc);
+            updateNPCList();
+            updateCounts();
+            clearNPCForm();
+            drawMap();
+        }
+        
+        // 添加自定义字段（地点）
+        function addLocationCustomField() {
+            const container = document.getElementById('locationCustomFields');
+            const field = document.createElement('div');
+            field.className = 'custom-field';
+            field.innerHTML = `
+                <input type="text" class="form-input" placeholder="属性名">
+                <input type="text" class="form-input" placeholder="属性值">
+                <button class="btn btn-danger" onclick="this.parentElement.remove()">删除</button>
+            `;
+            container.appendChild(field);
+        }
+        
+        // 添加自定义字段（NPC）
+        function addNPCCustomField() {
+            const container = document.getElementById('npcCustomFields');
+            const field = document.createElement('div');
+            field.className = 'custom-field';
+            field.innerHTML = `
+                <input type="text" class="form-input" placeholder="属性名">
+                <input type="text" class="form-input" placeholder="属性值">
+                <button class="btn btn-danger" onclick="this.parentElement.remove()">删除</button>
+            `;
+            container.appendChild(field);
+        }
+        
+        // 更新地点列表
+        function updateLocationList() {
+            const list = document.getElementById('locationList');
+            list.innerHTML = '';
+            locations.forEach((location, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div class="list-item-info">
+                        <h4>${location.name}</h4>
+                        <p>坐标: (${location.x}, ${location.y}) · ${location.type || '未分类'}</p>
+                    </div>
+                    <button class="btn btn-danger" onclick="deleteLocation(${index})">删除</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        // 更新NPC列表
+        function updateNPCList() {
+            const list = document.getElementById('npcList');
+            list.innerHTML = '';
+            npcs.forEach((npc, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div class="list-item-info">
+                        <h4>${npc.name}</h4>
+                        <p>${npc.occupation || '未设置职业'} · ${npc.mainLocation || '未设置活动地点'}</p>
+                    </div>
+                    <button class="btn btn-danger" onclick="deleteNPC(${index})">删除</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+        
+        // 删除地点
+        function deleteLocation(index) {
+            locations.splice(index, 1);
+            updateLocationList();
+            updateCounts();
+            drawMap();
+        }
+        
+        // 删除NPC
+        function deleteNPC(index) {
+            npcs.splice(index, 1);
+            updateNPCList();
+            updateCounts();
+            drawMap();
+        }
+        
+        // 更新计数
+        function updateCounts() {
+            document.getElementById('locationCount').textContent = locations.length;
+            document.getElementById('npcCount').textContent = npcs.length;
+        }
+        
+        // 清空地点表单
+        function clearLocationForm() {
+            document.getElementById('locationName').value = '';
+            document.getElementById('locationX').value = '';
+            document.getElementById('locationY').value = '';
+            document.getElementById('locationType').value = '';
+            document.getElementById('locationFeatures').value = '';
+            document.getElementById('locationActivities').value = '';
+            document.getElementById('locationNPCs').value = '';
+            document.getElementById('locationCustomFields').innerHTML = '';
+        }
+        
+        // 清空NPC表单
+        function clearNPCForm() {
+            document.getElementById('npcName').value = '';
+            document.getElementById('npcAliases').value = '';
+            document.getElementById('npcAge').value = '';
+            document.getElementById('npcGender').value = '';
+            document.getElementById('npcOccupation').value = '';
+            document.getElementById('npcPersonality').value = '';
+            document.getElementById('npcMainLocation').value = '';
+            document.getElementById('npcCustomFields').innerHTML = '';
+        }
+        
+        // 切换输出面板
+        function toggleOutput() {
+            const panel = document.getElementById('outputPanel');
+            if (panel.classList.contains('show')) {
+                panel.classList.remove('show');
+            } else {
+                generateOutput();
+                panel.classList.add('show');
+            }
+        }
+        
+        // 生成输出
+        function generateOutput() {
+            let output = '';
+            
+            // 生成世界书系统指令
+            output += `**世界书系统指令：**\n\n1. **地点触发机制：**\n   - 当用户或角色提到到达、前往某个地点时，自动描述该地点的环境和氛围\n   - 根据距离信息自动判断和描述使用的交通工具\n   - 自然地提及该地点常见的NPC，但不强制让他们出现\n\n2. **NPC出现规则：**\n   - NPC不是固定在某个地点，而是在其活动范围内随机出现\n   - 主要活动地点出现概率：70%\n   - 周围1km范围内出现概率：20%\n   - 公共场所随机出现概率：10%\n   - 根据情境和对话自然地让NPC出现，不要生硬\n\n3. **交通工具选择：**\n   - 0.5-1.5km：优先描述使用自行车或步行\n   - >1.5km：优先描述使用汽车或公共交通\n   - 在描述交通过程中可以加入遇到NPC的可能性\n\n4. **互动原则：**\n   - 保持世界的一致性和连贯性\n   - NPC的行为要符合其设定的性格和背景\n   - 自然地融入世界书内容，避免机械化触发\n\n`;
+            
+            // 生成系统规则条目
+            output += `{\n  "keys": ["系统规则", "世界观", "设定", "规则"],\n  "content": "**世界书系统指令：**\\\\n\\\\n1. **地点触发机制：**\\\\n   - 当用户或角色提到到达、前往某个地点时，自动描述该地点的环境和氛围\\\\n   - 根据距离信息自动判断和描述使用的交通工具\\\\n   - 自然地提及该地点常见的NPC，但不强制让他们出现\\\\n\\\\n2. **NPC出现规则：**\\\\n   - NPC不是固定在某个地点，而是在其活动范围内随机出现\\\\n   - 主要活动地点出现概率：70%\\\\n   - 周围1km范围内出现概率：20%\\\\n   - 公共场所随机出现概率：10%\\\\n   - 根据情境和对话自然地让NPC出现，不要生硬\\\\n\\\\n3. **交通工具选择：**\\\\n   - 0.5-1.5km：优先描述使用自行车或步行\\\\n   - >1.5km：优先描述使用汽车或公共交通\\\\n   - 在描述交通过程中可以加入遇到NPC的可能性\\\\n\\\\n4. **互动原则：**\\\\n   - 保持世界的一致性和连贯性\\\\n   - NPC的行为要符合其设定的性格和背景\\\\n   - 自然地融入世界书内容，避免机械化触发",\n  "order": 1,\n  "position": "before_char",\n  "disable": false,\n  "addMemo": true,\n  "excludeRecursion": false,\n  "delayUntilRecursion": false,\n  "scanDepth": null,\n  "caseSensitive": false,\n  "matchWholeWords": false,\n  "useGroupScoring": true,\n  "automationId": "",\n  "role": 0,\n  "vectorized": false\n}\n\n`;
+            
+            // 生成交通系统规则
+            output += `{\n  "keys": ["前往", "去", "到达", "出发", "交通", "移动"],\n  "content": "**交通系统规则：**\\\\n\\\\n根据目的地距离自动选择合适的交通工具：\\\\n\\\\n**短距离出行（0.5-1.5km）：**\\\\n- 主要使用：自行车、步行\\\\n- 时间：15-30分钟\\\\n- 特点：可以欣赏沿途风景，更容易遇到熟人\\\\n\\\\n**中长距离出行（>1.5km）：**\\\\n- 主要使用：汽车、公共交通\\\\n- 时间：根据距离和交通状况而定\\\\n- 特点：快速便捷，但可能错过一些细节\\\\n\\\\n**随机遇遇规则：**\\\\n- 在公共交通工具上有概率遇到各种NPC\\\\n- 在娱乐场所和商业区可能偶遇平时不常见的NPC\\\\n- NPC的活动范围为其主要地点周围1km左右",\n  "order": 50,\n  "position": "before_char",\n  "disable": false,\n  "addMemo": true,\n  "excludeRecursion": false,\n  "delayUntilRecursion": false,\n  "scanDepth": null,\n  "caseSensitive": false,\n  "matchWholeWords": false,\n  "useGroupScoring": true,\n  "automationId": "",\n  "role": 0,\n  "vectorized": false\n}\n\n`;
+            
+            // 生成地点条目
+            locations.forEach(location => {
+                let customContent = '';
+                Object.entries(location.customFields).forEach(([key, value]) => {
+                    customContent += `\\\\n\\\\n**${key}：**${value}`;
+                });
+                
+                output += `{\n  "keys": ["${location.name}"],\n  "content": "**${location.name}**是一个${location.type || '地点'}。这里经常能看到${location.npcs || '各种人'}在附近活动。\\\\n\\\\n**交通信息：**\\\\n- 坐标：(${location.x}, ${location.y})\\\\n- 推荐交通工具：[根据距离自动判断]\\\\n\\\\n**地点特色：**${location.features || '待补充'}\\\\n\\\\n**常见活动：**${location.activities || '待补充'}${customContent}",\n  "order": 100,\n  "position": "before_char",\n  "disable": false,\n  "addMemo": true,\n  "excludeRecursion": false,\n  "delayUntilRecursion": false,\n  "scanDepth": null,\n  "caseSensitive": false,\n  "matchWholeWords": false,\n  "useGroupScoring": true,\n  "automationId": "",\n  "role": 0,\n  "vectorized": false\n}\n\n`;
+            });
+            
+            // 生成NPC条目
+            npcs.forEach(npc => {
+                const keys = [npc.name];
+                if (npc.aliases) {
+                    keys.push(...npc.aliases.split(',').map(alias => alias.trim()));
+                }
+                
+                let customContent = '';
+                Object.entries(npc.customFields).forEach(([key, value]) => {
+                    customContent += `\\\\n\\\\n**${key}：**${value}`;
+                });
+                
+                output += `{\n  "keys": ${JSON.stringify(keys)},\n  "content": "**${npc.name}**\\\\n\\\\n**基本信息：**\\\\n- 年龄：${npc.age || '未知'}\\\\n- 性别：${npc.gender || '未知'}\\\\n- 职业：${npc.occupation || '未知'}\\\\n\\\\n**性格特征：**${npc.personality || '待补充'}\\\\n\\\\n**活动范围：**\\\\n- 主要活动地点：${npc.mainLocation || '未知'}\\\\n- 活动半径：约1km范围\\\\n- 偶尔出现地点：公共交通工具、娱乐场所、商业区${customContent}",\n  "order": 200,\n  "position": "before_char",\n  "disable": false,\n  "addMemo": true,\n  "excludeRecursion": false,\n  "delayUntilRecursion": false,\n  "scanDepth": null,\n  "caseSensitive": false,\n  "matchWholeWords": false,\n  "useGroupScoring": true,\n  "automationId": "",\n  "role": 0,\n  "vectorized": false\n}\n\n`;
+            });
+            
+            document.getElementById('outputText').textContent = output;
+        }
+        
+        // 复制输出
+        function copyOutput() {
+            const output = document.getElementById('outputText').textContent;
+            if (!output) {
+                alert('请先生成世界书！');
+                return;
+            }
+            
+            navigator.clipboard.writeText(output).then(() => {
+                alert('已复制到剪贴板！');
+            }).catch(err => {
+                console.error('复制失败:', err);
+                alert('复制失败，请手动选择复制！');
+            });
+        }
+        
+        // 搜索功能
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            if (query.length > 0) {
+                // 搜索地点
+                const matchedLocation = locations.find(loc => 
+                    loc.name.toLowerCase().includes(query)
+                );
+                
+                // 搜索NPC
+                const matchedNPC = npcs.find(npc => 
+                    npc.name.toLowerCase().includes(query) ||
+                    (npc.aliases && npc.aliases.toLowerCase().includes(query))
+                );
+                
+                if (matchedLocation) {
+                    // 将地图中心移动到匹配的地点
+                    mapOffset.x = -matchedLocation.x * scale;
+                    mapOffset.y = matchedLocation.y * scale;
+                    drawMap();
+                } else if (matchedNPC) {
+                    // 找到NPC的主要活动地点并移动到那里
+                    const location = locations.find(loc => loc.name === matchedNPC.mainLocation);
+                    if (location) {
+                        mapOffset.x = -location.x * scale;
+                        mapOffset.y = location.y * scale;
+                        drawMap();
+                    }
+                }
+            }
+        });
+        
+        // 初始化
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        updateCounts();
+        updateDistanceRuler();
+    </script>
+</body>
+</html>

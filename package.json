@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/filesystem": "^7.1.4",
+    "@capacitor/local-notifications": "^7.0.3",
+    "@capawesome/capacitor-file-picker": "^7.2.0"
+  }
+}

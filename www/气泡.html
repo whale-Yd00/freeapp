@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>独立的交互式气泡样式设计器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:#e2e8f0;border-radius:3px;outline:none;opacity:.7;transition:opacity .2s}
+        input[type="range"]:hover{opacity:1}
+        input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;background:#4f46e5;cursor:pointer;border-radius:50%;border:2px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.2)}
+        input[type="color"]{-webkit-appearance:none;-moz-appearance:none;appearance:none;width:40px;height:40px;background-color:transparent;border:none;cursor:pointer}
+        input[type="color"]::-webkit-color-swatch{border-radius:50%;border:2px solid #e2e8f0}
+        
+        .sticker-wrapper {
+            position: absolute;
+            width: 120px;
+            height: auto;
+            cursor: grab;
+            user-select: none;
+            border: 2px solid transparent;
+            transition: border-color 0.2s ease;
+        }
+        .sticker-wrapper.selected {
+            border: 2px dashed #4f46e5;
+        }
+        .sticker-wrapper.dragging {
+            cursor: grabbing;
+            z-index: 10000 !important;
+        }
+        .sticker-image {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: fill; 
+        }
+        
+        .resize-handle {
+            position: absolute;
+            bottom: -8px;
+            right: -8px;
+            width: 16px;
+            height: 16px;
+            background-color: #4f46e5;
+            border: 2px solid white;
+            border-radius: 4px;
+            cursor: se-resize;
+            z-index: 1001;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+        }
+
+        #imageEditorCanvas.dropper-cursor { cursor: crosshair; }
+        #stickerLibrary { position: absolute; bottom: 1rem; left: 1rem; z-index: 500; display: flex; flex-wrap: wrap; gap: 0.5rem; background: rgba(255,255,255,0.8); padding: 0.5rem; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); backdrop-filter: blur(5px); max-width: 280px; }
+        .library-sticker { width: 60px; height: 60px; object-fit: contain; cursor: grab; transition: transform 0.2s; }
+        .library-sticker:hover { transform: scale(1.1); }
+
+        .toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 3000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+        
+        /* ========== 从主应用 style.css 复制的核心气泡样式 ========== */
+        .message {
+            display: flex;
+            margin-bottom: 15px;
+            align-items: flex-start;
+        }
+        .message.received {
+            flex-direction: row; /* 预览始终是接收样式 */
+        }
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            margin: 0 10px;
+            background-color: #eee;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .message-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .message-bubble {
+            max-width: 70%;
+            position: relative;
+        }
+        .message-content {
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 16px; /* 确保字体大小一致 */
+            line-height: 1.5;
+            word-wrap: break-word;
+            position: relative;
+            /* 默认样式，会被JS覆盖 */
+            background-color: #fff; 
+            color: #000;
+        }
+        .message-content::before {
+            content: '';
+            position: absolute;
+            top: 10px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+        }
+        .message.received .message-content::before {
+            left: -5px;
+            border-width: 6px 6px 6px 0;
+            border-color: transparent #fff transparent transparent;
+        }
+        /* ==================== 样式复制结束 ==================== */
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">交互式气泡样式设计器</h1>
+            <p class="text-slate-500 mt-2">单击选中贴图可调整图层，双击可删除。</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6 flex items-center justify-center min-h-[400px] lg:min-h-[600px] overflow-hidden">
+                <div id="previewContainer" class="relative w-full h-full flex items-center justify-center p-4">
+                    <div class="message received" style="margin-bottom: 0; align-items: flex-end;">
+                        <div class="message-avatar">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E👤%3C/text%3E%3C/svg%3E" alt="avatar">
+                        </div>
+                        <div id="previewBubble" class="message-bubble">
+                            <div class="message-content">
+<span id="bubbleTextContent" style="position: relative; z-index: 10; color: rgb(51, 51, 51);">
+                                    这里是气泡
+                                </span>
+                                </div>
+                        </div>
+                    </div>
+                    <div id="stickerLibrary"></div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-1 bg-white rounded-2xl shadow-lg p-6 space-y-6 overflow-y-auto max-h-[calc(100vh-100px)]">
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">贴图装饰 (Stickers)</h3>
+                    <button id="manageStickersBtn" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">管理贴图库</button>
+                </div>
+                <div id="layerControlPanel">
+                    <h3 class="font-semibold text-lg mb-3">图层顺序</h3>
+                    <div class="flex gap-2">
+                        <button id="sendToBackBtn" class="w-full bg-slate-500 text-white font-medium py-2 rounded-lg hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>置于底层</button>
+                        <button id="bringToFrontBtn" class="w-full bg-slate-500 text-white font-medium py-2 rounded-lg hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>置于顶层</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">气泡基础样式</h3>
+                    <div class="space-y-4">
+                        <div><label for="borderWidth" class="flex justify-between text-sm font-medium text-slate-700">边框宽度 <span id="borderWidthValue">1px</span></label><input type="range" id="borderWidth" min="0" max="50" value="1" class="mt-1"></div>
+                        <div><label for="borderColor" class="flex justify-between items-center text-sm font-medium text-slate-700">边框颜色 <input type="color" id="borderColor" value="#4f46e5"></label></div>
+                        <!-- 【新增】文本颜色控制器 -->
+                        <div><label for="textColor" class="flex justify-between items-center text-sm font-medium text-slate-700">文本颜色 <input type="color" id="textColor" value="#333333"></label></div>
+                        <div><label for="borderRadius" class="flex justify-between text-sm font-medium text-slate-700">圆角半径 <span id="borderRadiusValue">12px</span></label><input type="range" id="borderRadius" min="0" max="100" value="12" class="mt-1"></div>
+                        <div class="flex items-center justify-between"><span class="text-sm font-medium text-slate-700">背景类型</span><div class="flex items-center bg-slate-200 rounded-full p-1"><button id="bgTypeSolid" class="bg-type-btn bg-white text-indigo-600 rounded-full px-3 py-1 text-sm font-semibold">纯色</button><button id="bgTypeGradient" class="bg-type-btn text-slate-600 rounded-full px-3 py-1 text-sm font-semibold">渐变</button></div></div>
+                        <div id="solidBgControls">
+                             <div class="flex items-center justify-between"><label for="bgColor" class="text-sm font-medium text-slate-700">背景颜色</label><input type="color" id="bgColor" value="#ffffff"></div>
+                            <div><label for="bgOpacity" class="flex justify-between text-sm font-medium text-slate-700">透明度 <span id="bgOpacityValue">100%</span></label><input type="range" id="bgOpacity" min="0" max="1" step="0.01" value="1" class="mt-1"></div>
+                        </div>
+                        <div id="gradientBgControls" class="hidden space-y-4">
+                            <div class="flex items-center justify-between"><label for="gradientColor1" class="text-sm font-medium text-slate-700">颜色 1</label><input type="color" id="gradientColor1" value="#a5b4fc"></div>
+                            <div class="flex items-center justify-between"><label for="gradientColor2" class="text-sm font-medium text-slate-700">颜色 2</label><input type="color" id="gradientColor2" value="#e0e7ff"></div>
+                            <div><label for="gradientAngle" class="flex justify-between text-sm font-medium text-slate-700">渐变角度 <span id="gradientAngleValue">145deg</span></label><input type="range" id="gradientAngle" min="0" max="360" value="145" class="mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">内容与代码</h3>
+                    <div class="space-y-4">
+                        <div><label for="bubbleText" class="text-sm font-medium text-slate-700">气泡文本</label><textarea id="bubbleText" rows="3" class="w-full mt-1 p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">这里是气泡</textarea></div>
+                        <button id="generateCodeBtn" class="w-full bg-emerald-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-emerald-600 transition-colors">应用此样式到聊天</button>
+                        <button id="restoreDefaultBtn" class="w-full bg-slate-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-slate-600 transition-colors mt-2">恢复默认样式</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 贴图管理器 Modal -->
+    <div id="imageProcessorModal" class="fixed inset-0 bg-black bg-opacity-50 z-[1000] hidden flex items-center justify-center p-4">
+        <div class="w-full h-full max-w-6xl max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row">
+            <div class="w-full md:w-1/3 flex flex-col border-r border-slate-200">
+                <div class="p-4 border-b border-slate-200">
+                    <h3 class="font-bold text-xl">贴图库</h3>
+                    <p class="text-sm text-slate-500">在这里管理和编辑你的贴图。</p>
+                </div>
+                <div id="stickerGallery" class="flex-1 p-4 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 gap-4">
+                </div>
+                <div class="p-4 border-t border-slate-200 space-y-2">
+                    <label for="galleryStickerUpload" class="w-full bg-indigo-600 text-white text-center font-medium py-2 px-4 rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors block">上传新贴图</label>
+                    <input type="file" id="galleryStickerUpload" accept="image/*" multiple class="hidden">
+                    <p class="text-xs text-slate-500 mt-2 text-center">提示：移除背景功能不支持GIF动图。请先使用外部工具处理GIF，再上传。</p>
+                    <button id="closeProcessorBtn" class="w-full bg-slate-600 text-white font-medium py-2 rounded-lg hover:bg-slate-700 mt-2">完成并关闭</button>
+                </div>
+            </div>
+            <div class="w-full md:w-2/3 flex flex-col">
+                <div id="imageEditor" class="flex-1 flex items-center justify-center bg-slate-100 p-4 relative">
+                    <canvas id="imageEditorCanvas" class="max-w-full max-h-full shadow-lg"></canvas>
+                    <div id="editorPlaceholder" class="text-slate-500">从左侧选择一张图片进行编辑</div>
+                </div>
+                <div id="editorControls" class="p-4 border-t border-slate-200 bg-white space-y-4 hidden">
+                    <button id="removeBgBtn" class="w-full bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg hover:bg-indigo-600">💧 移除背景</button>
+                    <div>
+                        <label for="tolerance" class="flex justify-between text-sm font-medium text-slate-700">容差 <span id="toleranceValue">20</span></label>
+                        <input type="range" id="tolerance" min="0" max="150" value="20" class="mt-1">
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="saveChangesBtn" class="w-full bg-emerald-500 text-white font-medium py-2 rounded-lg hover:bg-emerald-600">保存更改</button>
+                        <button id="resetStickerBtn" class="w-full bg-gray-500 text-white font-medium py-2 rounded-lg hover:bg-gray-600">重置图片</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const previewContainer = document.getElementById('previewContainer');
+            const previewBubble = document.getElementById('previewBubble');
+            const bubbleTextContent = document.getElementById('bubbleTextContent');
+            const stickerLibraryContainer = document.getElementById('stickerLibrary');
+            const imageProcessorModal = document.getElementById('imageProcessorModal');
+            const stickerGallery = document.getElementById('stickerGallery');
+            const imageEditorCanvas = document.getElementById('imageEditorCanvas');
+            const editorControls = document.getElementById('editorControls');
+            const editorPlaceholder = document.getElementById('editorPlaceholder');
+            const ctx = imageEditorCanvas.getContext('2d');
+            
+            // 页面加载时，不再从localStorage读取，而是向父窗口请求数据
+            window.parent.postMessage({ type: 'BUBBLE_DESIGNER_READY' }, '*');
+            
+            // 添加监听器，接收来自父窗口的数据
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.type === 'LOAD_STICKERS') {
+                    console.log('从主应用接收到贴图数据:', event.data.payload);
+                    stickerLibrary = event.data.payload || [];
+                    
+                    // 拿到数据后，再渲染UI
+                    populateStickerGallery();
+                    renderStickerLibrary();
+                }
+            });
+            
+            const controls = {
+                manageStickersBtn: document.getElementById('manageStickersBtn'),
+                closeProcessorBtn: document.getElementById('closeProcessorBtn'),
+                galleryStickerUpload: document.getElementById('galleryStickerUpload'),
+                removeBgBtn: document.getElementById('removeBgBtn'),
+                tolerance: document.getElementById('tolerance'),
+                toleranceValue: document.getElementById('toleranceValue'),
+                saveChangesBtn: document.getElementById('saveChangesBtn'),
+                resetStickerBtn: document.getElementById('resetStickerBtn'),
+                sendToBackBtn: document.getElementById('sendToBackBtn'),
+                bringToFrontBtn: document.getElementById('bringToFrontBtn'),
+                borderWidth: document.getElementById('borderWidth'),
+                borderWidthValue: document.getElementById('borderWidthValue'),
+                borderColor: document.getElementById('borderColor'),
+                textColor: document.getElementById('textColor'), // 【新增】
+                borderRadius: document.getElementById('borderRadius'),
+                borderRadiusValue: document.getElementById('borderRadiusValue'),
+                bgTypeSolid: document.getElementById('bgTypeSolid'),
+                bgTypeGradient: document.getElementById('bgTypeGradient'),
+                solidBgControls: document.getElementById('solidBgControls'),
+                gradientBgControls: document.getElementById('gradientBgControls'),
+                bgColor: document.getElementById('bgColor'),
+                bgOpacity: document.getElementById('bgOpacity'),
+                bgOpacityValue: document.getElementById('bgOpacityValue'),
+                gradientColor1: document.getElementById('gradientColor1'),
+                gradientColor2: document.getElementById('gradientColor2'),
+                gradientAngle: document.getElementById('gradientAngle'),
+                gradientAngleValue: document.getElementById('gradientAngleValue'),
+                bubbleText: document.getElementById('bubbleText'),
+                generateCodeBtn: document.getElementById('generateCodeBtn'),
+                restoreDefaultBtn: document.getElementById('restoreDefaultBtn'), // 【新增】
+            };
+
+            let stickerLibrary = [];
+            let currentEditingStickerId = null;
+            let targetColor = null;
+            let currentBgType = 'solid';
+            let selectedStickerWrapper = null;
+            let zIndexCounter = 11;
+
+            function showToast(message) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2000);
+            }
+
+
+
+            // ========== 替换开始 ==========
+            function updateBubbleStyle() {
+    // 获取内部的 message-content 元素，这是我们真正要应用样式的对象
+    const messageContentDiv = previewBubble.querySelector('.message-content');
+    if (!messageContentDiv) return;
+
+                const borderWidth = controls.borderWidth.value;
+                const borderRadius = controls.borderRadius.value;
+
+    // 将样式应用到 messageContentDiv
+    messageContentDiv.style.borderWidth = `${borderWidth}px`;
+    messageContentDiv.style.borderColor = controls.borderColor.value;
+    messageContentDiv.style.borderRadius = `${borderRadius}px`;
+
+    // 更新文本颜色
+                bubbleTextContent.style.color = controls.textColor.value;
+
+    // 更新背景
+                if (currentBgType === 'solid') {
+                    const color = controls.bgColor.value;
+                    const opacity = controls.bgOpacity.value;
+                    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+        messageContentDiv.style.background = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                } else {
+                    const color1 = controls.gradientColor1.value, color2 = controls.gradientColor2.value, angle = controls.gradientAngle.value;
+        messageContentDiv.style.background = `linear-gradient(${angle}deg, ${color1}, ${color2})`;
+    }
+
+    // 更新小箭头的颜色，确保它和背景匹配
+    const arrowPseudo = document.querySelector('.message.received .message-content::before');
+    if (arrowPseudo) {
+         if (currentBgType === 'solid') {
+            const solidColor = controls.bgColor.value;
+            // 注意：这里我们不能直接修改伪元素，需要动态创建<style>标签来覆盖
+            let arrowStyleTag = document.getElementById('arrow-style');
+            if (!arrowStyleTag) {
+                arrowStyleTag = document.createElement('style');
+                arrowStyleTag.id = 'arrow-style';
+                document.head.appendChild(arrowStyleTag);
+            }
+            arrowStyleTag.innerHTML = `.message.received .message-content::before { border-color: transparent ${solidColor} transparent transparent; }`;
+         } else {
+            // 渐变背景的小箭头无法完美匹配，暂时设为透明
+            document.getElementById('arrow-style').innerHTML = `.message.received .message-content::before { border-color: transparent; }`;
+         }
+    }
+
+    // 更新UI上的数值显示
+                controls.borderWidthValue.textContent = `${borderWidth}px`;
+                controls.borderRadiusValue.textContent = `${borderRadius}px`;
+                controls.bgOpacityValue.textContent = `${Math.round(controls.bgOpacity.value * 100)}%`;
+                controls.gradientAngleValue.textContent = `${controls.gradientAngle.value}deg`;
+            }
+// ========== 替换结束 ==========
+
+            function openProcessor() { imageProcessorModal.style.display = 'flex'; populateStickerGallery(); }
+            function closeProcessor() { imageProcessorModal.style.display = 'none'; renderStickerLibrary(); }
+
+            function handleStickerUpload(event) {
+                const files = event.target.files;
+                if (!files) return;
+                for (const file of files) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const newSticker = { id: Date.now() + Math.random(), baseSrc: e.target.result, currentSrc: e.target.result };
+                        stickerLibrary.push(newSticker);
+                        // 将新贴图发送给父窗口保存
+                        window.parent.postMessage({ type: 'SAVE_STICKER', payload: newSticker }, '*');
+                        populateStickerGallery();
+                    };
+                    reader.readAsDataURL(file);
+                }
+                event.target.value = '';
+            }
+            
+            function populateStickerGallery() {
+                stickerGallery.innerHTML = '';
+                stickerLibrary.forEach(sticker => {
+                    const container = document.createElement('div');
+                    container.className = 'relative group';
+                    const img = document.createElement('img');
+                    img.src = sticker.currentSrc;
+                    img.className = 'w-full h-full object-contain bg-slate-200 rounded-md cursor-pointer hover:ring-2 ring-indigo-500';
+                    img.dataset.id = sticker.id;
+                    img.addEventListener('click', () => selectStickerForEditing(sticker.id));
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.className = 'absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity z-10';
+                    deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteSticker(sticker.id); });
+                    container.appendChild(img);
+                    container.appendChild(deleteBtn);
+                    stickerGallery.appendChild(container);
+                });
+            }
+            
+            function deleteSticker(id) {
+                stickerLibrary = stickerLibrary.filter(s => s.id != id);
+                // 通知父窗口删除此贴图
+                window.parent.postMessage({ type: 'DELETE_STICKER', payload: id }, '*');
+                populateStickerGallery();
+                if (currentEditingStickerId == id) {
+                    currentEditingStickerId = null;
+                    editorPlaceholder.classList.remove('hidden');
+                    editorControls.classList.add('hidden');
+                    ctx.clearRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                }
+            }
+
+            function renderStickerLibrary() {
+                stickerLibraryContainer.innerHTML = '';
+                stickerLibrary.forEach(sticker => {
+                    const img = document.createElement('img');
+                    img.src = sticker.currentSrc;
+                    img.className = 'library-sticker';
+                    img.dataset.id = sticker.id;
+                    makeLibraryStickerDraggable(img);
+                    stickerLibraryContainer.appendChild(img);
+                });
+            }
+
+            function selectStickerForEditing(id) {
+                currentEditingStickerId = id;
+                const sticker = stickerLibrary.find(s => s.id == id);
+                if (!sticker) return;
+                editorPlaceholder.classList.add('hidden');
+                editorControls.classList.remove('hidden');
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = sticker.currentSrc;
+                img.onload = () => {
+                    imageEditorCanvas.width = img.naturalWidth;
+                    imageEditorCanvas.height = img.naturalHeight;
+                    ctx.clearRect(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                    ctx.drawImage(img, 0, 0);
+                }
+            }
+            
+            function processImage(colorToRemove, tolerance) {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (!sticker) return;
+                const img = new Image();
+                img.crossOrigin = "Anonymous";
+                img.src = sticker.baseSrc;
+                img.onload = () => {
+                    imageEditorCanvas.width = img.naturalWidth;
+                    imageEditorCanvas.height = img.naturalHeight;
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, imageEditorCanvas.width, imageEditorCanvas.height);
+                    const data = imageData.data;
+                    const [tr, tg, tb] = colorToRemove;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i], g = data[i + 1], b = data[i + 2];
+                        const distance = Math.sqrt(Math.pow(r - tr, 2) + Math.pow(g - tg, 2) + Math.pow(b - tb, 2));
+                        if (distance < tolerance) { data[i + 3] = 0; }
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                };
+            }
+
+            function makeLibraryStickerDraggable(element) {
+                element.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    const stickerData = stickerLibrary.find(s => s.id == element.dataset.id);
+                    if (!stickerData) return;
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'sticker-wrapper';
+                    wrapper.dataset.id = stickerData.id;
+                    wrapper.style.zIndex = zIndexCounter++; 
+                    
+                    const newSticker = document.createElement('img');
+                    newSticker.src = stickerData.currentSrc;
+                    newSticker.className = 'sticker-image';
+                    
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.className = 'resize-handle';
+                    
+                    wrapper.appendChild(newSticker);
+                    wrapper.appendChild(resizeHandle);
+                    
+                    previewBubble.appendChild(wrapper);
+
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    const initialWidth = 120;
+                    wrapper.style.width = `${initialWidth}px`;
+                    const tempImg = new Image();
+                    tempImg.src = stickerData.currentSrc;
+                    tempImg.onload = () => {
+                        const aspectRatio = tempImg.naturalHeight / tempImg.naturalWidth;
+                        wrapper.style.height = `${initialWidth * aspectRatio}px`;
+                        wrapper.style.left = `${(bubbleRect.width - wrapper.offsetWidth) / 2}px`;
+                        wrapper.style.top = `${(bubbleRect.height - wrapper.offsetHeight) / 2}px`;
+                    };
+                    
+                    makePlacedStickerInteractive(wrapper);
+                });
+            }
+            
+            function makePlacedStickerInteractive(wrapper) {
+                const resizeHandle = wrapper.querySelector('.resize-handle');
+                let isDragging = false, isResizing = false;
+                let offsetX, offsetY;
+
+                function onMoveDown(e) {
+                    isDragging = true;
+                    wrapper.classList.add('dragging');
+                    const event = e.touches ? e.touches[0] : e;
+                    const rect = wrapper.getBoundingClientRect();
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    offsetX = event.clientX - rect.left;
+                    offsetY = event.clientY - rect.top;
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onMoveUp);
+                    document.addEventListener('touchmove', onMove, { passive: false });
+                    document.addEventListener('touchend', onMoveUp);
+                }
+                function onMove(e) {
+                    if (!isDragging) return;
+                    e.preventDefault();
+                    const event = e.touches ? e.touches[0] : e;
+                    const bubbleRect = previewBubble.getBoundingClientRect();
+                    wrapper.style.left = `${event.clientX - bubbleRect.left - offsetX}px`;
+                    wrapper.style.top = `${event.clientY - bubbleRect.top - offsetY}px`;
+                }
+                function onMoveUp() {
+                    isDragging = false;
+                    wrapper.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onMoveUp);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onMoveUp);
+                }
+                wrapper.addEventListener('mousedown', onMoveDown);
+                wrapper.addEventListener('touchstart', onMoveDown, { passive: false });
+
+                function onResizeDown(e) {
+                    e.stopPropagation();
+                    isResizing = true;
+                    const event = e.touches ? e.touches[0] : e;
+                    const initialWidth = wrapper.offsetWidth;
+                    const initialHeight = wrapper.offsetHeight;
+                    const initialX = event.clientX;
+                    const initialY = event.clientY;
+
+                    function onResizeMove(e) {
+                        if (!isResizing) return;
+                        const event = e.touches ? e.touches[0] : e;
+                        const deltaX = event.clientX - initialX;
+                        const deltaY = event.clientY - initialY;
+                        const newWidth = Math.max(20, initialWidth + deltaX);
+                        const newHeight = Math.max(20, initialHeight + deltaY);
+                        wrapper.style.width = `${newWidth}px`;
+                        wrapper.style.height = `${newHeight}px`;
+                    }
+
+                    function onResizeUp() {
+                        isResizing = false;
+                        document.removeEventListener('mousemove', onResizeMove);
+                        document.removeEventListener('mouseup', onResizeUp);
+                        document.removeEventListener('touchmove', onResizeMove);
+                        document.removeEventListener('touchend', onResizeUp);
+                    }
+                    
+                    document.addEventListener('mousemove', onResizeMove);
+                    document.addEventListener('mouseup', onResizeUp);
+                    document.addEventListener('touchmove', onResizeMove, { passive: false });
+                    document.addEventListener('touchend', onResizeUp);
+                }
+                resizeHandle.addEventListener('mousedown', onResizeDown);
+                resizeHandle.addEventListener('touchstart', onResizeDown, { passive: false });
+
+                wrapper.addEventListener('dblclick', () => {
+                    wrapper.remove();
+                    showToast('贴图已移除');
+                });
+
+                wrapper.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectSticker(wrapper);
+                });
+            }
+
+            function selectSticker(wrapper) {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.classList.remove('selected');
+                }
+                selectedStickerWrapper = wrapper;
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.classList.add('selected');
+                    controls.sendToBackBtn.disabled = false;
+                    controls.bringToFrontBtn.disabled = false;
+                } else {
+                    controls.sendToBackBtn.disabled = true;
+                    controls.bringToFrontBtn.disabled = true;
+                }
+            }
+            previewContainer.addEventListener('click', (e) => {
+                if (e.target === previewContainer || e.target === previewBubble) {
+                    selectSticker(null);
+                }
+            });
+
+            controls.sendToBackBtn.addEventListener('click', () => {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.style.zIndex = 1;
+                    showToast('已置于文字底层');
+                }
+            });
+            controls.bringToFrontBtn.addEventListener('click', () => {
+                if (selectedStickerWrapper) {
+                    selectedStickerWrapper.style.zIndex = zIndexCounter++;
+                    showToast('已置于文字顶层');
+                }
+            });
+
+
+            controls.manageStickersBtn.addEventListener('click', openProcessor);
+            controls.closeProcessorBtn.addEventListener('click', closeProcessor);
+            controls.galleryStickerUpload.addEventListener('change', handleStickerUpload);
+            controls.removeBgBtn.addEventListener('click', () => imageEditorCanvas.classList.add('dropper-cursor'));
+            imageEditorCanvas.addEventListener('click', (e) => {
+                if (!imageEditorCanvas.classList.contains('dropper-cursor')) return;
+                const rect = imageEditorCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const pixel = ctx.getImageData(x, y, 1, 1).data;
+                targetColor = [pixel[0], pixel[1], pixel[2]];
+                imageEditorCanvas.classList.remove('dropper-cursor');
+                processImage(targetColor, controls.tolerance.value);
+            });
+            controls.tolerance.addEventListener('input', () => {
+                controls.toleranceValue.textContent = controls.tolerance.value;
+                if (currentEditingStickerId && targetColor) {
+                    processImage(targetColor, controls.tolerance.value);
+                }
+            });
+            controls.saveChangesBtn.addEventListener('click', () => {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (sticker) {
+                    sticker.currentSrc = imageEditorCanvas.toDataURL();
+                    // 将被修改后的整个贴图对象发送给父窗口保存
+                    window.parent.postMessage({ type: 'SAVE_STICKER', payload: sticker }, '*');
+                    populateStickerGallery();
+                }
+            });
+            controls.resetStickerBtn.addEventListener('click', () => {
+                const sticker = stickerLibrary.find(s => s.id == currentEditingStickerId);
+                if (sticker) {
+                    sticker.currentSrc = sticker.baseSrc;
+                    // 重置后，也需要将更新后的贴图对象发送给父窗口保存
+                    window.parent.postMessage({ type: 'SAVE_STICKER', payload: sticker }, '*');
+                    selectStickerForEditing(sticker.id);
+                    populateStickerGallery();
+                }
+            });
+
+            // 【修改】将 textColor 添加到事件监听循环中
+            ['borderWidth', 'borderColor', 'borderRadius', 'bgColor', 'bgOpacity', 'gradientColor1', 'gradientColor2', 'gradientAngle', 'textColor'].forEach(id => { if (controls[id]) { controls[id].addEventListener('input', updateBubbleStyle); } });
+            controls.bubbleText.addEventListener('input', () => { bubbleTextContent.textContent = controls.bubbleText.value; });
+            controls.bgTypeSolid.addEventListener('click', () => { currentBgType = 'solid'; controls.solidBgControls.classList.remove('hidden'); controls.gradientBgControls.classList.add('hidden'); controls.bgTypeSolid.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.remove('text-slate-600'); controls.bgTypeGradient.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.add('text-slate-600'); updateBubbleStyle(); });
+            controls.bgTypeGradient.addEventListener('click', () => { currentBgType = 'gradient'; controls.solidBgControls.classList.add('hidden'); controls.gradientBgControls.classList.remove('hidden'); controls.bgTypeGradient.classList.add('bg-white', 'text-indigo-600'); controls.bgTypeGradient.classList.remove('text-slate-600'); controls.bgTypeSolid.classList.remove('bg-white', 'text-indigo-600'); controls.bgTypeSolid.classList.add('text-slate-600'); updateBubbleStyle(); });
+            
+// ========== 替换整个 'generateCodeBtn' 事件监听器 ==========
+// ========== 使用下面的新代码，完整替换旧的 'generateCodeBtn' 事件监听器 ==========
+controls.generateCodeBtn.addEventListener('click', () => {
+    // 弹出输入框，让用户为样式命名
+    const styleName = prompt("为这个新的气泡样式命名:", "我的新样式");
+
+    // 如果用户点击了"取消"或没有输入任何内容，则中断操作
+    if (!styleName || !styleName.trim()) {
+        showToast("取消保存，样式名称不能为空。");
+        return;
+    }
+
+    // --- 后续代码是用于生成样式和HTML的，我们保持其最新逻辑 ---
+
+    const messageContentDiv = previewBubble.querySelector('.message-content');
+    if (!messageContentDiv) return;
+
+    const bubbleStyle = window.getComputedStyle(messageContentDiv);
+    const textStyle = window.getComputedStyle(bubbleTextContent);
+    const bubbleRect = previewBubble.getBoundingClientRect(); 
+
+    let htmlStickers = '';
+    previewBubble.querySelectorAll('.sticker-wrapper').forEach((stickerWrapper, index) => {
+        const stickerId = stickerWrapper.dataset.id;
+        const stickerData = stickerLibrary.find(s => s.id == stickerId);
+        if (!stickerData) return;
+
+        const stickerRect = stickerWrapper.getBoundingClientRect();
+        let stickerStyle = `width: ${stickerRect.width.toFixed(0)}px; height: ${stickerRect.height.toFixed(0)}px;`;
+
+        const bubbleHorizCenter = bubbleRect.left + bubbleRect.width / 2;
+        const stickerHorizCenter = stickerRect.left + stickerRect.width / 2;
+
+        if (stickerHorizCenter > bubbleHorizCenter) {
+            const rightOffset = bubbleRect.right - stickerRect.right;
+            stickerStyle += `right: ${rightOffset.toFixed(0)}px; `;
+        } else {
+            const leftOffset = stickerRect.left - bubbleRect.left;
+            stickerStyle += `left: ${leftOffset.toFixed(0)}px; `;
+        }
+
+        const bubbleVertCenter = bubbleRect.top + bubbleRect.height / 2;
+        const stickerVertCenter = stickerRect.top + stickerRect.height / 2;
+
+        if (stickerVertCenter > bubbleVertCenter) {
+            const bottomOffset = bubbleRect.bottom - stickerRect.bottom;
+            stickerStyle += `bottom: ${bottomOffset.toFixed(0)}px; `;
+        } else {
+            const topOffset = stickerRect.top - bubbleRect.top;
+            stickerStyle += `top: ${topOffset.toFixed(0)}px; `;
+        }
+
+        const finalStickerStyle = `position: absolute; ${stickerStyle} z-index: ${stickerWrapper.style.zIndex || 1}; user-select: none; pointer-events: none;`.replace(/\s+/g, ' ').trim();
+        htmlStickers += `    <img src="${stickerData.currentSrc}" class="sticker-${index}" alt="sticker" style="${finalStickerStyle}">\n`;
+    });
+
+    const messageContentStyles = `position: relative; padding: ${bubbleStyle.padding}; border: ${bubbleStyle.border}; border-radius: ${bubbleStyle.borderRadius}; background: ${bubbleStyle.background};`.replace(/\s+/g, ' ').trim();
+    const textSpanStyles = `position: relative; z-index: 10; color: ${textStyle.color};`.replace(/\s+/g, ' ').trim();
+
+    const htmlTemplate = `<div class="message-content" style="${messageContentStyles}"><span class="bubble-text" style="${textSpanStyles}">{{BUBBLE_TEXT}}</span></div>\n${htmlStickers}`.trim();
+    const cssCode = `/* CSS 已通过内联样式应用，此部分为空 */`;
+
+    // 【核心改动】发送数据到父窗口，这次包含了 styleId 和 styleName
+    window.parent.postMessage({
+        type: 'apply-bubble-style',
+        payload: {
+            id: 'style_' + Date.now(), // 为新样式生成一个唯一ID
+            name: styleName.trim(),    // 使用用户输入的新名称
+            html: htmlTemplate,
+            css: cssCode
+        }
+    }, '*');
+
+    // 用户反馈
+    showToast(`样式 "${styleName.trim()}" 已保存到样式库！`);
+    const originalText = controls.generateCodeBtn.textContent;
+    controls.generateCodeBtn.textContent = '✅ 已保存!';
+    setTimeout(() => {
+        controls.generateCodeBtn.textContent = originalText;
+    }, 2000);
+});
+// ========== 替换结束 ==========
+
+            // 【新增】为"恢复默认"按钮添加点击事件
+            controls.restoreDefaultBtn.addEventListener('click', () => {
+                // 向父窗口发送恢复默认的请求
+                window.parent.postMessage({ type: 'BUBBLE_RESTORE_DEFAULT' }, '*');
+                showToast('已发送恢复默认请求');
+            });
+            
+            // 初始化只需要更新气泡样式，贴图库会在收到数据后渲染
+            updateBubbleStyle();
+        });
+    </script>
+</body>
+</html>

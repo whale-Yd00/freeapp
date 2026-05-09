@@ -1,0 +1,3219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SillyTavern 全功能编辑器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --user-bubble-bg: #eff6ff; /* blue-50 */
+            --assistant-bubble-bg: #f3f4f6; /* gray-100 */
+        }
+        body {
+            font-family: 'Inter', 'Helvetica Neue', 'Arial', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+            color: #1f2937; /* gray-800 */
+        }
+        #sidebar, .modal {
+            scrollbar-width: thin;
+            scrollbar-color: #9ca3af #e5e7eb;
+        }
+        #sidebar::-webkit-scrollbar, .modal::-webkit-scrollbar { width: 8px; }
+        #sidebar::-webkit-scrollbar-track, .modal::-webkit-scrollbar-track { background: #e5e7eb; }
+        #sidebar::-webkit-scrollbar-thumb, .modal::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+        #sidebar::-webkit-scrollbar-thumb:hover, .modal::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        #sidebar { transition: transform 0.3s ease-in-out; }
+        .custom-input, .custom-select {
+            background-color: #f3f4f6;
+            border-color: #d1d5db;
+            color: #1f2937;
+            border-width: 1px;
+            transition: all 0.2s ease-in-out;
+        }
+        .custom-input:focus, .custom-select:focus {
+            background-color: #ffffff;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+            outline: none;
+        }
+        .hidden-file-input { display: none; }
+        .modal {
+            background-color: rgba(0,0,0,0.4);
+            overflow-y: auto;
+        }
+        .chat-bubble { 
+            max-width: 80%; 
+            word-wrap: break-word; 
+            /* 使用一个CSS变量来控制字体大小，默认值为14px */
+            font-size: var(--chat-font-size, 14px); 
+        }
+        .user-bubble { background-color: var(--user-bubble-bg); }
+        .assistant-bubble { background-color: var(--assistant-bubble-bg); }
+        
+        /* ====================== VVVVVV 在这里添加下面的代码 VVVVVV ====================== */
+        .quoted-text {
+            color: #f97316; /* 这是一个鲜艳的橙色 (Tailwind orange-500) */
+        }
+        .thought-text {
+            color: #6b7280; /* 灰色 (Tailwind gray-500) */
+            font-weight: 600; /* 半粗体 */
+        }
+        /* ====================== ^^^^^^ 添加到这里结束 ^^^^^^ ====================== */
+        /* 确保按钮在移动端有足够高优先级的点击响应 */
+        button {
+            touch-action: manipulation;
+        }
+        /* ====================== 响应式表格 (手机端变卡片) ====================== */
+        @media (max-width: 768px) {
+            .mobile-card-table thead {
+                display: none; /* 手机上隐藏表头 */
+            }
+            .mobile-card-table tr {
+                display: flex;
+                flex-direction: column;
+                background: white;
+                margin-bottom: 1rem;
+                border: 1px solid #e5e7eb;
+                border-radius: 0.75rem; /* 圆角卡片 */
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+            }
+            .mobile-card-table td {
+                display: block;
+                width: 100%;
+                text-align: left;
+                padding: 0.75rem 1rem;
+                border-bottom: 1px solid #f3f4f6;
+                position: relative;
+            }
+            .mobile-card-table td:last-child {
+                border-bottom: none;
+            }
+            /* 利用 data-label 属性在每个单元格上方显示小标题 */
+            .mobile-card-table td::before {
+                content: attr(data-label);
+                display: block;
+                font-size: 0.75rem;
+                font-weight: 700;
+                color: #6b7280; /* gray-500 */
+                text-transform: uppercase;
+                margin-bottom: 0.25rem;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased overflow-hidden h-screen supports-[height:100dvh]:h-[100dvh]">
+
+    <!-- 主容器 -->
+    <div class="flex h-screen">
+        <!-- 主内容区域 -->
+        <main class="flex-1 flex flex-col">
+             <header class="flex justify-between items-center mb-4 flex-shrink-0 hidden">
+                <h1 id="main-header-title" class="text-2xl font-bold text-gray-800">开始聊天</h1>
+            </header>
+
+            <div id="main-chat-area" class="flex-1 flex flex-col min-h-0">
+                <div id="welcome-screen" class="flex-grow flex flex-col justify-center items-center text-center text-gray-500 relative">
+                    <button onclick="document.getElementById('sidebar').classList.toggle('translate-x-full'); document.getElementById('overlay').classList.toggle('hidden');" class="absolute top-0 left-0 m-2 z-20 text-gray-600 p-2 rounded-md hover:bg-gray-200 lg:hidden">
+                         <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                    </button>
+                    <svg class="w-16 h-16 mb-4 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                    <h2 class="text-2xl font-semibold">选择一个角色开始聊天</h2>
+                    <p class="mt-2">从右侧菜单导入或创建一个新角色。</p>
+                </div>
+
+                <div id="chat-interface" class="hidden flex-1 flex flex-col bg-white min-h-0">
+                    <header id="chat-header" class="p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+                        <button id="hamburger-btn" class="z-20 text-gray-600 p-2 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition lg:hidden mr-2">
+                            <svg class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg>
+                        </button>
+                        <div>
+                            <button id="show-character-status-btn" class="text-gray-500 hover:text-blue-600 p-1 rounded-full transition-colors inline-block" title="查看角色状态面板">
+                                <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                            </button>
+                            
+                            <button id="show-summary-table-btn" class="text-gray-500 hover:text-blue-600 p-1 rounded-full transition-colors inline-block" title="查看对话总结">
+                                <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <h2 id="character-chat-name" class="text-lg font-bold text-gray-800 text-center"></h2>
+                    </header>
+                    <div id="message-list" class="flex-1 p-4 overflow-y-auto">
+                        <!-- Messages will be injected here -->
+                    </div>
+                    <footer class="p-3 border-t border-gray-200 flex-shrink-0 bg-gray-50 relative z-30 pb-[env(safe-area-inset-bottom)] mb-1 transition-all duration-200">
+                        <form id="chat-form" class="flex items-end space-x-3">
+                            <textarea id="chat-input" 
+                                class="custom-input w-full p-2 rounded-lg resize-none max-h-32 overflow-y-auto min-h-[44px]" 
+                                placeholder="输入消息..." 
+                                rows="1" 
+                                style="min-height: 44px;"
+                                oninput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"></textarea>
+                            
+                            <button type="button" id="manual-submit-btn" 
+                                class="bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-full transition-colors duration-300 shadow-sm disabled:bg-blue-300 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center h-[44px] w-[44px]"
+                                onclick="document.getElementById('chat-form').dispatchEvent(new Event('submit', { cancelable: true }));">
+                                <svg class="w-5 h-5 pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.428A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                </svg>
+                            </button>
+                        </form>
+                    </footer>
+                </div>
+            </div>
+        </main>
+    
+        <!-- 遮罩层 -->
+        <div id="overlay" class="fixed inset-0 bg-black bg-opacity-40 z-30 hidden transition-opacity duration-300 lg:hidden"></div>
+
+        <!-- 侧边栏 -->
+        <aside id="sidebar" class="fixed top-0 right-0 h-full w-full max-w-xs bg-white z-40 transform translate-x-full shadow-xl overflow-y-auto p-4 sm:p-6 lg:relative lg:transform-none lg:max-w-xs lg:shadow-none lg:border-l lg:border-gray-200 flex flex-col">
+            <div class="flex flex-col space-y-3 flex-shrink-0">
+                <h2 class="text-xl font-bold text-gray-800 mb-2">工具箱</h2>
+                 <button id="show-character-list-btn" class="w-full text-left bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-300 shadow-sm">选择角色</button>
+                <button id="show-preset-list-btn" class="w-full text-left bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">查看预设</button>
+
+                <hr class="my-4 border-gray-200">
+
+                <button id="show-api-config-btn" class="w-full text-left bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">API 配置</button>
+                
+                <button id="show-user-persona-btn" class="w-full text-left bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">编辑用户人设</button>
+
+<div class="space-y-2 pt-4">
+    <label for="font-size-slider" class="block text-sm font-medium text-gray-600 px-1">聊天字体大小: <span id="font-size-value" class="font-bold text-blue-600">14px</span></label>
+    <input type="range" id="font-size-slider" min="12" max="20" value="14" step="1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+</div>
+<hr class="my-4 border-gray-200">
+
+                <label for="characterFileInput" class="w-full text-center cursor-pointer bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">导入角色卡</label>
+                <input type="file" id="characterFileInput" class="hidden-file-input" accept=".json">
+                <button id="show-character-creator-btn" class="w-full text-center bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">创造角色</button>
+                <label for="jsonFileInput" class="w-full text-center cursor-pointer bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">导入预设</label>
+                <input type="file" id="jsonFileInput" class="hidden-file-input" accept=".json,application/json,*/*">
+                <button id="show-creator-btn" class="w-full text-center bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">创造预设</button>
+                <button id="show-regex-tester-btn" class="w-full text-center bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-4 rounded-lg transition-colors duration-300">导入/测试正则</button>
+            </div>
+            <footer class="mt-auto pt-6 text-center text-gray-400 text-xs flex-shrink-0">
+                <p>所有数据仅在您的浏览器中处理。</p>
+            </footer>
+        </aside>
+    </div>
+    
+    <!-- 通用弹窗容器 -->
+    <div id="modal-container">
+        <!-- 角色列表弹窗 -->
+        <div id="character-list-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-2xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                    <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">选择一个角色</h2>
+                        <button data-close-modal="character-list-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div id="modal-character-list-container" class="divide-y divide-gray-200 max-h-[70vh] overflow-y-auto">
+                        <div class="p-8 text-center text-gray-500" id="modal-character-list-placeholder"><p>还没有角色。请先导入或创造一个。</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 预设列表弹窗 -->
+        <div id="preset-list-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-4xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                    <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <div class="flex items-center space-x-3">
+                            <button id="preset-back-btn" class="hidden text-gray-500 hover:text-gray-800 transition-colors p-1">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                            </button>
+                            <h2 id="preset-modal-title" class="text-xl font-bold text-gray-800">导入的预设</h2>
+                        </div>
+                        <button data-close-modal="preset-list-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div id="modal-prompt-list-container" class="divide-y divide-gray-200 max-h-[70vh] overflow-y-auto">
+                        <div class="p-8 text-center text-gray-500" id="modal-prompt-list-placeholder"><p>请先导入一个预设文件。</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 创建预设(条目)弹窗 -->
+        <div id="creator-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-2xl mx-auto">
+                 <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                    <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">创造你的预设</h2>
+                        <button data-close-modal="creator-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6 mb-2">
+                        <div class="space-y-4">
+                            <div>
+                                <label for="new-item-title" class="block text-sm font-medium text-gray-600 mb-1">预设标题</label>
+                                <input type="text" id="new-item-title" class="custom-input w-full p-2 rounded-md" placeholder="例如：我的第一个预设">
+                            </div>
+                            <div>
+                                <label for="new-item-content" class="block text-sm font-medium text-gray-600 mb-1">预设内容</label>
+                                <textarea id="new-item-content" rows="4" class="custom-input w-full p-2 rounded-md" placeholder="在这里输入详细的预设内容..."></textarea>
+                            </div>
+                            <div class="text-right">
+                                <button id="create-item-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 shadow-sm">创建预设</button>
+                            </div>
+                        </div>
+                    </div>
+                 </div>
+                 <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
+                     <div id="created-list-container" class="divide-y divide-gray-200 max-h-[40vh] overflow-y-auto">
+                         <div class="p-4 text-center text-gray-500" id="created-list-placeholder">
+                            <p>您创建的预设将显示在这里。</p>
+                        </div>
+                     </div>
+                     <footer class="p-4 text-right bg-gray-50 border-t border-gray-200">
+                         <button id="export-json-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 shadow-sm">导出为JSON</button>
+                     </footer>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 查看预设内容弹窗 -->
+        <div id="prompt-details-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-2xl mt-8 mb-8 flex flex-col">
+                <header class="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+                    <h2 id="details-title" class="text-xl font-bold text-blue-600">预设内容</h2>
+                    <button data-close-modal="prompt-details-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </header>
+                <div class="bg-gray-50 p-4 overflow-y-auto flex-grow" style="max-height: 70vh;">
+                    <pre id="details-content" class="text-gray-700 whitespace-pre-wrap font-sans"></pre>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Regex脚本测试器弹窗 -->
+        <div id="regex-tester-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-6xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">Regex 脚本链式测试器</h2>
+                        <button data-close-modal="regex-tester-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-800 mb-4">脚本管理</h3>
+                            <label for="regexFileInput" class="w-full text-center cursor-pointer bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 shadow-sm block mb-4">
+                                导入Regex脚本
+                            </label>
+                            <input type="file" id="regexFileInput" class="hidden-file-input" accept=".json" multiple>
+                            <div id="regex-list-container" class="divide-y divide-gray-200 max-h-[60vh] overflow-y-auto bg-gray-50 rounded-lg p-2 border border-gray-200">
+                                <div class="p-4 text-center text-gray-500" id="regex-list-placeholder">
+                                    <p>导入的脚本将显示在这里。</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="regex-tester-section" class="lg:col-span-2 hidden">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4">测试已启用的脚本</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label for="regex-input-text" class="block text-sm font-medium text-gray-600 mb-2">输入文本</label>
+                                    <textarea id="regex-input-text" rows="12" class="custom-input w-full p-2 rounded-md" placeholder="在此输入要测试的文本..."></textarea>
+                                </div>
+                                <div>
+                                    <label for="regex-output-text" class="block text-sm font-medium text-gray-600 mb-2">输出结果 (按顺序应用)</label>
+                                    <div id="regex-output-text" class="bg-gray-100 border border-gray-200 w-full p-2 rounded-md h-full min-h-[276px] whitespace-pre-wrap text-gray-800" style="font-family: 'Courier New', Courier, monospace;"></div>
+                                </div>
+                            </div>
+                            <div class="text-center mt-6">
+                                <button id="apply-regex-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-sm text-lg">应用所有已启用脚本</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 创造角色卡弹窗 -->
+        <div id="character-creator-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">创造角色卡</h2>
+                         <button data-close-modal="character-creator-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label for="character-name" class="block text-sm font-medium text-gray-600 mb-1">角色名称</label>
+                                <input type="text" id="character-name" class="custom-input w-full p-2 rounded-md" placeholder="Character Name">
+                            </div>
+                            <div>
+                                <label for="character-description" class="block text-sm font-medium text-gray-600 mb-1">角色描述 (Description)</label>
+                                <textarea id="character-description" rows="4" class="custom-input w-full p-2 rounded-md" placeholder="角色的详细背景故事、外貌和总体描述。"></textarea>
+                            </div>
+                            <div>
+                                <label for="character-personality" class="block text-sm font-medium text-gray-600 mb-1">角色性格 (Personality)</label>
+                                <textarea id="character-personality" rows="3" class="custom-input w-full p-2 rounded-md" placeholder="角色的性格特点。"></textarea>
+                            </div>
+                            <div>
+                                <label for="character-scenario" class="block text-sm font-medium text-gray-600 mb-1">场景设定 (Scenario)</label>
+                                <textarea id="character-scenario" rows="3" class="custom-input w-full p-2 rounded-md" placeholder="故事发生的背景环境。"></textarea>
+                            </div>
+                            <div>
+                                <label for="character-first-mes" class="block text-sm font-medium text-gray-600 mb-1">第一句话 (First Message)</label>
+                                <textarea id="character-first-mes" rows="3" class="custom-input w-full p-2 rounded-md" placeholder="角色说的第一句话，作为对话的开场。"></textarea>
+                            </div>
+                            <div>
+                                <label for="character-mes-example" class="block text-sm font-medium text-gray-600 mb-1">对话示例 (Message Examples)</label>
+                                <textarea id="character-mes-example" rows="5" class="custom-input w-full p-2 rounded-md" placeholder="提供一些对话示例，以展示角色的语言风格。"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <footer class="p-4 flex justify-end items-center space-x-4 bg-gray-50 border-t border-gray-200">
+                        <button id="export-character-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">导出为 JSON</button>
+                        <button id="save-character-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">保存角色</button>
+                    </footer>
+                </div>
+            </div>
+        </div>
+
+        <!-- API 配置弹窗 -->
+        <div id="api-config-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-xl mx-auto">
+                 <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">API 配置 (OpenAI 兼容)</h2>
+                         <button data-close-modal="api-config-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label for="api-url" class="block text-sm font-medium text-gray-600 mb-1">API Base URL</label>
+                                <input type="text" id="api-url" class="custom-input w-full p-2 rounded-md" placeholder="例如: https://api.openai.com/v1">
+                            </div>
+                            <div>
+                                <label for="api-key" class="block text-sm font-medium text-gray-600 mb-1">API Key</label>
+                                <input type="password" id="api-key" class="custom-input w-full p-2 rounded-md" placeholder="sk-...">
+                            </div>
+                            <div class="flex items-end space-x-4">
+                                <div class="flex-grow">
+                                    <label for="api-model-select" class="block text-sm font-medium text-gray-600 mb-1">选择模型</label>
+                                    <select id="api-model-select" class="custom-select w-full p-2 rounded-md h-10"></select>
+                                </div>
+                                <button id="fetch-models-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors duration-300 h-10">获取模型</button>
+                            </div>
+                            <div id="api-status-msg" class="text-sm text-center min-h-[20px]"></div>
+                        </div>
+                    </div>
+                    <footer class="p-4 text-center bg-gray-50 border-t border-gray-200">
+                        <button id="save-api-config-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-sm text-lg">保存配置</button>
+                    </footer>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 编辑消息弹窗 -->
+        <div id="edit-message-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-2xl mx-auto">
+                 <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">编辑消息</h2>
+                         <button data-close-modal="edit-message-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6">
+                        <label for="edit-message-input" class="block text-sm font-medium text-gray-600 mb-2">消息内容</label>
+                        <textarea id="edit-message-input" rows="8" class="custom-input w-full p-2 rounded-md"></textarea>
+                    </div>
+                    <footer class="p-4 text-right bg-gray-50 border-t border-gray-200 space-x-3">
+                        <button id="cancel-edit-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">取消</button>
+                        <button id="save-edit-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">保存</button>
+                    </footer>
+                </div>
+            </div>
+        </div>
+        
+        <div id="edit-preset-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-2xl mx-auto">
+                 <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">编辑预设内容</h2>
+                         <button data-close-modal="edit-preset-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6">
+                        <label for="edit-preset-content-input" class="block text-sm font-medium text-gray-600 mb-2">预设内容</label>
+                        <textarea id="edit-preset-content-input" rows="10" class="custom-input w-full p-2 rounded-md"></textarea>
+                    </div>
+                    <footer class="p-4 text-right bg-gray-50 border-t border-gray-200 space-x-3">
+                        <button id="cancel-preset-edit-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">取消</button>
+                        <button id="save-preset-edit-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">保存更改</button>
+                    </footer>
+                </div>
+            </div>
+        </div>
+
+<div id="summary-table-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+    <div class="max-w-7xl mx-auto">
+         <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+             <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-800">对话总结</h2>
+                 <button data-close-modal="summary-table-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </header>
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="summary-table-container" class="overflow-x-auto">
+                    <p id="summary-table-placeholder" class="text-center text-gray-500 py-8">该角色还没有任何总结。</p>
+                </div>
+            </div>
+            <footer class="p-4 text-right bg-gray-50 border-t border-gray-200 space-x-3">
+                <button id="cancel-summary-edit-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">关闭</button>
+                <button id="save-summary-changes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">保存更改</button>
+            </footer>
+        </div>
+    </div>
+</div>
+
+        <div id="user-persona-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+            <div class="max-w-2xl mx-auto">
+                 <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+                     <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 class="text-xl font-bold text-gray-800">编辑你的人设</h2>
+                         <button data-close-modal="user-persona-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </header>
+                    <div class="p-6">
+                        <div class="space-y-4">
+                            <div>
+                                <label for="user-persona-input" class="block text-sm font-medium text-gray-600 mb-2">你的人设 (Your Persona)</label>
+                                <textarea id="user-persona-input" rows="8" class="custom-input w-full p-2 rounded-md" placeholder="在这里描述你希望扮演的角色，例如：\n\n我是一个来自中世纪的骑士，言语正直，性格刚毅。对现代科技一无所知。"></textarea>
+                                <p class="text-xs text-gray-500 mt-2">这里的内容将作为系统提示的一部分，告知AI你的身份和行为方式。留空则不启用。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <footer class="p-4 text-center bg-gray-50 border-t border-gray-200">
+                        <button id="save-user-persona-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg transition-colors duration-300 shadow-sm text-lg">保存人设</button>
+                    </footer>
+                </div>
+            </div>
+        </div>
+        
+<div id="character-status-modal" class="modal fixed inset-0 z-50 p-4 hidden">
+    <div class="max-w-7xl mx-auto">
+         <div class="bg-white rounded-xl shadow-2xl mt-8 mb-8">
+             <header class="p-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-gray-800">角色状态实时面板</h2>
+                 <button data-close-modal="character-status-modal" class="text-gray-400 hover:text-gray-700 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </header>
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="character-status-container" class="overflow-x-auto">
+                    <p id="character-status-placeholder" class="text-center text-gray-500 py-8">该角色还没有状态表，保存后将自动创建。</p>
+                </div>
+            </div>
+            <footer class="p-4 flex justify-between items-center bg-gray-50 border-t border-gray-200">
+                <button id="add-npc-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">添加 NPC</button>
+                <div>
+                    <button id="cancel-status-edit-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">关闭</button>
+                    <button id="save-status-changes-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors ml-3">保存更改</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+</div>
+    </div>
+
+    <script>
+// --- IndexedDB Helper ---
+const DB_NAME = 'SillyTavernOfflineDB';
+const DB_VERSION = 3; // <-- 版本号+1，这是触发 onupgradeneeded 的关键
+
+// 定义我们要创建的"表"
+const STORES = {
+    characters: 'characters',       // 存储角色卡
+    chatHistories: 'chatHistories', // 存储聊天记录
+    summaries: 'summaries',         // 存储对话总结
+    characterStates: 'characterStates', // <--- 【新增】存储角色状态表
+    miscData: 'miscData'            // 存储其他零散数据
+};
+
+    /**
+     * 打开数据库连接
+     * @returns {Promise<IDBDatabase>} 数据库实例
+     */
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+            request.onerror = (event) => {
+                console.error("IndexedDB error:", event.target.error);
+                reject("IndexedDB error");
+            };
+
+            // 当数据库需要升级（或首次创建）时触发
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+
+                // 创建角色仓库，使用 'id' 作为主键
+                if (!db.objectStoreNames.contains(STORES.characters)) {
+                    db.createObjectStore(STORES.characters, { keyPath: 'id' });
+                }
+
+                // 创建聊天记录仓库，我们使用角色ID作为键
+                if (!db.objectStoreNames.contains(STORES.chatHistories)) {
+                    db.createObjectStore(STORES.chatHistories); 
+                }
+                
+                // 创建杂项数据仓库
+                if (!db.objectStoreNames.contains(STORES.miscData)) {
+                    db.createObjectStore(STORES.miscData);
+                }
+                
+                // --- 新增：创建总结仓库 ---
+                // 我们将使用 'id' 作为主键，并为 'characterId' 创建索引以便快速查找
+                if (!db.objectStoreNames.contains(STORES.summaries)) {
+                    const summaryStore = db.createObjectStore(STORES.summaries, { keyPath: 'id' });
+                    summaryStore.createIndex('characterId', 'characterId', { unique: false });
+                }
+
+                // --- 【新增】创建角色状态仓库 ---
+                // 我们将使用 'characterId' 作为主键，方便直接根据角色ID查找
+                if (!db.objectStoreNames.contains(STORES.characterStates)) {
+                    db.createObjectStore(STORES.characterStates, { keyPath: 'characterId' });
+                }
+            };
+
+            request.onsuccess = (event) => {
+                resolve(event.target.result);
+            };
+        });
+    }
+
+    /**
+     * 从指定的仓库中获取一个值
+     * @param {string} storeName 仓库名称
+     * @param {any} key 键
+     * @returns {Promise<any>}
+     */
+    async function getValue(storeName, key) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    /**
+     * 获取指定仓库中的所有值
+     * @param {string} storeName 仓库名称
+     * @returns {Promise<any[]>}
+     */
+    async function getAllValues(storeName) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+
+    /**
+     * 向指定的仓库中设置一个值
+     * @param {string} storeName 仓库名称
+     * @param {any} key 键
+     * @param {any} value 值
+     */
+    async function setValue(storeName, key, value) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.put(value, key); // 使用 put，如果键已存在则更新
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    /**
+     * 向指定仓库中添加一个值（无指定key，适用于keyPath的仓库）
+     * @param {string} storeName 仓库名称
+     * @param {any} value 值
+     */
+    async function addValue(storeName, value) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.put(value);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
+     * 从指定仓库中删除一个值
+     * @param {string} storeName 仓库名称
+     * @param {any} key 键
+     */
+    async function deleteValue(storeName, key) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.delete(key);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // --- State Management ---
+        let state = {
+            characters: [],
+            apiConfig: { url: '', key: '', model: '' },
+            activeCharacterId: null,
+            chatHistories: {}, // { [characterId]: [...] }
+            createdPresets: [],
+            regexScripts: [],
+            importedPresetFiles: [], // 修改：从单一对象变为数组，用于存储所有导入的预设文件
+            activePresetFileId: null, // --- 新增：用于追踪当前查看的预设文件ID
+            userPersona: '', // <--- 在这里添加这一行
+            fontSize: 14, // <--- 【新增】在这里添加这一行，默认值为14
+        };
+
+        // 用于追踪正在编辑的角色ID
+        let editingCharacterId = null;
+
+        // --- Element Selectors ---
+        const DOMElements = {
+            // Main UI
+            sidebar: document.getElementById('sidebar'),
+            overlay: document.getElementById('overlay'),
+            hamburgerBtn: document.getElementById('hamburger-btn'),
+            mainHeaderTitle: document.getElementById('main-header-title'),
+            // Chat
+            welcomeScreen: document.getElementById('welcome-screen'),
+            chatInterface: document.getElementById('chat-interface'),
+            characterChatName: document.getElementById('character-chat-name'),
+            messageList: document.getElementById('message-list'),
+            chatForm: document.getElementById('chat-form'),
+            chatInput: document.getElementById('chat-input'),
+            // File Inputs
+            characterFileInput: document.getElementById('characterFileInput'),
+            jsonFileInput: document.getElementById('jsonFileInput'),
+            regexFileInput: document.getElementById('regexFileInput'),
+            // Modal Triggers
+            showApiConfigBtn: document.getElementById('show-api-config-btn'),
+            showCharacterCreatorBtn: document.getElementById('show-character-creator-btn'),
+            showCreatorBtn: document.getElementById('show-creator-btn'),
+            showRegexTesterBtn: document.getElementById('show-regex-tester-btn'),
+            showCharacterListBtn: document.getElementById('show-character-list-btn'),
+            showPresetListBtn: document.getElementById('show-preset-list-btn'),
+            // API Modal
+            apiConfigModal: document.getElementById('api-config-modal'),
+            apiUrlInput: document.getElementById('api-url'),
+            apiKeyInput: document.getElementById('api-key'),
+            modelSelect: document.getElementById('api-model-select'),
+            fetchModelsBtn: document.getElementById('fetch-models-btn'),
+            apiStatusMsg: document.getElementById('api-status-msg'),
+            saveApiConfigBtn: document.getElementById('save-api-config-btn'),
+            // User Persona Modal
+            showUserPersonaBtn: document.getElementById('show-user-persona-btn'),
+            userPersonaModal: document.getElementById('user-persona-modal'),
+            userPersonaInput: document.getElementById('user-persona-input'),
+            saveUserPersonaBtn: document.getElementById('save-user-persona-btn'),
+            // Character Modals
+            characterCreatorModal: document.getElementById('character-creator-modal'),
+            characterListModal: document.getElementById('character-list-modal'),
+            modalCharacterListContainer: document.getElementById('modal-character-list-container'),
+            modalCharacterListPlaceholder: document.getElementById('modal-character-list-placeholder'),
+            charFormInputs: {
+                name: document.getElementById('character-name'),
+                description: document.getElementById('character-description'),
+                personality: document.getElementById('character-personality'),
+                scenario: document.getElementById('character-scenario'),
+                first_mes: document.getElementById('character-first-mes'),
+                mes_example: document.getElementById('character-mes-example'),
+            },
+            saveCharacterBtn: document.getElementById('save-character-btn'),
+            exportCharacterBtn: document.getElementById('export-character-btn'),
+            // Preset Modals
+            creatorModal: document.getElementById('creator-modal'),
+            presetListModal: document.getElementById('preset-list-modal'),
+            // --- 新增开始 ---
+            presetModalTitle: document.getElementById('preset-modal-title'),
+            presetBackBtn: document.getElementById('preset-back-btn'),
+            // --- 新增结束 ---
+            modalPromptListContainer: document.getElementById('modal-prompt-list-container'),
+            modalPromptListPlaceholder: document.getElementById('modal-prompt-list-placeholder'),
+            newItemTitle: document.getElementById('new-item-title'),
+            newItemContent: document.getElementById('new-item-content'),
+            createItemBtn: document.getElementById('create-item-btn'),
+            createdListContainer: document.getElementById('created-list-container'),
+            createdListPlaceholder: document.getElementById('created-list-placeholder'),
+            exportJsonBtn: document.getElementById('export-json-btn'),
+            promptDetailsModal: document.getElementById('prompt-details-modal'),
+            detailsTitle: document.getElementById('details-title'),
+            detailsContent: document.getElementById('details-content'),
+            // Regex Tester Modal
+            regexTesterModal: document.getElementById('regex-tester-modal'),
+            regexListContainer: document.getElementById('regex-list-container'),
+            regexListPlaceholder: document.getElementById('regex-list-placeholder'),
+            regexTesterSection: document.getElementById('regex-tester-section'),
+            regexInputText: document.getElementById('regex-input-text'),
+            regexOutputText: document.getElementById('regex-output-text'),
+            applyRegexBtn: document.getElementById('apply-regex-btn'),
+            
+            // --- 在这里添加下面的新元素 ---
+            // 总结表格弹窗
+            summaryTableModal: document.getElementById('summary-table-modal'),
+            showSummaryTableBtn: document.getElementById('show-summary-table-btn'),
+            summaryTableContainer: document.getElementById('summary-table-container'),
+            summaryTablePlaceholder: document.getElementById('summary-table-placeholder'),
+            saveSummaryChangesBtn: document.getElementById('save-summary-changes-btn'),
+            cancelSummaryEditBtn: document.getElementById('cancel-summary-edit-btn'),
+            // --- 添加结束 ---
+            
+            // 【新增】角色状态弹窗元素
+            characterStatusModal: document.getElementById('character-status-modal'),
+            showCharacterStatusBtn: document.getElementById('show-character-status-btn'),
+            characterStatusContainer: document.getElementById('character-status-container'),
+            characterStatusPlaceholder: document.getElementById('character-status-placeholder'),
+            saveStatusChangesBtn: document.getElementById('save-status-changes-btn'),
+            cancelStatusEditBtn: document.getElementById('cancel-status-edit-btn'),
+            addNpcBtn: document.getElementById('add-npc-btn'),
+            
+            // Edit Message Modal
+            editMessageModal: document.getElementById('edit-message-modal'),
+            editMessageInput: document.getElementById('edit-message-input'),
+            saveEditBtn: document.getElementById('save-edit-btn'),
+            cancelEditBtn: document.getElementById('cancel-edit-btn'),
+            
+            // 新增：编辑预设弹窗的元素
+            editPresetModal: document.getElementById('edit-preset-modal'),
+            editPresetContentInput: document.getElementById('edit-preset-content-input'),
+            savePresetEditBtn: document.getElementById('save-preset-edit-btn'),
+            cancelPresetEditBtn: document.getElementById('cancel-preset-edit-btn'),
+            
+            // --- VVVVVV 在这里添加下面的代码 VVVVVV ---
+            fontSizeSlider: document.getElementById('font-size-slider'),
+            fontSizeValue: document.getElementById('font-size-value'),
+            // --- ^^^^^^ 添加到这里结束 ^^^^^^ ---
+        };
+
+        // --- Data Persistence ---
+        const saveData = async () => {
+            try {
+                // 保存所有角色
+                const charTx = (await openDB()).transaction(STORES.characters, 'readwrite');
+                await charTx.objectStore(STORES.characters).clear(); // 先清空
+                for (const char of state.characters) {
+                    await charTx.objectStore(STORES.characters).put(char);
+                }
+                await charTx.done;
+                
+                // 保存聊天记录
+                const chatTx = (await openDB()).transaction(STORES.chatHistories, 'readwrite');
+                for (const charId in state.chatHistories) {
+                     await chatTx.objectStore(STORES.chatHistories).put(state.chatHistories[charId], charId);
+                }
+                await chatTx.done;
+                
+                // 保存其他数据
+                await setValue(STORES.miscData, 'apiConfig', state.apiConfig);
+                await setValue(STORES.miscData, 'createdPresets', state.createdPresets);
+                await setValue(STORES.miscData, 'regexScripts', state.regexScripts);
+                await setValue(STORES.miscData, 'importedPresetFiles', state.importedPresetFiles); // 保存导入的预设文件列表
+                await setValue(STORES.miscData, 'userPersona', state.userPersona); // <--- 在这里添加这一行
+                await setValue(STORES.miscData, 'fontSize', state.fontSize); // <--- 【新增】保存字体大小
+
+                console.log("Data saved to IndexedDB successfully.");
+            } catch (error) {
+                console.error("Failed to save data to IndexedDB:", error);
+            }
+        };
+
+        const loadData = async () => {
+            try {
+                const [characters, apiConfig, createdPresets, regexScripts, chatHistoriesArr, importedPresetFiles, userPersona, fontSize] = await Promise.all([
+                    getAllValues(STORES.characters),
+                    getValue(STORES.miscData, 'apiConfig'),
+                    getValue(STORES.miscData, 'createdPresets'),
+                    getValue(STORES.miscData, 'regexScripts'),
+                    getAllValues(STORES.chatHistories),
+                    getValue(STORES.miscData, 'importedPresetFiles'),
+                    getValue(STORES.miscData, 'userPersona'),
+                    getValue(STORES.miscData, 'fontSize')
+                ]);
+                
+                state.characters = characters || [];
+                state.apiConfig = apiConfig || { url: '', key: '', model: '' };
+                state.createdPresets = createdPresets || [];
+                state.regexScripts = regexScripts || [];
+                state.importedPresetFiles = importedPresetFiles || []; 
+                state.userPersona = userPersona || '';
+                state.fontSize = fontSize || 14;
+
+                const db = await openDB();
+                const transaction = db.transaction(STORES.chatHistories, 'readonly');
+                const store = transaction.objectStore(STORES.chatHistories);
+                const keysReq = store.getAllKeys();
+
+                keysReq.onsuccess = async () => { 
+                    const keys = keysReq.result;
+                    const newChatHistories = {};
+                    let needsSave = false; 
+
+                    keys.forEach((key, index) => {
+                        const history = chatHistoriesArr[index] || [];
+                        
+                        // --- 核心修复逻辑开始 ---
+                        history.forEach(msg => {
+                            // 1. 修复缺失的 ID
+                            if (!msg.id) {
+                                msg.id = generateUUID();
+                                needsSave = true; 
+                            }
+                            // 2. 修复旧的 AI 消息格式 (从 content 迁移到 responses 数组)
+                            if (msg.role === 'assistant') {
+                                if (!msg.responses || !Array.isArray(msg.responses)) {
+                                    // 如果没有 responses 数组，就用 content 创建一个
+                                    msg.responses = [msg.content || ''];
+                                    msg.activeIndex = 0;
+                                    needsSave = true; // 标记需要保存
+                                    console.log('已自动修复一条旧格式消息');
+                                }
+                            }
+                        });
+                        // --- 核心修复逻辑结束 ---
+
+                        newChatHistories[key] = history;
+                    });
+                    
+                    state.chatHistories = newChatHistories;
+
+                    if (needsSave) {
+                        await saveData();
+                        console.log('检测到旧版本数据，已自动修复并保存。');
+                    }
+                };
+
+            } catch (error) {
+                console.error("Failed to load data from IndexedDB:", error);
+            }
+        };
+        
+        // --- UI & Modal Controls ---
+        
+        /**
+         * 【新增】根据 state.fontSize 更新界面
+         */
+        const applyFontSize = () => {
+            const size = state.fontSize;
+            // 更新 CSS 变量
+            DOMElements.messageList.style.setProperty('--chat-font-size', `${size}px`);
+            // 更新滑块的显示位置
+            DOMElements.fontSizeSlider.value = size;
+            // 更新显示的文字
+            DOMElements.fontSizeValue.textContent = `${size}px`;
+        };
+        
+        const toggleSidebar = () => {
+            DOMElements.sidebar.classList.toggle('translate-x-full');
+            DOMElements.overlay.classList.toggle('hidden');
+        };
+
+        const openModal = (modal) => {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            if (window.innerWidth < 1024 && !DOMElements.sidebar.classList.contains('translate-x-full')) {
+                toggleSidebar();
+            }
+        };
+        const closeModal = (modal) => {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        };
+
+        // --- UI Rendering ---
+        const renderModalCharacterList = () => {
+            const { characters } = state;
+            const { modalCharacterListContainer, modalCharacterListPlaceholder } = DOMElements;
+            modalCharacterListPlaceholder.classList.toggle('hidden', characters.length > 0);
+            const itemsContainer = modalCharacterListPlaceholder.parentElement;
+            itemsContainer.innerHTML = '';
+            itemsContainer.appendChild(modalCharacterListPlaceholder);
+
+            characters.forEach(char => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'p-4 cursor-pointer hover:bg-gray-100 transition-colors flex justify-between items-center';
+                itemDiv.dataset.characterId = char.id;
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'font-semibold text-gray-800 truncate';
+                nameSpan.textContent = char.data.name;
+                itemDiv.appendChild(nameSpan);
+
+                // --- VVVVVV 请用下面这段完整的代码替换掉旧的 VVVVVV ---
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'flex items-center space-x-2';
+
+                // 这是新增的编辑按钮
+                const editBtn = document.createElement('button');
+                editBtn.className = 'text-gray-400 hover:text-blue-600 p-1';
+                editBtn.title = '编辑角色';
+                editBtn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>`;
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    openCharacterEditor(char.id); // 点击时调用编辑函数
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'text-red-400 hover:text-red-600 font-bold text-xl px-2';
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.title = '删除角色';
+                deleteBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`确定要删除角色 "${char.data.name}" 吗？`)) {
+                        await deleteCharacter(char.id);
+                        renderModalCharacterList();
+                    }
+                };
+
+                // 注意：这里把编辑和删除按钮都放进了 controlsDiv 这个容器里
+                controlsDiv.appendChild(editBtn);
+                controlsDiv.appendChild(deleteBtn); 
+                
+                // 最后把这个容器添加到列表项中
+                itemDiv.appendChild(controlsDiv); 
+                // --- ^^^^^^ 替换到这里结束 ^^^^^^ ---
+
+                itemDiv.onclick = async () => { // 添加 async
+                    await selectCharacter(char.id); // 添加 await
+                    closeModal(DOMElements.characterListModal);
+                };
+                itemsContainer.insertBefore(itemDiv, modalCharacterListPlaceholder);
+            });
+        };
+        
+        const renderModalPresetList = () => {
+            const { modalPromptListContainer, modalPromptListPlaceholder, presetModalTitle, presetBackBtn } = DOMElements;
+            const { importedPresetFiles, activePresetFileId } = state;
+
+            modalPromptListContainer.innerHTML = ''; // 清空容器
+
+            // 场景一：没有选择任何活动文件，显示文件列表
+            if (!activePresetFileId) {
+                presetModalTitle.textContent = '选择一个预设文件';
+                presetBackBtn.classList.add('hidden'); // 隐藏返回按钮
+
+                if (importedPresetFiles.length === 0) {
+                    modalPromptListPlaceholder.classList.remove('hidden');
+                    modalPromptListContainer.appendChild(modalPromptListPlaceholder);
+                    return;
+                }
+
+                modalPromptListPlaceholder.classList.add('hidden');
+                
+                importedPresetFiles.forEach(presetFile => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'flex items-center justify-between p-4 hover:bg-gray-100 transition-colors';
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'font-semibold text-gray-800 truncate';
+                    nameSpan.textContent = presetFile.name;
+                    
+                    const controlsDiv = document.createElement('div');
+                    controlsDiv.className = 'flex items-center space-x-3';
+
+                    const selectBtn = document.createElement('button');
+                    selectBtn.className = 'bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-lg text-sm';
+                    selectBtn.textContent = '选择';
+                    selectBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        state.activePresetFileId = presetFile.id; // 设置为活动文件
+                        renderModalPresetList(); // 重新渲染以显示详情
+                    };
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'text-red-400 hover:text-red-600 font-bold px-2';
+                    deleteBtn.innerHTML = '&times;';
+                    deleteBtn.title = '删除此文件';
+                    deleteBtn.onclick = async (e) => {
+                        e.stopPropagation();
+                        if (confirm(`确定要删除预设文件 "${presetFile.name}" 吗？`)) {
+                            state.importedPresetFiles = state.importedPresetFiles.filter(pf => pf.id !== presetFile.id);
+                            await saveData();
+                            renderModalPresetList(); // 重新渲染文件列表
+                        }
+                    };
+                    
+                    controlsDiv.append(selectBtn, deleteBtn);
+                    itemDiv.append(nameSpan, controlsDiv);
+                    modalPromptListContainer.appendChild(itemDiv);
+                });
+
+            } 
+            // 场景二：已选择一个活动文件，显示该文件的内容（这是旧函数的逻辑）
+            else {
+                const activeFile = importedPresetFiles.find(pf => pf.id === activePresetFileId);
+                if (!activeFile) {
+                    state.activePresetFileId = null; // 如果找不到文件，重置状态
+                    renderModalPresetList(); // 重新渲染
+                    return;
+                }
+                
+                presetModalTitle.textContent = activeFile.name; // 更新标题为文件名
+                presetBackBtn.classList.remove('hidden'); // 显示返回按钮
+
+                const jsonData = activeFile.data;
+
+                if (!jsonData || !Array.isArray(jsonData.prompts) || !Array.isArray(jsonData.prompt_order)) {
+                    modalPromptListPlaceholder.classList.remove('hidden');
+                    modalPromptListPlaceholder.querySelector('p').textContent = '预设文件格式无效。';
+                    modalPromptListContainer.appendChild(modalPromptListPlaceholder);
+                    return;
+                }
+
+                modalPromptListPlaceholder.classList.add('hidden');
+
+                const promptsMap = new Map(jsonData.prompts.map(p => [p.identifier, p]));
+                const characterOrder = jsonData.prompt_order[jsonData.prompt_order.length - 1];
+
+                if (!characterOrder || !Array.isArray(characterOrder.order)) {
+                     modalPromptListPlaceholder.classList.remove('hidden');
+                     modalPromptListPlaceholder.querySelector('p').textContent = '预设文件中找不到有效的指令顺序。';
+                     modalPromptListContainer.appendChild(modalPromptListPlaceholder);
+                    return;
+                }
+
+                characterOrder.order.forEach(orderItem => {
+                    const promptData = promptsMap.get(orderItem.identifier);
+                    if (!promptData) return;
+                    
+                    const listItem = document.createElement('div');
+                    listItem.className = 'flex items-center justify-between p-3 transition-colors duration-200 hover:bg-gray-100';
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = promptData.name || `未命名 (${orderItem.identifier})`;
+                    nameSpan.className = 'font-medium truncate flex-grow min-w-0 mr-4 text-gray-700';
+                    if (typeof orderItem.enabled !== 'boolean') nameSpan.classList.add('text-gray-400');
+                    
+                    const controls = document.createElement('div');
+                    controls.className = 'flex items-center space-x-3 flex-shrink-0';
+                    const viewBtn = document.createElement('button');
+                    viewBtn.innerHTML = `<svg class="w-5 h-5 text-gray-500 hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>`;
+                    viewBtn.className = 'p-1 rounded-full focus:outline-none';
+                    viewBtn.title = '查看内容';
+                    viewBtn.addEventListener('click', () => {
+                        DOMElements.detailsTitle.textContent = promptData.name || '无标题预设';
+                        DOMElements.detailsContent.textContent = promptData.content || '此预设没有内容。';
+                        openModal(DOMElements.promptDetailsModal);
+                    });
+                    controls.appendChild(viewBtn);
+
+                    // --- 新增：创建编辑按钮 ---
+                    const editBtn = document.createElement('button');
+                    editBtn.innerHTML = `<svg class="w-5 h-5 text-gray-500 hover:text-green-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 25 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>`;
+                    editBtn.className = 'p-1 rounded-full focus:outline-none';
+                    editBtn.title = '编辑内容';
+
+                    editBtn.addEventListener('click', () => {
+                        // 1. 填充弹窗的文本框
+                        DOMElements.editPresetContentInput.value = promptData.content || '';
+
+                        // 2. 将当前预设的ID和文件ID暂存到弹窗上，以便保存时使用
+                        DOMElements.editPresetModal.dataset.fileId = activeFile.id;
+                        DOMElements.editPresetModal.dataset.promptId = promptData.identifier;
+
+                        // 3. 打开编辑弹窗
+                        openModal(DOMElements.editPresetModal);
+                    });
+                    controls.appendChild(editBtn); // 将编辑按钮添加到控制区域
+                    // --- 新增代码结束 ---
+
+                    if (typeof orderItem.enabled === 'boolean') {
+                        const toggleLabel = document.createElement('label');
+                        toggleLabel.className = 'relative inline-flex items-center cursor-pointer';
+                        const toggleInput = document.createElement('input');
+                        toggleInput.type = 'checkbox';
+                        toggleInput.className = 'sr-only peer';
+                        toggleInput.checked = orderItem.enabled;
+                        toggleInput.onchange = async () => { // 添加 async
+                             const itemToUpdate = characterOrder.order.find(item => item.identifier === orderItem.identifier);
+                             if (itemToUpdate) itemToUpdate.enabled = toggleInput.checked;
+                             await saveData(); // --- 新增：当开关状态改变时，立即保存数据
+                        };
+                        const toggleBg = document.createElement('div');
+                        toggleBg.className = "w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500";
+                        toggleLabel.append(toggleInput, toggleBg);
+                        controls.appendChild(toggleLabel);
+                    }
+                    
+                    listItem.append(nameSpan, controls);
+                    modalPromptListContainer.appendChild(listItem);
+                });
+            }
+        };
+
+        const renderRegexList = () => {
+            const { regexListContainer, regexListPlaceholder, regexTesterSection } = DOMElements;
+            const scripts = state.regexScripts || [];
+
+            // 根据是否有脚本来决定是否显示占位符和测试区域
+            regexListPlaceholder.classList.toggle('hidden', scripts.length > 0);
+            regexTesterSection.classList.toggle('hidden', scripts.length === 0);
+            
+            // 清空现有列表，但保留占位符元素
+            regexListContainer.innerHTML = '';
+            regexListContainer.appendChild(regexListPlaceholder);
+
+            scripts.forEach((script, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex items-center justify-between p-2 hover:bg-gray-100 rounded-md';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = script.name || `未命名脚本 ${index + 1}`;
+                nameSpan.className = 'text-sm font-medium text-gray-800 truncate flex-grow';
+
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'flex items-center space-x-2 flex-shrink-0';
+
+                // 启用/禁用开关
+                const toggleLabel = document.createElement('label');
+                toggleLabel.className = 'relative inline-flex items-center cursor-pointer';
+                const toggleInput = document.createElement('input');
+                toggleInput.type = 'checkbox';
+                toggleInput.className = 'sr-only peer';
+                toggleInput.checked = script.enabled;
+                toggleInput.onchange = async () => {
+                    script.enabled = toggleInput.checked;
+                    await saveData(); // 状态变化时保存
+                };
+                const toggleBg = document.createElement('div');
+                toggleBg.className = "w-9 h-5 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500";
+                toggleLabel.append(toggleInput, toggleBg);
+
+                // 删除按钮
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '&times;';
+                deleteBtn.className = 'text-red-400 hover:text-red-600 font-bold text-lg px-1 rounded-full';
+                deleteBtn.title = '删除脚本';
+                deleteBtn.onclick = async () => {
+                    if (confirm(`确定要删除脚本 "${script.name}" 吗？`)) {
+                        state.regexScripts.splice(index, 1);
+                        await saveData();
+                        renderRegexList(); // 重新渲染列表
+                    }
+                };
+
+                controlsDiv.append(toggleLabel, deleteBtn);
+                itemDiv.append(nameSpan, controlsDiv);
+                regexListContainer.insertBefore(itemDiv, regexListPlaceholder);
+            });
+        };
+
+        /**
+         * 【已修复】格式化消息内容，将特定标记替换为带样式的HTML
+         * @param {string} text - 原始消息文本
+         * @returns {string} - 格式化后的HTML字符串
+         */
+        const formatMessageContent = (text) => {
+            // 1. 为了安全，先将文本中的特殊HTML字符转义
+            let processedText = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+
+            // 2. 替换心理活动: *...* -> <span class="thought-text">...</span>
+            processedText = processedText.replace(
+                /\*(.*?)\*/g,
+                '<span class="thought-text">* $1 *</span>'
+            );
+
+            // 3. 【修复核心】分别处理不同类型的引号
+            //    首先，处理英文的半角双引号 "..."
+            processedText = processedText.replace(
+                /"([^"]+)"/g,
+                '<span class="quoted-text">"$1"</span>'
+            );
+            
+            //    然后，处理中文的全角双引号 "..."
+            processedText = processedText.replace(
+                /“([^”]+)”/g,
+                '<span class="quoted-text">"$1"</span>'
+            );
+            
+            // 4. 将换行符 \n 替换为 <br> 标签，以便在HTML中正确显示换行
+            processedText = processedText.replace(/\n/g, '<br>');
+
+            return processedText;
+        };
+        
+        // --- VVVVVV 用下面这个新函数，完整替换掉你原来的 renderChatMessages 函数 VVVVVV ---
+        const renderChatMessages = () => {
+            const { activeCharacterId, chatHistories } = state;
+            const { messageList } = DOMElements;
+            messageList.innerHTML = '';
+            if (!activeCharacterId || !chatHistories[activeCharacterId]) return;
+
+            const history = chatHistories[activeCharacterId];
+
+            history.forEach((msg, index) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `flex items-end gap-2 group ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`;
+                
+                const bubble = document.createElement('div');
+                bubble.className = `chat-bubble p-3 rounded-xl my-1 ${msg.role === 'user' ? 'user-bubble' : 'assistant-bubble'}`;
+
+                const controlsContainer = document.createElement('div');
+                controlsContainer.className = 'flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity';
+
+                if (msg.role === 'user') {
+                    bubble.innerHTML = formatMessageContent(msg.content);
+                } else {
+                    // --- 修复：增加防御性代码，兼容旧数据 ---
+                    // 确保 responses 存在且是数组，否则回退到 content 或空字符串
+                    const responses = (Array.isArray(msg.responses) && msg.responses.length > 0) 
+                        ? msg.responses 
+                        : [msg.content || '']; 
+                    
+                    // 确保 activeIndex 是有效的数字
+                    const safeIndex = (typeof msg.activeIndex === 'number' && msg.activeIndex >= 0 && msg.activeIndex < responses.length)
+                        ? msg.activeIndex
+                        : 0;
+
+                    const activeResponse = responses[safeIndex];
+                    bubble.innerHTML = formatMessageContent(activeResponse);
+                    // --- 修复结束 ---
+
+                    const regenerationControls = document.createElement('div');
+                    regenerationControls.className = 'flex items-center text-xs text-gray-400';
+                    
+                    // 使用安全的 responses 数组长度判断
+                    if (responses.length > 1) {
+                        const prevBtn = document.createElement('button');
+                        prevBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`;
+                        prevBtn.className = 'p-1 hover:text-blue-500';
+                        prevBtn.title = '上一条回复';
+                        prevBtn.dataset.messageId = msg.id;
+                        prevBtn.dataset.action = 'prev-response';
+                        
+                        const counter = document.createElement('span');
+                        counter.textContent = `${safeIndex + 1}/${responses.length}`;
+                        counter.className = 'mx-1 font-mono';
+
+                        const nextBtn = document.createElement('button');
+                        nextBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
+                        nextBtn.className = 'p-1 hover:text-blue-500';
+                        nextBtn.title = '下一条回复';
+                        nextBtn.dataset.messageId = msg.id;
+                        nextBtn.dataset.action = 'next-response';
+                        
+                        regenerationControls.append(prevBtn, counter, nextBtn);
+                    }
+
+                    if (index === history.length - 1) {
+                        const regenerateBtn = document.createElement('button');
+                        regenerateBtn.innerHTML = `<svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>`;
+                        regenerateBtn.className = 'p-1 hover:text-blue-500 ml-1';
+                        regenerateBtn.title = '刷新回复';
+                        regenerateBtn.dataset.messageId = msg.id;
+                        regenerateBtn.dataset.action = 'regenerate';
+                        regenerationControls.appendChild(regenerateBtn);
+                    }
+                    controlsContainer.appendChild(regenerationControls);
+                }
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'p-1 text-gray-400 hover:text-blue-500';
+                editBtn.title = '编辑消息';
+                editBtn.dataset.messageId = msg.id;
+                editBtn.dataset.action = 'edit'; 
+                editBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L16.732 3.732z"></path></svg>`;
+                controlsContainer.appendChild(editBtn);
+
+                if (msg.role === 'user') {
+                    wrapper.appendChild(controlsContainer);
+                    wrapper.appendChild(bubble);
+                } else {
+                    wrapper.appendChild(bubble);
+                    wrapper.appendChild(controlsContainer);
+                }
+
+                messageList.appendChild(wrapper);
+            });
+            messageList.scrollTop = messageList.scrollHeight;
+        };
+        // --- ^^^^^^ 替换到这里结束 ^^^^^^ ---
+        
+        const renderCreatedPresets = () => {
+            const { createdListContainer, createdListPlaceholder } = DOMElements;
+            const presets = state.createdPresets || [];
+
+            // 如果没有预设，显示占位符，否则隐藏
+            createdListPlaceholder.classList.toggle('hidden', presets.length > 0);
+            
+            // 清空现有列表（除了占位符）
+            createdListContainer.innerHTML = '';
+            createdListContainer.appendChild(createdListPlaceholder);
+
+            // 遍历所有创建的预设，并将它们添加到列表中
+            presets.forEach((preset, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'flex items-center justify-between p-3 hover:bg-gray-50';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = preset.title;
+                nameSpan.className = 'font-medium text-gray-700 truncate';
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = '&times;'; // 一个漂亮的 "x" 号
+                deleteBtn.className = 'text-red-400 hover:text-red-600 font-bold text-xl px-2';
+                deleteBtn.title = '删除这个预设';
+
+                // 给删除按钮添加点击功能
+                deleteBtn.onclick = async () => {
+                    if (confirm(`确定要删除预设 "${preset.title}" 吗？`)) {
+                        state.createdPresets.splice(index, 1); // 从数组中移除
+                        await saveData(); // 保存更改
+                        renderCreatedPresets(); // 重新渲染列表
+                    }
+                };
+
+                itemDiv.append(nameSpan, deleteBtn);
+                // 将新创建的条目插入到占位符之前
+                createdListContainer.insertBefore(itemDiv, createdListPlaceholder);
+            });
+        };
+
+        // --- Core Logic ---
+        const generateUUID = () => crypto.randomUUID();
+
+        const addCharacter = async (charData) => {
+            const newCharacter = { ...charData, id: generateUUID() };
+            state.characters.push(newCharacter);
+            if (!state.chatHistories[newCharacter.id]) {
+                state.chatHistories[newCharacter.id] = [];
+            }
+            await saveData();
+            renderModalCharacterList();
+            return newCharacter;
+        };
+
+        const deleteCharacter = async (charId) => {
+            state.characters = state.characters.filter(c => c.id !== charId);
+            delete state.chatHistories[charId];
+
+            // 新增：从IndexedDB中删除
+            await deleteValue(STORES.characters, charId);
+            await deleteValue(STORES.chatHistories, charId);
+
+            if(state.activeCharacterId === charId) {
+                state.activeCharacterId = null;
+                updateChatUI();
+            }
+            await saveData(); // 保留这个是为了保存 activeCharacterId 的变化
+        };
+
+        // --- VVVVVV 用下面这段完整的代码替换掉您原来的 openCharacterEditor 函数 VVVVVV ---
+        /**
+         * Opens the character creator modal in 'edit' mode for a specific character.
+         * @param {string} characterId The ID of the character to edit.
+         */
+        const openCharacterEditor = (characterId) => {
+            const character = state.characters.find(c => c.id === characterId);
+            if (!character) {
+                alert('找不到要编辑的角色！');
+                return;
+            }
+
+            // 1. 设置正在编辑的状态
+            editingCharacterId = character.id;
+
+            // 2. 将角色的数据填充到弹窗的表单里
+            for (const key in DOMElements.charFormInputs) {
+                if (character.data[key]) {
+                    DOMElements.charFormInputs[key].value = character.data[key];
+                }
+            }
+
+            // 3. 修改弹窗的标题和按钮文字，让它看起来像"编辑模式"
+            const modal = DOMElements.characterCreatorModal;
+            modal.querySelector('h2').textContent = '编辑角色卡';
+            DOMElements.saveCharacterBtn.textContent = '保存更改';
+
+            // 4. 关闭角色列表，并打开我们准备好的编辑弹窗
+            closeModal(DOMElements.characterListModal);
+            openModal(DOMElements.characterCreatorModal);
+        };
+        // --- ^^^^^^ 替换到这里结束 ^^^^^^ ---
+        
+        const updateChatUI = () => {
+            const { activeCharacterId, characters } = state;
+            const { welcomeScreen, chatInterface, characterChatName, mainHeaderTitle } = DOMElements;
+            const character = characters.find(c => c.id === activeCharacterId);
+
+            if (character) {
+                welcomeScreen.classList.add('hidden');
+                chatInterface.classList.remove('hidden');
+                characterChatName.textContent = character.data.name;
+                mainHeaderTitle.textContent = `与 ${character.data.name} 聊天中`;
+                renderChatMessages();
+            } else {
+                welcomeScreen.classList.remove('hidden');
+                chatInterface.classList.add('hidden');
+                mainHeaderTitle.textContent = '开始聊天';
+            }
+        };
+
+        const selectCharacter = async (charId) => {
+            state.activeCharacterId = charId;
+            
+            // --- 新增代码开始 ---
+            const character = state.characters.find(c => c.id === charId);
+            const history = state.chatHistories[charId];
+
+            // 检查这是否是一次新的对话（聊天记录为空），并且角色有开场白
+            if (character && history && history.length === 0 && character.data.first_mes) {
+                // 将开场白作为第一条消息添加到聊天记录中，并为其分配ID
+                state.chatHistories[charId].push({
+                    id: generateUUID(), 
+                    role: 'assistant', 
+                    responses: [character.data.first_mes], // <--- 改成 responses 数组
+                    activeIndex: 0
+                });
+            }
+            // --- 新增代码结束 ---
+
+            await saveData();
+            updateChatUI();
+            if (window.innerWidth < 1024) { // Close sidebar on mobile after selection
+                toggleSidebar();
+            }
+        };
+        
+        // --- Event Listeners Setup ---
+        const setupEventListeners = () => {
+            DOMElements.hamburgerBtn.addEventListener('click', toggleSidebar);
+            DOMElements.overlay.addEventListener('click', toggleSidebar);
+            DOMElements.chatForm.addEventListener('submit', handleChatSubmit);
+            
+            // --- VVVVVV 在这里添加滑块的事件监听 VVVVVV ---
+            DOMElements.fontSizeSlider.addEventListener('input', () => {
+                // 1. 从滑块获取新值并更新 state
+                state.fontSize = parseInt(DOMElements.fontSizeSlider.value, 10);
+                // 2. 立即应用新样式到界面
+                applyFontSize();
+                // 3. 保存设置，以便下次打开时生效
+                saveData();
+            });
+            // --- ^^^^^^ 添加到这里结束 ^^^^^^ ---
+
+            // Modal Triggers
+            DOMElements.showApiConfigBtn.addEventListener('click', () => openModal(DOMElements.apiConfigModal));
+            
+            // --- 在这里添加下面的事件监听 ---
+            DOMElements.showSummaryTableBtn.addEventListener('click', renderSummaryTable);
+            DOMElements.saveSummaryChangesBtn.addEventListener('click', handleSaveSummaries);
+            DOMElements.cancelSummaryEditBtn.addEventListener('click', () => closeModal(DOMElements.summaryTableModal));
+            // --- 添加结束 ---
+            
+            // VVVVVVVV 在这里添加下面的代码 VVVVVVVV
+            DOMElements.showUserPersonaBtn.addEventListener('click', () => {
+                // 打开弹窗前，先用 state 中已存的数据填充输入框
+                DOMElements.userPersonaInput.value = state.userPersona || '';
+                openModal(DOMElements.userPersonaModal);
+            });
+            // ^^^^^^^^ 添加到这里结束 ^^^^^^^^
+            
+            // Show Character Creator Button (已修复：重置编辑状态)
+            DOMElements.showCharacterCreatorBtn.addEventListener('click', () => {
+                // 1. 强制设为"新建模式"
+                editingCharacterId = null; 
+
+                // 2. 清空表单里可能残留的内容
+                Object.values(DOMElements.charFormInputs).forEach(input => input.value = '');
+
+                // 3. 还原标题和按钮文字（因为编辑模式会把它们改掉）
+                DOMElements.characterCreatorModal.querySelector('h2').textContent = '创造角色卡';
+                DOMElements.saveCharacterBtn.textContent = '保存角色';
+
+                // 4. 打开弹窗
+                openModal(DOMElements.characterCreatorModal);
+            });
+            DOMElements.showCreatorBtn.addEventListener('click', () => {
+                renderCreatedPresets(); // 在打开前渲染一次列表
+                openModal(DOMElements.creatorModal);
+            });
+            DOMElements.showRegexTesterBtn.addEventListener('click', () => {
+                renderRegexList(); // 在打开前渲染一次
+                openModal(DOMElements.regexTesterModal);
+            });
+            DOMElements.showCharacterListBtn.addEventListener('click', () => {
+                renderModalCharacterList();
+                openModal(DOMElements.characterListModal);
+            });
+            DOMElements.showPresetListBtn.addEventListener('click', () => {
+                renderModalPresetList();
+                openModal(DOMElements.presetListModal);
+            });
+            
+            // --- 新增开始 ---
+            DOMElements.presetBackBtn.addEventListener('click', () => {
+                state.activePresetFileId = null; // 清除活动文件ID
+                renderModalPresetList(); // 重新渲染，此时会显示文件列表
+            });
+            // --- 新增结束 ---
+            
+            // Preset Creator
+            DOMElements.createItemBtn.addEventListener('click', async () => {
+                const title = DOMElements.newItemTitle.value.trim();
+                const content = DOMElements.newItemContent.value.trim();
+
+                if (!title || !content) {
+                    alert('预设标题和内容都不能为空！');
+                    return;
+                }
+
+                // 添加到 state
+                state.createdPresets.push({ title, content });
+                
+                // 保存到 IndexedDB
+                await saveData();
+
+                // 清空输入框
+                DOMElements.newItemTitle.value = '';
+                DOMElements.newItemContent.value = '';
+
+                // 重新渲染列表
+                renderCreatedPresets();
+            });
+
+            DOMElements.exportJsonBtn.addEventListener('click', () => {
+                if (state.createdPresets.length === 0) {
+                    alert('没有可导出的预设。');
+                    return;
+                }
+
+                // --- 修改开始 ---
+                // 1. 初始化 prompts 和 order 数组
+                const prompts = [];
+                const order = [];
+
+                // 2. 遍历您创建的每一个预设
+                state.createdPresets.forEach((preset, index) => {
+                    // 为每个预设创建一个唯一的标识符
+                    const identifier = `created_preset_${index}_${preset.title.slice(0,15).replace(/\s+/g, '_')}`;
+
+                    // 3. 按照"复杂格式"要求，填充 prompts 数组
+                    prompts.push({
+                        identifier: identifier,
+                        name: preset.title,
+                        content: preset.content
+                    });
+
+                    // 4. 同时，填充 order 数组，并默认启用
+                    order.push({
+                        identifier: identifier,
+                        enabled: true
+                    });
+                });
+
+                // 5. 构建最终的、符合导入要求的 JSON 对象
+                const exportData = {
+                    prompts: prompts,
+                    prompt_order: [{
+                        comment: "Exported from local creator",
+                        order: order
+                    }]
+                };
+                
+                // 6. 将这个新的、格式正确的对象转换为 JSON 字符串
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                // --- 修改结束 ---
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'created_presets_fixed.json'; // 文件名可以自己改
+                a.click();
+                URL.revokeObjectURL(url);
+                a.remove();
+            });
+
+            // Close buttons for all modals
+            document.querySelectorAll('[data-close-modal]').forEach(btn => {
+                const modalId = btn.dataset.closeModal;
+                const modal = document.getElementById(modalId);
+                if (modal) btn.addEventListener('click', () => closeModal(modal));
+            });
+
+            // Preset File Input
+            DOMElements.jsonFileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => { // --- 变化：增加了 async
+                    try {
+                        const fileContent = JSON.parse(e.target.result);
+
+                        // --- 新增逻辑开始 ---
+                        // 检查文件是否已存在（根据文件名）
+                        if (state.importedPresetFiles.some(pf => pf.name === file.name)) {
+                            if (!confirm(`名为 "${file.name}" 的预设文件已存在。要覆盖它吗？`)) {
+                                event.target.value = ''; // 重置输入，以便用户可以重新选择相同的文件
+                                return;
+                            }
+                            // 如果用户选择覆盖，则先删除旧的
+                            state.importedPresetFiles = state.importedPresetFiles.filter(pf => pf.name !== file.name);
+                        }
+
+                        // 创建一个新的预设文件对象，包含唯一ID、名称和数据
+                        const newPresetFile = {
+                            id: crypto.randomUUID(), // 使用内置函数生成唯一ID
+                            name: file.name,
+                            data: fileContent
+                        };
+                        
+                        state.importedPresetFiles.push(newPresetFile); // 添加到数组中
+                        await saveData(); // 保存到 IndexedDB
+                        // --- 新增逻辑结束 ---
+
+                        renderModalPresetList(); // 重新渲染弹窗
+                        openModal(DOMElements.presetListModal);
+                    } catch (error) {
+                        alert(`文件解析失败: ${error.message}`);
+                    }
+                };
+                reader.readAsText(file);
+                event.target.value = '';
+            });
+            
+             // Character File Input
+            DOMElements.characterFileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => { // 添加 async
+                    try {
+                        const charData = JSON.parse(e.target.result);
+                        if (charData.spec === 'chara_card_v2' && charData.data.name) {
+                            await addCharacter(charData); // 添加 await
+                        } else {
+                            alert('无效的角色卡文件格式。');
+                        }
+                    } catch (error) {
+                        alert(`文件读取失败: ${error.message}`);
+                    }
+                };
+                reader.readAsText(file);
+                event.target.value = ''; // Reset file input
+            });
+            
+            // Regex File Input - 更新后，兼容两种格式
+            DOMElements.regexFileInput.addEventListener('change', (event) => {
+                const files = event.target.files;
+                if (!files.length) return;
+
+                const readPromises = Array.from(files).map(file => {
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                const parsedJson = JSON.parse(e.target.result);
+                                let processedScripts = [];
+
+                                // 新增：检查导入的是对象还是数组
+                                if (Array.isArray(parsedJson)) {
+                                    // 格式1：处理数组格式（旧格式）
+                                    processedScripts = parsedJson.map(script => ({
+                                        name: script.name || '未命名',
+                                        find: script.find || '',
+                                        replace: script.replace || '',
+                                        enabled: script.enabled !== false // 默认为true
+                                    }));
+                                } else if (typeof parsedJson === 'object' && parsedJson !== null) {
+                                    // 格式2：处理单一对象格式（新格式）
+                                    const script = parsedJson;
+                                    processedScripts.push({
+                                        name: script.scriptName || '未命名',
+                                        find: script.findRegex || '',
+                                        replace: script.replaceString || '',
+                                        enabled: !script.disabled // 注意：disabled 和 enabled 逻辑相反
+                                    });
+                                } else {
+                                    // 格式错误
+                                    reject(new Error(`文件 ${file.name} 的内容既不是有效的数组，也不是有效的对象。`));
+                                    return;
+                                }
+                                resolve(processedScripts);
+
+                            } catch (error) {
+                                reject(new Error(`解析文件 ${file.name} 失败: ${error.message}`));
+                            }
+                        };
+                        reader.onerror = () => reject(new Error(`读取文件 ${file.name} 出错。`));
+                        reader.readAsText(file);
+                    });
+                });
+
+                Promise.all(readPromises)
+                    .then(results => {
+                        // 将所有文件的脚本合并成一个平坦的数组
+                        const allNewScripts = results.flat();
+                        if (allNewScripts.length > 0) {
+                           state.regexScripts.push(...allNewScripts);
+                           saveData();
+                           renderRegexList();
+                           alert(`成功导入 ${allNewScripts.length} 个新脚本！`);
+                        }
+                    })
+                    .catch(error => {
+                        alert(error.message);
+                    });
+
+                event.target.value = ''; // 重置文件输入
+            });
+
+            // Character Creator Save Button (已修复：支持编辑和新建)
+            DOMElements.saveCharacterBtn.addEventListener('click', async () => {
+                const charData = {
+                    spec: "chara_card_v2",
+                    spec_version: "2.0",
+                    data: Object.fromEntries(
+                        Object.entries(DOMElements.charFormInputs).map(([key, input]) => [key, input.value.trim()])
+                    )
+                };
+
+                if (!charData.data.name) {
+                    alert('角色名称不能为空！');
+                    return;
+                }
+
+                // --- 核心修改逻辑开始 ---
+                if (editingCharacterId) {
+                    // 如果 editingCharacterId 有值，说明是在【编辑】现有角色
+                    const charIndex = state.characters.findIndex(c => c.id === editingCharacterId);
+                    
+                    if (charIndex !== -1) {
+                        // 1. 只更新 data 部分，保持原来的 ID 不变
+                        state.characters[charIndex].data = charData.data;
+                        
+                        // 2. 如果当前正在聊天的就是这个角色，还要实时更新聊天界面的名字
+                        if (state.activeCharacterId === editingCharacterId) {
+                            DOMElements.characterChatName.textContent = charData.data.name;
+                            DOMElements.mainHeaderTitle.textContent = `与 ${charData.data.name} 聊天中`;
+                        }
+
+                        // 3. 保存并刷新
+                        await saveData();
+                        renderModalCharacterList(); // 刷新列表以显示新名字
+                        alert(`角色 "${charData.data.name}" 更新成功！`);
+                    }
+                    
+                    // 编辑完成后，重置编辑状态
+                    editingCharacterId = null; 
+                } else {
+                    // 如果没有 editingCharacterId，说明是在【新建】角色
+                    await addCharacter(charData);
+                    alert(`角色 "${charData.data.name}" 已创建！`);
+                }
+                // --- 核心修改逻辑结束 ---
+
+                // 清空表单并关闭弹窗
+                Object.values(DOMElements.charFormInputs).forEach(input => input.value = '');
+                closeModal(DOMElements.characterCreatorModal);
+            });
+
+            DOMElements.exportCharacterBtn.addEventListener('click', () => {
+                 const charData = {
+                    spec: "chara_card_v2",
+                    spec_version: "2.0",
+                    data: Object.fromEntries(
+                        Object.entries(DOMElements.charFormInputs).map(([key, input]) => [key, input.value.trim()])
+                    )
+                };
+                if (!charData.data.name) {
+                    alert('角色名称不能为空！');
+                    return;
+                }
+                const blob = new Blob([JSON.stringify(charData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${charData.data.name || 'character'}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            a.remove();
+            });
+            
+            // VVVVVVVV 在这里添加下面的代码 VVVVVVVV
+            // User Persona
+            DOMElements.saveUserPersonaBtn.addEventListener('click', async () => {
+                state.userPersona = DOMElements.userPersonaInput.value.trim();
+                await saveData();
+                alert('用户人设已成功保存！');
+                closeModal(DOMElements.userPersonaModal);
+            });
+            // ^^^^^^^^ 添加到这里结束 ^^^^^^^^
+
+            // API Config
+            DOMElements.fetchModelsBtn.addEventListener('click', fetchModels);
+            DOMElements.saveApiConfigBtn.addEventListener('click', saveApiConfig);
+            
+            // --- 编辑消息逻辑 ---
+            // 1. 监听整个消息列表的点击事件
+            // --- VVVVVV 用下面这个新的事件监听器，替换掉你原来 messageList 的那个 VVVVVV ---
+            DOMElements.messageList.addEventListener('click', async (e) => {
+                const button = e.target.closest('button[data-action]');
+                if (!button) return;
+
+                const messageId = button.dataset.messageId;
+                const action = button.dataset.action;
+                const characterId = state.activeCharacterId;
+                const history = state.chatHistories[characterId];
+                
+                const messageToModify = history?.find(m => m.id === messageId);
+                if (!messageToModify) return;
+
+                switch (action) {
+                    case 'edit':
+                        // 这是旧的编辑逻辑
+                        DOMElements.editMessageInput.value = (messageToModify.role === 'user')
+                            ? messageToModify.content
+                            : messageToModify.responses[messageToModify.activeIndex];
+                        DOMElements.editMessageModal.dataset.editingId = messageId;
+                        openModal(DOMElements.editMessageModal);
+                        break;
+                    
+                    case 'regenerate':
+                        // 调用我们新创建的刷新函数
+                        await handleRegenerate();
+                        break;
+                        
+                    case 'prev-response':
+                        // 处理"上一条"
+                        if (messageToModify.activeIndex > 0) {
+                            messageToModify.activeIndex--;
+                            await saveData();
+                            renderChatMessages();
+                        }
+                        break;
+                        
+                    case 'next-response':
+                        // 处理"下一条"
+                        if (messageToModify.activeIndex < messageToModify.responses.length - 1) {
+                            messageToModify.activeIndex++;
+                            await saveData();
+                            renderChatMessages();
+                        }
+                        break;
+                }
+            });
+            // --- ^^^^^^ 替换到这里结束 ^^^^^^ ---
+
+            // 2. 为"保存"按钮添加点击事件
+            DOMElements.saveEditBtn.addEventListener('click', async () => {
+                const messageId = DOMElements.editMessageModal.dataset.editingId;
+                const characterId = state.activeCharacterId;
+                const rawContent = DOMElements.editMessageInput.value; // 1. 先获取原始的、未处理的文本
+
+                // 2. 在这里，使用和AI回复时相同的正则表达式，清除<thinking>标签
+                const cleanedContent = rawContent.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+
+                // 3. 使用清理后的内容进行后续操作
+                if (!messageId || !characterId || cleanedContent === '') return;
+
+                // 在state中找到并更新消息
+                const messageToUpdate = state.chatHistories[characterId].find(m => m.id === messageId);
+                if (messageToUpdate) {
+                    // 兼容新旧数据结构
+                    if (messageToUpdate.role === 'user') {
+                        messageToUpdate.content = cleanedContent; // 更新用户消息
+                    } else {
+                        // 更新AI当前激活的回复
+                        messageToUpdate.responses[messageToUpdate.activeIndex] = cleanedContent;
+                    }
+                }
+
+                // 保存到数据库并刷新UI
+                await saveData();
+                renderChatMessages();
+                closeModal(DOMElements.editMessageModal);
+            });
+
+            // 3. 为"取消"按钮添加点击事件
+            DOMElements.cancelEditBtn.addEventListener('click', () => {
+                closeModal(DOMElements.editMessageModal);
+            });
+            
+            // --- 新增：编辑预设逻辑 ---
+            // 1. 为"保存更改"按钮添加点击事件
+            DOMElements.savePresetEditBtn.addEventListener('click', async () => {
+                const fileId = DOMElements.editPresetModal.dataset.fileId;
+                const promptId = DOMElements.editPresetModal.dataset.promptId;
+                const newContent = DOMElements.editPresetContentInput.value;
+
+                if (!fileId || !promptId) {
+                    alert('发生错误，无法找到要保存的预设。');
+                    return;
+                }
+
+                // 在 state 中找到对应的文件和预设
+                const targetFile = state.importedPresetFiles.find(f => f.id === fileId);
+                if (targetFile) {
+                    const targetPrompt = targetFile.data.prompts.find(p => p.identifier === promptId);
+                    if (targetPrompt) {
+                        // 更新内容
+                        targetPrompt.content = newContent;
+                    }
+                }
+
+                // 保存到数据库
+                await saveData();
+                
+                // 关闭弹窗
+                closeModal(DOMElements.editPresetModal);
+                
+                // 可选：给用户一个成功的提示
+                alert('预设内容已成功更新！');
+            });
+
+            // 2. 为"取消"按钮添加点击事件
+            DOMElements.cancelPresetEditBtn.addEventListener('click', () => {
+                closeModal(DOMElements.editPresetModal);
+            });
+            
+            // ====================== 【新增】为状态面板按钮添加事件监听 ======================
+            DOMElements.showCharacterStatusBtn.addEventListener('click', renderCharacterStatusTable);
+            DOMElements.saveStatusChangesBtn.addEventListener('click', handleSaveCharacterStatus);
+            DOMElements.cancelStatusEditBtn.addEventListener('click', () => closeModal(DOMElements.characterStatusModal));
+            DOMElements.addNpcBtn.addEventListener('click', handleAddNpcRow);
+        };
+        
+        // ====================== 【新增】角色状态表核心功能 ======================
+
+const STATUS_FIELDS = {
+    name: '姓名',
+    social_relations: '社会关系',
+    health_status: '健康状态',
+    location: '地点',
+    attire: '衣着',
+    relation_to_user: '和User的关系',
+    is_dead: '是否死亡',
+    personality: '性格',
+    favorability: '对User好感度'
+};
+
+/**
+ * 【已修改】创建一个包含可编辑表格行的数组
+ * @param {object} data - 角色或NPC的数据
+ * @param {boolean} isNpc - 是否是NPC
+ * @returns {HTMLTableRowElement[]} - 返回一个包含所有 <tr> 元素的数组
+ */
+function createStatusTableBody(data, isNpc = false) {
+    const rows = []; // 初始化一个空数组来存储行
+
+    for (const key in STATUS_FIELDS) {
+        const tr = document.createElement('tr');
+        
+        const th = document.createElement('th');
+        th.className = 'px-4 py-3 text-left text-sm font-semibold text-gray-800 bg-gray-50 border-r w-1/4';
+        th.textContent = STATUS_FIELDS[key];
+        
+        const td = document.createElement('td');
+        td.className = 'px-4 py-3 text-sm text-gray-700';
+        td.setAttribute('contenteditable', 'true');
+        td.dataset.field = key;
+        td.textContent = data[key] ?? '';
+        
+        tr.append(th, td);
+        rows.push(tr); // 将创建好的行添加到数组中
+    }
+    
+    // 如果是NPC，添加删除按钮行
+    if (isNpc) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 2;
+        td.className = 'p-2 text-right bg-gray-50';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'text-red-500 hover:text-red-700 text-xs font-bold py-1 px-2 rounded';
+        deleteBtn.textContent = '删除此 NPC';
+        deleteBtn.onclick = (e) => { // 给事件对象e，方便找到父元素
+            if (confirm(`确定要删除 NPC "${data.name || '未命名'}" 吗？`)) {
+                // 通过按钮找到它所在的整个table并移除
+                e.target.closest('.npc-status-table').remove();
+            }
+        };
+        td.appendChild(deleteBtn);
+        tr.appendChild(td);
+        rows.push(tr); // 将删除行也添加到数组中
+    }
+    
+    return rows; // 返回包含所有行的数组
+}
+
+
+/**
+ * 【已修改】渲染角色状态表格
+ */
+const renderCharacterStatusTable = async () => {
+    const characterId = state.activeCharacterId;
+    if (!characterId) return;
+
+    let statusData = await getValue(STORES.characterStates, characterId);
+    
+    const { characterStatusContainer, characterStatusPlaceholder } = DOMElements;
+    characterStatusContainer.innerHTML = ''; 
+
+    if (!statusData) {
+        const character = state.characters.find(c => c.id === characterId);
+        statusData = {
+            characterId: characterId,
+            main_char: { name: character.data.name, is_dead: false },
+            npcs: []
+        };
+        characterStatusPlaceholder.style.display = 'block';
+        characterStatusContainer.appendChild(characterStatusPlaceholder);
+    } else {
+        characterStatusPlaceholder.style.display = 'none';
+    }
+
+    // --- 创建主角色表格 ---
+    const mainCharTable = document.createElement('table');
+    mainCharTable.id = 'main-char-status-table';
+    mainCharTable.className = 'min-w-full divide-y divide-gray-200 border mb-8';
+    mainCharTable.innerHTML = `<thead class="bg-blue-100"><tr class="border-b-2 border-blue-300"><th colspan="2" class="p-3 text-lg font-bold text-blue-800">主角色状态：${statusData.main_char.name || ''}</th></tr></thead>`;
+    
+    // 1. 创建一个干净的 tbody
+    const mainTbody = document.createElement('tbody');
+    mainTbody.className = 'bg-white divide-y divide-gray-200';
+    // 2. 获取所有行
+    const mainRows = createStatusTableBody(statusData.main_char);
+    // 3. 将所有行添加到 tbody 中
+    mainTbody.append(...mainRows);
+    mainCharTable.appendChild(mainTbody);
+    characterStatusContainer.appendChild(mainCharTable);
+    
+    // --- 为每个NPC创建表格 ---
+    statusData.npcs.forEach(npc => {
+        const npcTable = document.createElement('table');
+        npcTable.className = 'npc-status-table min-w-full divide-y divide-gray-200 border mb-6';
+        // 为整个table元素附加npc-id，方便删除
+        npcTable.dataset.npcId = npc.id || generateUUID(); 
+
+        npcTable.innerHTML = `<thead class="bg-indigo-100"><tr class="border-b-2 border-indigo-300"><th colspan="2" class="p-3 text-lg font-bold text-indigo-800">NPC 状态</th></tr></thead>`;
+        
+        const npcTbody = document.createElement('tbody');
+        npcTbody.className = 'bg-white divide-y divide-gray-200';
+        const npcRows = createStatusTableBody(npc, true);
+        npcTbody.append(...npcRows);
+        npcTable.appendChild(npcTbody);
+        
+        characterStatusContainer.appendChild(npcTable);
+    });
+
+    openModal(DOMElements.characterStatusModal);
+};
+
+/**
+ * 处理"添加NPC"按钮点击事件
+ */
+const handleAddNpcRow = () => {
+    const { characterStatusContainer } = DOMElements;
+    const defaultNpcData = { id: generateUUID(), name: "新NPC", is_dead: false };
+
+    const npcTable = document.createElement('table');
+    npcTable.className = 'npc-status-table min-w-full divide-y divide-gray-200 border mb-6';
+    npcTable.innerHTML = `<thead class="bg-indigo-100"><tr class="border-b-2 border-indigo-300"><th colspan="2" class="p-3 text-lg font-bold text-indigo-800">NPC 状态</th></tr></thead>`;
+    npcTable.appendChild(createStatusTableBody(defaultNpcData, true));
+    
+    characterStatusContainer.appendChild(npcTable);
+    DOMElements.characterStatusPlaceholder.style.display = 'none';
+};
+
+
+/**
+ * 【已修改】保存对状态表的所有更改
+ */
+const handleSaveCharacterStatus = async () => {
+    const characterId = state.activeCharacterId;
+    if (!characterId) return;
+
+    const mainCharTable = document.getElementById('main-char-status-table');
+    const npcTables = document.querySelectorAll('.npc-status-table');
+
+    const newStatusData = {
+        characterId: characterId,
+        main_char: {},
+        npcs: []
+    };
+    
+    // 读取主角色数据
+    if (mainCharTable) {
+        mainCharTable.querySelectorAll('td[data-field]').forEach(td => {
+            const key = td.dataset.field;
+            newStatusData.main_char[key] = td.textContent.trim();
+        });
+    }
+
+    // 读取所有NPC数据
+    npcTables.forEach(table => {
+        const npcData = {};
+        // 从 table 元素本身读取 npcId
+        npcData.id = table.dataset.npcId; 
+        
+        // 直接从 table 中查找所有带 data-field 的单元格
+        table.querySelectorAll('td[data-field]').forEach(td => {
+            const key = td.dataset.field;
+            npcData[key] = td.textContent.trim();
+        });
+        newStatusData.npcs.push(npcData);
+    });
+    
+    try {
+        await addValue(STORES.characterStates, newStatusData);
+        alert('角色状态已成功保存！');
+        closeModal(DOMElements.characterStatusModal);
+    } catch (error) {
+        console.error('保存角色状态失败:', error);
+        alert('保存失败，请查看控制台获取错误信息。');
+    }
+};
+
+// ====================== 【新增功能结束】 ======================
+
+        // ====================== 新增：总结表格核心功能 ======================
+
+/**
+ * 解析 summary 的原始内容字符串，提取出各个部分
+ * @param {string} content - 数据库中存储的原始 summary 内容
+ * @returns {object} - 包含 time, char, tag, thing, details 的对象
+ */
+function parseSummaryContent(content) {
+    const parsed = { time: '', char: '', tag: '', thing: '', details: '' };
+
+    // 使用正则表达式匹配 <summary> 块内的内容
+    const summaryBlockMatch = content.match(/<summary>([\s\S]*?)<\/summary>/);
+
+    if (summaryBlockMatch && summaryBlockMatch[1]) {
+        const block = summaryBlockMatch[1];
+        // 逐行匹配，如果某一行不存在，则返回空字符串，避免出错
+        parsed.time = (block.match(/- time：(.*?)(?:\n|$)/i) || ['', ''])[1].trim();
+        parsed.char = (block.match(/- char：(.*?)(?:\n|$)/i) || ['', ''])[1].trim();
+        parsed.tag = (block.match(/- tag：([\s\S]*?)(?=- thing：|\n<\/summary>)/i) || ['', ''])[1].trim();
+        parsed.thing = (block.match(/- thing：(.*?)(?:\n|$)/i) || ['', ''])[1].trim();
+
+        // <summary> 块之外的所有内容都视为详细描述
+        parsed.details = content.replace(/<summary>[\s\S]*?<\/summary>/, '').trim();
+    } else {
+        // 如果格式不正确，或没有 <summary> 标签，则将全部内容视为 details
+        // 这样可以兼容旧的或损坏的数据，并允许用户在表格中修复它
+        parsed.details = content;
+    }
+    return parsed;
+}
+
+/**
+ * 渲染指定角色的总结数据表格
+ */
+/**
+ * 渲染指定角色的总结数据表格 (已优化：手机端卡片式布局)
+ */
+const renderSummaryTable = async () => {
+    const characterId = state.activeCharacterId;
+    if (!characterId) return;
+
+    const db = await openDB();
+    const transaction = db.transaction(STORES.summaries, 'readonly');
+    const store = transaction.objectStore(STORES.summaries);
+    const index = store.index('characterId');
+    const allSummaries = await new Promise((resolve, reject) => {
+        const request = index.getAll(characterId);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+
+    const { summaryTableContainer, summaryTablePlaceholder } = DOMElements;
+
+    if (!allSummaries || allSummaries.length === 0) {
+        summaryTableContainer.innerHTML = '';
+        summaryTablePlaceholder.style.display = 'block';
+        summaryTableContainer.appendChild(summaryTablePlaceholder);
+    } else {
+        summaryTablePlaceholder.style.display = 'none';
+
+        const table = document.createElement('table');
+        // --- 变化1: 添加 mobile-card-table 类名 ---
+        table.className = 'min-w-full divide-y divide-gray-200 border mobile-card-table';
+        
+        table.innerHTML = `
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r w-32">Time</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r w-32">Characters</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r">Thing</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r">Tags</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r">Details</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">操作</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200"></tbody>
+        `;
+
+        const tbody = table.querySelector('tbody');
+        
+        tbody.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target.classList.contains('toggle-subtags')) {
+                const subTagsContainer = target.nextElementSibling;
+                if (subTagsContainer && subTagsContainer.classList.contains('sub-tags')) {
+                    const isHidden = subTagsContainer.style.display === 'none';
+                    if (isHidden) {
+                        subTagsContainer.style.display = 'block'; 
+                        target.textContent = '[-]';
+                    } else {
+                        subTagsContainer.style.display = 'none'; 
+                        target.textContent = '[+]';
+                    }
+                }
+            }
+        });
+
+        allSummaries.forEach(summary => {
+            const parsed = parseSummaryContent(summary.content);
+            const tr = document.createElement('tr');
+            tr.dataset.summaryId = summary.id;
+            
+            // --- Tags 单元格 ---
+            const tagCell = document.createElement('td');
+            tagCell.className = 'px-4 py-3 text-sm text-gray-700 border-r align-top';
+            tagCell.setAttribute('data-label', 'Tags'); // --- 变化2: 添加 data-label ---
+
+            const tagLines = parsed.tag.split('\n').map(line => line.trim()).filter(Boolean);
+
+            tagLines.forEach(line => {
+                const parts = line.split(/\s*-\s*/, 2); 
+                const mainTag = parts[0];
+                const subTags = parts.length > 1 ? parts[1].split(/,|、/).map(t => t.trim()).filter(Boolean) : [];
+
+                if (!mainTag) return; 
+
+                const groupContainer = document.createElement('div');
+                groupContainer.className = 'tag-group mb-1';
+
+                const mainTagSpan = document.createElement('span');
+                mainTagSpan.className = 'main-tag font-semibold text-blue-700'; // 加了个颜色更好看
+                mainTagSpan.textContent = mainTag;
+                mainTagSpan.setAttribute('contenteditable', 'true');
+                groupContainer.appendChild(mainTagSpan);
+
+                if (subTags.length > 0) {
+                    const toggleBtn = document.createElement('span');
+                    toggleBtn.className = 'toggle-subtags text-gray-400 ml-1 cursor-pointer select-none';
+                    toggleBtn.textContent = '[+]'; 
+                    groupContainer.appendChild(toggleBtn);
+
+                    const subTagsContainer = document.createElement('div');
+                    subTagsContainer.className = 'sub-tags text-gray-600 pl-4 mt-1 border-l-2 border-gray-200'; // 样式优化
+                    subTagsContainer.style.display = 'none'; 
+
+                    const subTagsContent = document.createElement('span');
+                    subTagsContent.textContent = subTags.join(', ');
+                    subTagsContent.setAttribute('contenteditable', 'true');
+
+                    subTagsContainer.appendChild(subTagsContent);
+                    groupContainer.appendChild(subTagsContainer);
+                }
+                
+                tagCell.appendChild(groupContainer);
+            });
+            
+            // --- Time 单元格 ---
+            const timeCell = document.createElement('td');
+            timeCell.className = 'px-4 py-3 text-sm text-gray-700 border-r align-top';
+            timeCell.setAttribute('contenteditable', 'true');
+            timeCell.setAttribute('data-label', 'Time'); // --- 变化2: 添加 data-label ---
+            timeCell.textContent = parsed.time;
+
+            // --- Characters 单元格 ---
+            const charCell = document.createElement('td');
+            charCell.className = 'px-4 py-3 text-sm text-gray-700 border-r align-top';
+            charCell.setAttribute('contenteditable', 'true');
+            charCell.setAttribute('data-label', 'Characters'); // --- 变化2: 添加 data-label ---
+            charCell.textContent = parsed.char;
+
+            // --- Thing 单元格 ---
+            const thingCell = document.createElement('td');
+            thingCell.className = 'px-4 py-3 text-sm text-gray-700 border-r align-top';
+            thingCell.setAttribute('contenteditable', 'true');
+            thingCell.setAttribute('data-label', 'Thing'); // --- 变化2: 添加 data-label ---
+            thingCell.textContent = parsed.thing;
+
+            // --- Details 单元格 ---
+            const detailsCell = document.createElement('td');
+            detailsCell.className = 'px-4 py-3 text-sm text-gray-700 border-r align-top';
+            detailsCell.setAttribute('contenteditable', 'true');
+            detailsCell.setAttribute('data-label', 'Details'); // --- 变化2: 添加 data-label ---
+            detailsCell.style.minWidth = '300px'; // 保持桌面端宽度
+            // 手机端 CSS 会覆盖 width 为 100%
+            detailsCell.textContent = parsed.details;
+
+            // 组装行 (注意：在手机上我们会用 Flex-col 垂直排列这些格子)
+            tr.appendChild(timeCell);
+            tr.appendChild(charCell);
+            tr.appendChild(tagCell); // 调整顺序：把 Tag 放在 Thing 前面可能更好看，这里保持原样
+            tr.appendChild(thingCell);
+            tr.appendChild(detailsCell);
+
+            // --- 操作单元格 ---
+            const actionCell = document.createElement('td');
+            actionCell.className = 'px-4 py-3 text-sm text-center align-top';
+            actionCell.setAttribute('data-label', 'Actions'); // --- 变化2: 添加 data-label ---
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'text-red-500 hover:text-white hover:bg-red-500 font-bold py-1 px-3 rounded transition-colors w-full md:w-auto border border-red-500 md:border-none'; // 手机上按钮大一点
+            deleteBtn.textContent = '删除';
+            deleteBtn.onclick = () => handleDeleteSummary(summary.id);
+
+            actionCell.appendChild(deleteBtn);
+            tr.appendChild(actionCell);
+
+            tbody.appendChild(tr);
+        });
+
+        summaryTableContainer.innerHTML = '';
+        summaryTableContainer.appendChild(table);
+    }
+
+    openModal(DOMElements.summaryTableModal);
+};
+
+/**
+ * 处理保存总结表格的更改
+ */
+const handleSaveSummaries = async () => {
+    const characterId = state.activeCharacterId;
+    if (!characterId) return;
+
+    const table = DOMElements.summaryTableContainer.querySelector('table');
+    if (!table) return;
+
+    const rows = table.querySelectorAll('tbody tr');
+    let updatesCount = 0;
+
+    for (const row of rows) {
+        const summaryId = row.dataset.summaryId;
+        if (!summaryId) continue;
+
+        const cells = row.querySelectorAll('td');
+        const time = cells[0].textContent.trim();
+        const char = cells[1].textContent.trim();
+        const thing = cells[2].textContent.trim();
+        const details = cells[4].textContent.trim();
+        
+        // (*** 核心修改：从新的HTML结构中重建tag字符串 ***)
+        const tagGroups = cells[3].querySelectorAll('.tag-group');
+        const allTags = [];
+        tagGroups.forEach(group => {
+            const mainTag = group.querySelector('.main-tag')?.textContent.trim();
+            if (mainTag) {
+                allTags.push(mainTag);
+            }
+            const subTagsSpan = group.querySelector('.sub-tags span');
+            if (subTagsSpan) {
+                const subTags = subTagsSpan.textContent.trim().split(/,|、/).map(t => t.trim()).filter(Boolean);
+                allTags.push(...subTags);
+            }
+        });
+        const tag = allTags.join(', ');
+        // (*** 修改结束 ***)
+
+        const reconstructedContent = `<summary>
+- time：${time}
+- char：${char}
+- tag：${tag}
+- thing：${thing}
+</summary>
+${details}`;
+        
+        const originalSummary = await getValue(STORES.summaries, summaryId);
+        if (originalSummary) {
+            originalSummary.content = reconstructedContent;
+            await addValue(STORES.summaries, originalSummary); 
+            updatesCount++;
+        }
+    }
+    
+    alert(`成功保存了 ${updatesCount} 条总结的更改！`);
+    closeModal(DOMElements.summaryTableModal);
+};
+
+/**
+ * 处理删除单条总结记录
+ * @param {string} summaryId - 要删除的总结的ID
+ */
+const handleDeleteSummary = async (summaryId) => {
+    // 弹出确认框，防止误操作
+    if (!confirm('您确定要永久删除这条总结吗？此操作无法撤销。')) {
+        return; // 如果用户点击"取消"，则不执行任何操作
+    }
+
+    try {
+        // 调用数据库帮助函数来删除指定ID的记录
+        await deleteValue(STORES.summaries, summaryId);
+        
+        // 为了在界面上立刻看到变化，我们重新渲染整个表格
+        // 这是最简单且能保证数据同步的方法
+        await renderSummaryTable();
+
+    } catch (error) {
+        console.error(`删除总结失败 (ID: ${summaryId}):`, error);
+        alert('删除总结失败，请查看控制台获取更多信息。');
+    }
+};
+
+// ====================== 新增功能结束 ======================
+
+        // ====================== 新增：总结与检索核心功能 ======================
+        /**
+         * 检查对话历史，如果需要，则触发总结流程
+         * @param {string} characterId - 当前角色ID
+         */
+        // --- VVVVVV 用下面这个精简后的新版本，替换掉你原来的 triggerSummaryIfNeeded 函数 VVVVVV ---
+        /**
+         * 为指定的角色生成上一轮对话的总结
+         * @param {string} characterId - 当前角色ID
+         */
+        const triggerSummaryIfNeeded = async (characterId) => {
+            const history = state.chatHistories[characterId];
+            // 我们不再需要检查长度或是否是偶数，因为这些逻辑已经在 handleChatSubmit 中处理了
+            if (!history || history.length < 2) {
+                return; // 如果历史记录不足，直接返回
+            }
+
+            console.log(`为最近的两条消息生成总结...`);
+            
+            // 截取最近的2条消息用于总结 (这正好是上一轮的 User -> Assistant 对话)
+            const messagesToSummarize = history.slice(-2);
+            
+            const conversationText = messagesToSummarize.map(msg => {
+                const content = msg.role === 'user' 
+                    ? msg.content 
+                    : msg.responses[msg.activeIndex];
+                return `${msg.role}: ${content}`;
+            }).join('\n');
+
+            // 构建一个专门用于请求总结的prompt
+            const summaryPrompt = `
+You are a meticulous dialogue analyst and a structured data creator. Your task is to analyze the following conversation snippet and create a summary with extremely strict formatting rules.
+
+**CRITICAL RULES TO FOLLOW:**
+1.  The 'time' and 'tag' fields inside the <summary> block MUST be written **exclusively in Chinese**.
+2.  The 'tag' field MUST contain **exactly 5 main tags**. Each main tag MUST be followed by its sub-tags in the format: "主标签 - 副标签1, 副标签2, ...". Each main tag group must be on a new line.
+3.  Your entire response structure must match the provided PERFECT output example EXACTLY.
+4.  DO NOT use out-of-world terms like "user", "player", "assistant", "AI", "character", or "bot".
+
+Conversation:
+${conversationText}
+
+Now, generate the summary.
+
+You MUST strictly follow this output format. Your entire response MUST start with "<summary>" and end with "</summary>", followed by the detailed summary. Do not add any other text, greetings, or explanations before or after this structure.
+
+The format inside the block is:
+<summary>
+- time：{{**必须是纯中文**。如果对话中未提及时间，请结合剧情语境**自行编造**一个合理的具体日期（如：2025年5月20日）。**严禁使用** "20xx年"、"某年某月" 或 "20xx年冬季" 这样的格式。}}
+- char：{{列出这段对话中涉及的所有角色的名字或身份。}}
+- tag：{{
+**必须遵循以下4个步骤生成，且必须是纯中文**：
+第一步：从对话中提炼出不多不少，正好5个核心的事件记录作为主标签。
+第二步：每个主标签必须清晰地包含【时间】、【地点】和【事件简括】。其中【时间】部分**必须**和顶层的 '- time:' 字段一样精准，包含完整的年月日和具体时段（如早晨、傍晚、下午等）。将这三者组合成一个通顺的短语。
+    - 例如："2025年9月19日晚间，在炼金工坊，目睹了实验爆炸"。
+第三步：生成副标签时，你需要组合以下两类关键词：
+    1. 从主标签的【事件简括】部分，提炼出核心事件关键词（如：爆炸、安慰、计划）。
+    2. 从主标签的【时间】部分，**只提取**具体的月和日信息（如：9月19日, 九月十九日）。**绝对不要**将"年份"、"傍晚"、"下午"这类模糊或抽象的时间词作为副标签。
+第四步：严格按照 "主标签 - 副标签1, 副标签2, ..." 的格式排列。每个主标签及其副标签占独立的一行。
+}}
+- thing：{{用100字以内精炼地总结所有事件、对话、行动和心理变化。}}
+</summary>
+After the </summary> block, provide a comprehensive and compact summary of all events, actions, psychological changes, and dialogues in order. The summary must be at least 150 words.
+
+Here is an example of a PERFECT output. **Follow this format and logic precisely**:
+<summary>
+- time：2025年9月19日 晚间
+- char：骑士, 炼金术士
+- tag：
+意外的炼金爆炸 - 突发, 事故, 炼金术, 实验, 失败, 炸毁, 冲击
+骑士的鼓励与安慰 - 勇者, 支持, 激励, 慰藉, 治愈, 关怀
+寻找圣杯的旅途 - 探索, 追寻, 神器, 目标, 冒险, 任务
+沮丧与自我怀疑 - 失落, 泄气, 迷茫, 不自信, 困惑
+探讨未来的计划 - 商议, 展望, 规划, 打算, 前路
+- thing：骑士在询问圣杯下落时，目睹了炼金术士因实验爆炸而陷入沮丧。骑士并未责备，反而给予了鼓励与安慰，两人共同探讨了接下来的计划。
+</summary>
+The detailed summary of events, actions, and dialogues, being at least 150 words long, follows here.
+
+Now, analyze the conversation and provide your response in this exact format.
+`;
+            
+            const { apiConfig } = state;
+            try {
+                const response = await fetch(`${apiConfig.url}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiConfig.key}`
+                    },
+                    body: JSON.stringify({
+                        model: apiConfig.model,
+                        messages: [{ role: "system", content: summaryPrompt }],
+                    })
+                });
+
+                if (!response.ok) throw new Error('API request for summary failed.');
+                
+                const result = await response.json();
+                const summaryContent = result.choices[0].message.content;
+
+                const summaryObject = {
+                    id: generateUUID(),
+                    characterId: characterId,
+                    content: summaryContent,
+                    createdAt: new Date().toISOString()
+                };
+
+                await addValue(STORES.summaries, summaryObject);
+                console.log('新总结已成功保存至数据库！');
+
+            } catch (error) {
+                console.error("生成或保存总结时出错:", error);
+            }
+        };
+        // --- ^^^^^^ 替换到此结束 ^^^^^^ ---
+
+        /**
+         * 根据用户输入，查找相关的总结并返回
+         * @param {string} userInput - 用户的输入文本
+         * @param {string} characterId - 当前角色ID
+         * @returns {Promise<string>} - 格式化后的相关总结字符串
+         */
+        const findAndInjectRelevantSummaries = async (userInput, characterId) => {
+            try {
+                const db = await openDB();
+                const transaction = db.transaction(STORES.summaries, 'readonly');
+                const store = transaction.objectStore(STORES.summaries);
+                const index = store.index('characterId');
+
+                // --- BUGFIX START ---
+                // 这里是修正的核心：将数据库请求正确地包装在 Promise 中，并使用 await 等待它完成
+                const allSummariesForChar = await new Promise((resolve, reject) => {
+                    const request = index.getAll(characterId);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                // --- BUGFIX END ---
+
+                if (!allSummariesForChar || allSummariesForChar.length === 0) {
+                    console.log('🔵 当前角色没有可供检索的记忆。');
+                    return ''; 
+                }
+
+                // (这是你要粘贴进去的新代码块)
+                // 设置最多同时激活3条记忆
+                const MAX_ACTIVATED_MEMORIES = 3; 
+
+                const relevantSummaries = [];
+                let triggered = false; 
+
+                for (const summary of allSummariesForChar) {
+                    const tagBlockMatch = summary.content.match(/- tag：([\s\S]*?)(?=- thing：|\n<\/summary>)/i);
+
+                    if (tagBlockMatch && tagBlockMatch[1]) {
+                        const tagBlock = tagBlockMatch[1];
+                        // 将所有标签、分隔符转换为空格，然后分割成独立的关键词数组
+                        const keywords = tagBlock.replace(/-/g, ' ').split(/,|、|\s+/).map(t => t.trim()).filter(Boolean);
+
+                        // 检查用户的输入是否包含了任意一个关键词
+                        if (keywords.some(keyword => userInput.includes(keyword))) {
+                            // 如果匹配成功，就将这条记忆的完整内容添加到我们的列表中
+                            relevantSummaries.push(summary.content);
+                            console.log(`✅ 记忆激活！触发关键词: "${keywords.find(k => userInput.includes(k))}"。 (当前已激活 ${relevantSummaries.length} 条)`);
+                            triggered = true; // 标记我们至少找到了一个匹配项
+
+                            // 当激活的记忆数量达到我们设定的上限时，就停止继续搜索
+                            if (relevantSummaries.length >= MAX_ACTIVATED_MEMORIES) {
+                                console.log(`ℹ️ 已达到记忆激活上限 (${MAX_ACTIVATED_MEMORIES}条)，停止继续搜索。`);
+                                break; // 跳出循环
+                            }
+                        }
+                    }
+                }
+
+                if (!triggered) {
+                    console.log('❌ 本次输入 "', userInput, '" 未激活任何记忆。');
+                }
+
+                if (relevantSummaries.length > 0) {
+                    const finalPayload = `\n\n[ACTIVATED MEMORIES - The following are past conversation summaries relevant to the current topic. Use them as context.]\n\n${relevantSummaries.join('\n\n---\n\n')}`;
+                    console.log('📦 最终包装后准备发给AI的记忆模块：', finalPayload);
+                    return finalPayload;
+                }
+
+                return ''; 
+            } catch (error) {
+                // 这里的 console.error 会捕获并显示截图中的错误信息
+                console.error('检索总结时出错:', error);
+                return ''; 
+            }
+        };
+        // ====================== 新增功能结束 ======================
+
+        // --- API & Chat Logic ---
+        // --- VVVVVV 用下面这个新函数，完整替换掉你原来的 addMessageToHistory 函数 VVVVVV ---
+        const addMessageToHistory = async (role, content) => {
+            const { activeCharacterId } = state;
+            if (!activeCharacterId) return;
+
+            // 核心改造：根据角色是用户还是AI，使用不同的数据结构
+            if (role === 'user') {
+                // 用户消息保持不变
+                state.chatHistories[activeCharacterId].push({ 
+                    id: generateUUID(), 
+                    role: 'user', 
+                    content: content 
+                });
+            } else {
+                // AI消息使用新的结构，包含一个responses数组
+                state.chatHistories[activeCharacterId].push({
+                    id: generateUUID(),
+                    role: 'assistant',
+                    responses: [content], // 将第一条回复作为数组的第一个元素
+                    activeIndex: 0      // activeIndex表示当前显示的是哪一条回复
+                });
+            }
+
+            await saveData();
+            renderChatMessages();
+        };
+        // --- ^^^^^^ 替换到这里结束 ^^^^^^ ---
+
+        /**
+         * 应用AI返回的状态更新指令
+         * @param {string} characterId - 当前角色ID
+         * @param {object} updateCommand - 从AI回复中解析出的JSON指令
+         */
+        async function applyAiStatusUpdate(characterId, updateCommand) {
+            if (!characterId || !updateCommand || !updateCommand.action) return;
+
+            try {
+                // 【修改】这里我们使用 let 声明，因为如果 statusData 不存在，我们会创建它
+                let statusData = await getValue(STORES.characterStates, characterId);
+                
+                // 如果该角色还没有状态表，AI指令是添加NPC，那么就为他创建一个
+                if (!statusData && updateCommand.action === 'add_npc') {
+                    const character = state.characters.find(c => c.id === characterId);
+                    statusData = {
+                        characterId: characterId,
+                        main_char: { name: character.data.name, is_dead: false },
+                        npcs: []
+                    };
+                    console.log("No status table existed. Created a new one to add an NPC.");
+                } else if (!statusData) {
+                    console.warn("AI tried to update status, but no status table exists for this character yet.");
+                    return;
+                }
+
+                const { action, target_type, target_name, updates, npc_data } = updateCommand;
+
+                if (action === 'update' && updates) {
+                    if (target_type === 'main_char') {
+                        Object.assign(statusData.main_char, updates);
+                        console.log("AI updated main character status:", updates);
+                    } else if (target_type === 'npc' && target_name) {
+                        const npcToUpdate = statusData.npcs.find(npc => npc.name === target_name);
+                        if (npcToUpdate) {
+                            Object.assign(npcToUpdate, updates);
+                            console.log(`AI updated NPC "${target_name}" status:`, updates);
+                        } else {
+                            console.warn(`AI tried to update non-existent NPC: ${target_name}`);
+                        }
+                    }
+                } 
+                // ====================== 【新增代码块】 ======================
+                else if (action === 'add_npc' && npc_data) {
+                    // 检查是否已存在同名NPC，避免重复添加
+                    if (statusData.npcs.some(npc => npc.name === npc_data.name)) {
+                        console.warn(`AI tried to add an existing NPC: ${npc_data.name}. Aborting.`);
+                        return;
+                    }
+                    
+                    // 为新NPC创建一个完整的对象，并添加一个唯一的ID
+                    const newNpc = {
+                        id: generateUUID(), // 确保每个NPC都有唯一ID
+                        ...npc_data
+                    };
+                    
+                    statusData.npcs.push(newNpc);
+                    console.log(`AI added new NPC:`, newNpc);
+                }
+                // ====================== 【新增代码块结束】 ======================
+
+                // 将更新后的数据存回数据库
+                await addValue(STORES.characterStates, statusData);
+
+            } catch (e) {
+                console.error("Error applying AI status update:", e);
+            }
+        }
+
+        // --- VVVVVV 把下面这个新函数，完整地粘贴到 handleChatSubmit 函数的上面 VVVVVV ---
+        const handleRegenerate = async () => {
+            // --- 修复点：使用 ID 获取按钮，而不是 type="submit" ---
+            const submitBtn = document.getElementById('manual-submit-btn');
+            if (submitBtn) submitBtn.disabled = true; // 禁用按钮防止重复点击
+
+            const { apiConfig, activeCharacterId, characters, chatHistories } = state;
+            const character = characters.find(c => c.id === activeCharacterId);
+            const history = chatHistories[activeCharacterId];
+
+            // 找到最后一条AI消息
+            const lastMessage = history[history.length - 1];
+            if (!lastMessage || lastMessage.role !== 'assistant') {
+                 if (submitBtn) submitBtn.disabled = false;
+                 return; 
+            }
+            
+            const historyForApi = history.slice(0, -1);
+            const lastUserInput = historyForApi[historyForApi.length - 1]?.content || '';
+
+            // 上下文注入逻辑
+            const activatedMemories = await findAndInjectRelevantSummaries(lastUserInput, activeCharacterId);
+            
+            let characterStatusContent = '';
+            try {
+                const statusData = await getValue(STORES.characterStates, activeCharacterId);
+                if (statusData) {
+                    const formattedStatus = `Main Character: ${JSON.stringify(statusData.main_char, null, 2)}\nNPCs: ${JSON.stringify(statusData.npcs, null, 2)}`;
+                    characterStatusContent = `\n\n[Character Status Table...]\n${formattedStatus}`;
+                }
+            } catch (e) { console.error("Failed to get character status for prompt:", e); }
+            
+            let presetContent = '';
+            if (state.activePresetFileId && state.importedPresetFiles.length > 0) {
+                const activePresetFile = state.importedPresetFiles.find(pf => pf.id === state.activePresetFileId);
+                if (activePresetFile && activePresetFile.content) {
+                    presetContent = `\n\n[Active Preset File: ${activePresetFile.name}]\n${activePresetFile.content}`;
+                }
+            }
+            
+            let userPersonaContent = '';
+            if (state.userPersona && state.userPersona.trim() !== '') {
+                userPersonaContent = `\n\n[User Persona: ... ${state.userPersona}]`;
+            }
+
+            const systemPrompt = `Description: ${character.data.description}\nPersonality: ${character.data.personality}\nScenario: ${character.data.scenario}\nFirst Message: ${character.data.first_mes}${characterStatusContent}${presetContent}${userPersonaContent}${activatedMemories}\n\n[AI Task: Generate a response that fits the character's personality and the current situation. Use the character status table to track relationships and story progress. Update the status table when significant events occur using <update_status_table>JSON</update_status_table> tags.]`;
+
+            const messagesForApi = historyForApi.slice(-10).map(msg => {
+                if (msg.role === 'user') {
+                    return { role: 'user', content: msg.content };
+                } else {
+                    return { role: 'assistant', content: msg.responses[msg.activeIndex] };
+                }
+            });
+
+            const messages = [
+                { role: "system", content: systemPrompt },
+                ...messagesForApi 
+            ];
+
+            try {
+                const response = await fetch(`${apiConfig.url}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.key}` },
+                    body: JSON.stringify({ model: apiConfig.model, messages: messages })
+                });
+
+                if (!response.ok) { throw new Error((await response.json()).error.message); }
+
+                const result = await response.json();
+                let assistantResponse = result.choices[0].message.content;
+
+                const updateRegex = /<update_status_table>([\s\S]*?)<\/update_status_table>/g;
+                const matches = assistantResponse.matchAll(updateRegex);
+                for (const match of matches) {
+                    if (match[1]) {
+                        try { applyAiStatusUpdate(activeCharacterId, JSON.parse(match[1])); } catch (e) { console.error("解析AI状态更新失败:", e); }
+                    }
+                }
+                assistantResponse = assistantResponse.replace(updateRegex, '').trim();
+                const cleanedResponse = assistantResponse.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+                const modifiedResponse = applyRegexScripts(cleanedResponse);
+
+                lastMessage.responses.push(modifiedResponse);
+                lastMessage.activeIndex = lastMessage.responses.length - 1;
+
+                await saveData();
+                renderChatMessages();
+
+            } catch (error) {
+                console.error("Regeneration API Error:", error);
+                lastMessage.responses.push(`抱歉，重新生成失败了: ${error.message}`);
+                lastMessage.activeIndex = lastMessage.responses.length - 1;
+                renderChatMessages();
+            } finally {
+                // --- 修复点：在 finally 中也要用 ID 恢复按钮 ---
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        };
+        // --- ^^^^^^ 新函数到此结束 ^^^^^^ ---
+
+        // --- VVVVVV 用下面这个完整的新版本，替换掉你原来的 handleChatSubmit 函数 VVVVVV ---
+        const handleChatSubmit = async (event) => {
+            event.preventDefault();
+            const { chatInput } = DOMElements;
+            const userInput = chatInput.value.trim();
+            if (!userInput) return;
+
+            const { activeCharacterId } = state;
+            
+            // 记忆逻辑
+            const history = state.chatHistories[activeCharacterId];
+            if (history && history.length >= 2) {
+                const lastMessage = history[history.length - 1];
+                const secondLastMessage = history[history.length - 2];
+                if (lastMessage.role === 'assistant' && secondLastMessage.role === 'user') {
+                    console.log("检测到完整的对话回合，现在开始为上一轮生成总结...");
+                    triggerSummaryIfNeeded(activeCharacterId);
+                }
+            }
+
+            await addMessageToHistory('user', userInput);
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+
+            // --- 修复点：这里原来是查找 button[type="submit"]，导致报错崩溃 ---
+            // --- 现在改为查找 ID 为 manual-submit-btn 的按钮 ---
+            const submitBtn = document.getElementById('manual-submit-btn');
+            if (submitBtn) submitBtn.disabled = true; 
+
+            const { apiConfig, characters } = state;
+            if (!apiConfig.url || !apiConfig.key || !apiConfig.model || !activeCharacterId) {
+                await addMessageToHistory('assistant', 'API未配置或未选择角色。');
+                if (submitBtn) submitBtn.disabled = false;
+                return;
+            }
+
+            const character = characters.find(c => c.id === activeCharacterId);
+            const currentHistory = state.chatHistories[activeCharacterId];
+            
+            const activatedMemories = await findAndInjectRelevantSummaries(userInput, activeCharacterId);
+            
+            let characterStatusContent = '';
+            try {
+                const statusData = await getValue(STORES.characterStates, activeCharacterId);
+                if (statusData) {
+                    const formattedStatus = `Main Character: ${JSON.stringify(statusData.main_char, null, 2)}\nNPCs: ${JSON.stringify(statusData.npcs, null, 2)}`;
+                    characterStatusContent = `\n\n[Character Status Table - This is the real-time state of all characters. This information takes absolute precedence over the character's base description. You MUST adhere to it. If your response implies a change to this table (e.g., character is injured, location changes, an NPC dies), you MUST output a special JSON block to update it.]\n${formattedStatus}`;
+                }
+            } catch (e) {
+                console.error("Failed to get character status for prompt:", e);
+            }
+            
+            let presetContent = '';
+            if (state.activePresetFileId && state.importedPresetFiles.length > 0) {
+                const activeFile = state.importedPresetFiles.find(pf => pf.id === state.activePresetFileId);
+                if (activeFile && activeFile.data && Array.isArray(activeFile.data.prompts) && Array.isArray(activeFile.data.prompt_order)) {
+                    const promptsMap = new Map(activeFile.data.prompts.map(p => [p.identifier, p]));
+                    const characterOrder = activeFile.data.prompt_order[activeFile.data.prompt_order.length - 1];
+                    if (characterOrder && Array.isArray(characterOrder.order)) {
+                        const enabledPromptsContent = characterOrder.order
+                            .filter(orderItem => orderItem.enabled === true)
+                            .map(orderItem => {
+                                const promptData = promptsMap.get(orderItem.identifier);
+                                if (!promptData || !promptData.content) return '';
+                                try {
+                                    const parsedJson = JSON.parse(promptData.content);
+                                    if (parsedJson && typeof parsedJson.content === 'string') {
+                                        return parsedJson.content;
+                                    }
+                                } catch (e) {
+                                    return promptData.content;
+                                }
+                                return promptData.content;
+                            })
+                            .join('\n');
+                        if (enabledPromptsContent) {
+                            presetContent = `\n\n--- PRESET INSTRUCTIONS ---\n${enabledPromptsContent}`;
+                        }
+                    }
+                }
+            }
+
+            let userPersonaContent = '';
+            if (state.userPersona && state.userPersona.trim() !== '') {
+                userPersonaContent = `\n\n[User Persona: This is the persona of the user you are talking to. You must remember it during the conversation: ${state.userPersona}]`;
+            }
+
+            const systemPrompt = `Description: ${character.data.description}\nPersonality: ${character.data.personality}\nScenario: ${character.data.scenario}\nFirst Message: ${character.data.first_mes}\nExample Dialogue: ${character.data.mes_example}${characterStatusContent}${presetContent}${userPersonaContent}${activatedMemories}\n\n[AI Task: Based on the user's message and all the context provided (especially the Character Status Table), generate a response. If you need to update the status table, your response MUST contain a code block. You can perform two actions: "update" an existing character/NPC, or "add_npc" if a new one appears.
+
+Action 1: Update an existing entry.
+<update_status_table>
+{
+  "action": "update",
+  "target_type": "main_char" | "npc",
+  "target_name": "NPC's name if target_type is npc",
+  "updates": {
+    "field_to_update_1": "new_value_1"
+  }
+}
+</update_status_table>
+
+Action 2: Add a new NPC who just appeared in the story.
+<update_status_table>
+{
+  "action": "add_npc",
+  "npc_data": {
+    "name": "新NPC的名字",
+    "social_relations": "未知",
+    "health_status": "健康",
+    "location": "当前地点",
+    "attire": "简要描述",
+    "relation_to_user": "陌生人",
+    "is_dead": false,
+    "personality": "根据对话判断",
+    "favorability": 50
+  }
+}
+</update_status_table>
+
+These blocks will be hidden from the user. For example, if a new NPC named 'Lancelot' appears, you would include:
+<update_status_table>
+{
+  "action": "add_npc",
+  "npc_data": {
+    "name": "兰斯洛特",
+    "social_relations": "圆桌骑士",
+    "health_status": "健康",
+    "location": "森林",
+    "attire": "银色盔甲",
+    "relation_to_user": "陌生人",
+    "is_dead": false,
+    "personality": "忠诚, 勇猛",
+    "favorability": 50
+  }
+}
+</update_status_table>
+Now, begin the conversation.]`;
+            
+            // 将我们的历史记录转换为API兼容的格式
+            const messagesForApi = currentHistory.slice(-10).map(msg => {
+                if (msg.role === 'user') {
+                    return { role: 'user', content: msg.content };
+                } else {
+                    return { role: 'assistant', content: msg.responses[msg.activeIndex] };
+                }
+            });
+
+            const messages = [
+                { role: "system", content: systemPrompt },
+                ...messagesForApi
+            ];
+
+            try {
+                const response = await fetch(`${apiConfig.url}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiConfig.key}`
+                    },
+                    body: JSON.stringify({
+                        model: apiConfig.model,
+                        messages: messages,
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error.message || `HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                let assistantResponse = result.choices[0].message.content;
+
+                const updateRegex = /<update_status_table>([\s\S]*?)<\/update_status_table>/g;
+                const matches = assistantResponse.matchAll(updateRegex);
+
+                for (const match of matches) {
+                    if (match[1]) {
+                        try {
+                            const updateJson = JSON.parse(match[1]);
+                            applyAiStatusUpdate(activeCharacterId, updateJson);
+                        } catch (e) {
+                            console.error("解析或应用AI状态更新失败:", e, match[1]);
+                        }
+                    }
+                }
+
+                assistantResponse = assistantResponse.replace(updateRegex, '').trim();
+                const cleanedResponse = assistantResponse.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+                const modifiedResponse = applyRegexScripts(cleanedResponse);
+                
+                await addMessageToHistory('assistant', modifiedResponse);
+
+            } catch (error) {
+                console.error("API Error:", error);
+                await addMessageToHistory('assistant', `抱歉，出错了: ${error.message}`);
+            } finally {
+                // --- 修复点：Finally 里面也要改 ---
+                if (submitBtn) submitBtn.disabled = false;
+                
+                // --- 核心修改：从这里移除 triggerSummaryIfNeeded() 的调用 ---
+                // try {
+                //     triggerSummaryIfNeeded(activeCharacterId);
+                // } catch (error) {
+                //     console.error("触发总结失败:", error);
+                // }
+            }
+        };
+        // --- ^^^^^^ 替换到此结束 ^^^^^^ ---
+
+        // ====================== 新增函数开始 ======================
+        /**
+         * 按顺序应用所有已启用的Regex脚本
+         * @param {string} inputText - AI返回的原始文本
+         * @returns {string} - 处理过的文本
+         */
+        const applyRegexScripts = (inputText) => {
+            // 从 state 中筛选出所有 enabled: true 的脚本
+            const enabledScripts = state.regexScripts.filter(script => script.enabled);
+
+            if (enabledScripts.length === 0) {
+                return inputText; // 如果没有启用的脚本，直接返回原文
+            }
+
+            // 使用 reduce 方法，将文本依次流过每一个启用的脚本
+            let outputText = enabledScripts.reduce((currentText, script) => {
+                try {
+                    // 'g' 表示全局替换, 'm' 表示多行模式
+                    const regex = new RegExp(script.find, 'gm'); 
+                    return currentText.replace(regex, script.replace);
+                } catch (e) {
+                    console.error(`Regex error in script "${script.name}":`, e);
+                    return currentText; // 如果某个脚本的正则表达式有错误，跳过它
+                }
+            }, inputText);
+
+            return outputText;
+        };
+        // ====================== 新增函数结束 ======================
+
+        const setApiStatus = (message, color = 'text-gray-500') => {
+            DOMElements.apiStatusMsg.textContent = message;
+            DOMElements.apiStatusMsg.className = `text-sm text-center min-h-[20px] ${color}`;
+        };
+        const fetchModels = async () => {
+            const apiUrl = DOMElements.apiUrlInput.value.trim();
+            const apiKey = DOMElements.apiKeyInput.value.trim();
+            if (!apiUrl || !apiKey) {
+                setApiStatus('请输入 API URL 和 API Key', 'text-yellow-500');
+                return null;
+            }
+            setApiStatus('正在获取模型列表...', 'text-blue-500');
+            DOMElements.modelSelect.innerHTML = '';
+            DOMElements.fetchModelsBtn.disabled = true;
+            try {
+                const response = await fetch(`${apiUrl}/models`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                if (!response.ok) {
+                    const errorData = await response.text();
+                    throw new Error(`网络错误: ${response.status} - ${errorData}`);
+                }
+                const data = await response.json();
+                const models = data.data || [];
+                if (models.length === 0) {
+                    setApiStatus('未找到可用模型', 'text-yellow-500');
+                    return [];
+                }
+                models.sort((a, b) => a.id.localeCompare(b.id)).forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.id;
+                    DOMElements.modelSelect.appendChild(option);
+                });
+                setApiStatus(`成功获取 ${models.length} 个模型`, 'text-green-500');
+                return models;
+            } catch (error) {
+                console.error('获取模型失败:', error);
+                setApiStatus(`获取模型失败: ${error.message}`, 'text-red-500');
+                return null;
+            } finally {
+                DOMElements.fetchModelsBtn.disabled = false;
+            }
+        };
+        const saveApiConfig = async () => {
+            state.apiConfig = {
+                url: DOMElements.apiUrlInput.value.trim(),
+                key: DOMElements.apiKeyInput.value.trim(),
+                model: DOMElements.modelSelect.value
+            };
+            await saveData();
+            setApiStatus('配置已保存!', 'text-green-500');
+            setTimeout(() => setApiStatus(''), 2000);
+        };
+        const loadApiConfig = async () => {
+            const { url, key, model } = state.apiConfig;
+            DOMElements.apiUrlInput.value = url || '';
+            DOMElements.apiKeyInput.value = key || '';
+            if (url && key) {
+                const models = await fetchModels();
+                if (models && model) {
+                    DOMElements.modelSelect.value = model;
+                }
+            }
+        };
+
+        // --- Initialization ---
+        const init = async () => {
+            await loadData();
+            setupEventListeners();
+            applyFontSize(); // <--- 【新增】在这里调用，确保初始化
+            updateChatUI();
+            await loadApiConfig();
+        };
+
+        init();
+    });
+    </script>
+</body>
+</html>
+

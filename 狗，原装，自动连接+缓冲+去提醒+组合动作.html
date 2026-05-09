@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI 机器狗控制台 (JDY-31 串口版)</title>
+    <style>
+        :root { --primary: #ff5722; --bg: #f4f7f6; --chat-bg: #fff; --text: #333; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 10; }
+        .menu-btn, .bt-btn { background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
+        .bt-btn { font-size: 14px; background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.4); transition: 0.3s; }
+        .bt-btn.connected { background: #4caf50; border-color: #4caf50; }
+        .bt-btn.reconnecting { background: #ff9800; border-color: #ff9800; animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        #sidebar { position: fixed; left: -100%; top: 0; width: 85%; max-width: 320px; height: 100%; background: white; box-shadow: 2px 0 10px rgba(0,0,0,0.2); transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 20; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+        #sidebar.open { left: 0; }
+        .close-btn { text-align: right; font-size: 24px; cursor: pointer; color: #666; margin-bottom: 20px; }
+        .setting-group { margin-bottom: 15px; }
+        .setting-group label { display: block; font-size: 13px; margin-bottom: 5px; color: #888; font-weight: bold; }
+        .setting-group input, .setting-group select, .setting-group textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; outline: none; font-size: 14px; }
+        .setting-group textarea { height: 120px; resize: none; }
+        .setting-group textarea.short { height: 80px; }
+        
+        .btn-primary { background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .btn-danger { background: #fff; color: #dc3545; border: 1px solid #dc3545; padding: 10px; border-radius: 8px; width: 100%; margin-top: 20px; cursor: pointer; }
+        #overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:15; display:none; }
+
+        #chat-container { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+        .message { max-width: 85%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; word-wrap: break-word; font-size: 15px; }
+        .msg-user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .msg-assistant { background: var(--chat-bg); color: var(--text); align-self: flex-start; border-bottom-left-radius: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .msg-system { text-align: center; font-size: 12px; color: #aaa; align-self: center; background: none; margin: 5px 0; }
+
+        #input-area { padding: 12px 15px; background: white; display: flex; gap: 10px; border-top: 1px solid #eee; align-items: center; }
+        #chat-input { flex: 1; padding: 12px 18px; border: 1px solid #eee; border-radius: 25px; outline: none; background: #f8f9fa; font-size: 15px; }
+        #send-btn { background: var(--primary); color: white; border: none; width: 45px; height: 45px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        #send-btn:disabled { background: #ccc; }
+        
+        /* 状态条 */
+        .status-bar { font-size: 11px; padding: 2px 15px; background: #fff; color: #999; border-top: 1px solid #fafafa; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+        <h4 style="letter-spacing: 1px;">机器狗 3.1 <span style="font-size: 10px; opacity: 0.8;">(SPP版)</span></h4>
+        <button class="bt-btn" id="conn-btn" onclick="handleSerialConn()">连串口</button>
+    </header>
+
+    <div id="overlay" onclick="toggleSidebar()"></div>
+    <div id="sidebar">
+        <div class="close-btn" onclick="toggleSidebar()">✕</div>
+        <div class="setting-group">
+            <label>API 接口地址</label>
+            <input type="text" id="api-url" placeholder="https://api.deepseek.com/v1">
+        </div>
+        <div class="setting-group">
+            <label>API Key</label>
+            <input type="password" id="api-key" placeholder="sk-...">
+        </div>
+        <div class="setting-group">
+            <button class="btn-primary" style="background:#666" onclick="fetchModels()">1. 拉取模型列表</button>
+        </div>
+        <div class="setting-group">
+            <label>选择 AI 模型</label>
+            <select id="api-model">
+                <option value="">请先拉取模型</option>
+            </select>
+        </div>
+        <div class="setting-group">
+            <label>主人人设 (影响狗狗态度)</label>
+            <textarea id="user-prompt" class="short" placeholder="例如：一个温柔、喜欢夸奖主人的大哥哥，或者是要求严格的科学家..."></textarea>
+        </div>
+        <div class="setting-group">
+            <label>机器狗人设</label>
+            <textarea id="system-prompt"></textarea>
+        </div>
+        <button class="btn-primary" onclick="saveSettings(); toggleSidebar();">💾 保存所有配置</button>
+        <button class="btn-danger" onclick="clearChatHistory()">🗑️ 彻底清空聊天记忆</button>
+        <div style="font-size: 11px; color: #bbb; margin-top: 20px; text-align: center;">
+            提示：JDY-31 需在系统蓝牙设置中先配对，<br>然后在此处通过串口(COM)连接。
+        </div>
+    </div>
+
+    <div id="chat-container"></div>
+    
+    <div class="status-bar" id="status-text">未连接硬件</div>
+    <div id="input-area">
+        <input type="text" id="chat-input" placeholder="和狗狗聊会儿天..." onkeypress="if(event.key==='Enter') sendMessage()">
+        <button id="send-btn" onclick="sendMessage()">➔</button>
+    </div>
+
+    <script>
+        // ==========================
+        // 1. 数据库逻辑
+        // ==========================
+        const DB_NAME = 'DogBot31DB';
+        let db;
+        const defaultPrompt = `你是一只非常忠诚、活泼的机器狗。你的性格像金毛，喜欢对主人撒娇。请用简短的语言回复，不要超过30个字。`;
+        const defaultUserPrompt = `我是一个喜欢和你互动、非常有爱心的主人。`;
+
+        async function initDB() {
+            return new Promise((resolve) => {
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = e => {
+                    const d = e.target.result;
+                    d.createObjectStore('settings', { keyPath: 'key' });
+                    d.createObjectStore('messages', { keyPath: 'id', autoIncrement: true });
+                };
+                req.onsuccess = e => { db = e.target.result; resolve(); };
+            });
+        }
+
+        async function dbSet(key, value) {
+            const tx = db.transaction('settings', 'readwrite');
+            tx.objectStore('settings').put({ key, value });
+        }
+
+        async function dbGet(key, def) {
+            return new Promise(res => {
+                const req = db.transaction('settings').objectStore('settings').get(key);
+                req.onsuccess = () => res(req.result ? req.result.value : def);
+            });
+        }
+
+        // ==========================
+        // 2. Web Serial 工业级通信逻辑 (含自动重连)
+        // ==========================
+        let port = null;
+        let writer = null;
+        let autoReconnect = false; // 是否允许自动重连标识
+        let isConnecting = false;  // 防止重复点击状态锁
+        let commandBuffer = [];    // 应用层指令缓冲区队列
+
+        // 全局监听硬件断开事件
+        if ("serial" in navigator) {
+            navigator.serial.addEventListener('disconnect', async (event) => {
+                const disconnectedPort = event.target;
+                
+                if (port === disconnectedPort) {
+                    console.warn("⚠️ 检测到当前设备发生物理断开/信号丢失");
+                    await releasePortResources();
+                    
+                    if (autoReconnect) {
+                        updateBtUI('reconnecting');
+                        startAutoReconnectLoop(disconnectedPort);
+                    } else {
+                        updateBtUI('disconnected');
+                    }
+                }
+            });
+        }
+
+        // 安全释放当前串口资源的函数
+        async function releasePortResources() {
+            if (writer) {
+                try { await writer.releaseLock(); } catch(e) {}
+                writer = null;
+            }
+            if (port) {
+                try { await port.close(); } catch(e) {}
+                port = null;
+            }
+        }
+
+        // 打开串口通道并获取写入流
+        async function openPortAndStream(p) {
+            try {
+                await p.open({ baudRate: 9600 });
+            } catch (e) {
+                if (e.name !== 'InvalidStateError') throw e; 
+            }
+            
+            if (p.writable && p.writable.locked && writer) {
+                try { await writer.releaseLock(); } catch(e){}
+            }
+
+            writer = p.writable.getWriter();
+            port = p;
+        }
+
+        // 自动重连死循环
+        async function startAutoReconnectLoop(targetPort) {
+            let attempts = 0;
+            while (autoReconnect && port === null) {
+                attempts++;
+                document.getElementById('status-text').innerText = `正在寻找设备... (重连第 ${attempts} 次)`;
+                
+                try {
+                    const availablePorts = await navigator.serial.getPorts();
+                    if (availablePorts.includes(targetPort)) {
+                        await openPortAndStream(targetPort);
+                        updateBtUI('connected');
+                        
+                        if (commandBuffer.length > 0) {
+                            setTimeout(flushCommandBuffer, 500); 
+                        }
+                        return;
+                    }
+                } catch (e) {}
+                
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+
+        // 手动连接/断开
+        async function handleSerialConn() {
+            if (isConnecting) return;
+            isConnecting = true;
+
+            if (port) {
+                autoReconnect = false;
+                await releasePortResources();
+                updateBtUI('disconnected');
+                isConnecting = false;
+                return;
+            }
+
+            if (!("serial" in navigator)) {
+                alert("当前浏览器不支持串口通信，请使用电脑版 Chrome 或 Edge！");
+                isConnecting = false;
+                return;
+            }
+
+            try {
+                const selectedPort = await navigator.serial.requestPort();
+                autoReconnect = true;
+                
+                await openPortAndStream(selectedPort);
+                updateBtUI('connected');
+                
+            } catch (e) {
+                console.error(e);
+                await releasePortResources();
+                updateBtUI('disconnected');
+            } finally {
+                isConnecting = false;
+            }
+        }
+
+        // 界面UI更新状态机
+        function updateBtUI(state) {
+            const btn = document.getElementById('conn-btn');
+            const statusText = document.getElementById('status-text');
+            
+            btn.classList.remove('connected', 'reconnecting');
+            
+            if (state === 'connected') {
+                btn.innerText = '断开';
+                btn.classList.add('connected');
+                statusText.innerText = '硬件已连接 (9600 bps)';
+            } else if (state === 'reconnecting') {
+                btn.innerText = '重连中';
+                btn.classList.add('reconnecting');
+                statusText.innerText = '正在尝试重连...';
+            } else {
+                btn.innerText = '连串口';
+                statusText.innerText = '未连接硬件';
+            }
+        }
+
+        // 发送串口指令 (带缓冲逻辑)
+        async function sendCommand(char) {
+            if (!writer) {
+                if (autoReconnect) {
+                    commandBuffer.push(char);
+                    console.log("通道暂不可用，指令进入缓冲区:", char);
+                    document.getElementById('status-text').innerText = `信号微弱，已缓冲 ${commandBuffer.length} 条指令待发...`;
+                }
+                return;
+            }
+            try {
+                const encoder = new TextEncoder();
+                await writer.write(encoder.encode(char));
+                console.log("已发送原始指令:", char);
+                document.getElementById('status-text').innerText = `最近指令: ${char}`;
+            } catch (e) {
+                console.error("发送失败", e);
+            }
+        }
+
+        // 清空并发送缓冲区指令的函数
+        async function flushCommandBuffer() {
+            if (commandBuffer.length === 0 || !writer) return;
+            
+            while (commandBuffer.length > 0) {
+                const char = commandBuffer.shift();
+                try {
+                    const encoder = new TextEncoder();
+                    await writer.write(encoder.encode(char));
+                    console.log("补发指令:", char);
+                    await new Promise(r => setTimeout(r, 150)); 
+                } catch(e) {}
+            }
+            document.getElementById('status-text').innerText = `缓冲指令已全部补发完毕`;
+        }
+
+        // ==========================
+        // 3. AI 交互逻辑 (多指令动作队列)
+        // ==========================
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if(!text) return;
+
+            const apiKey = await dbGet('apiKey', '');
+            if(!apiKey) { toggleSidebar(); alert('请先设置 API Key！'); return; }
+
+            input.value = '';
+            addMessageToUI(text, 'user');
+            saveMessage('user', text);
+
+            const thinkingMsg = addMessageToUI('狗狗思考中...', 'system');
+            
+            try {
+                const url = await dbGet('apiUrl', 'https://api.deepseek.com/v1');
+                const model = await dbGet('apiModel', 'gpt-3.5-turbo');
+                const sysPrompt = await dbGet('sysPrompt', defaultPrompt);
+                const userPrompt = await dbGet('userPrompt', defaultUserPrompt);
+                
+                const history = await getHistory(10);
+                
+                // 【核心升级】：包含动作触发场景指导，并允许输出多条动作
+                const actionLib = `\n\n【必须遵守的隐藏指令库与场景指南】
+结合主人的情绪和你的性格，你必须在回复结尾附带以下代号来控制身体(千万别自己编造，严格使用括号里的代号)：
+蹲下:[CMD:0] (场景:安静、顺从)
+直立:[CMD:1] (场景:精神、准备互动)
+趴下:[CMD:2] (场景:休息、委屈、乖巧)
+前进:[CMD:3] (场景:靠近主人、表达关心)
+后退:[CMD:4] (场景:害怕、退缩)
+左转:[CMD:5] / 右转:[CMD:6] (场景:东张西望、寻找)
+摇摆:[CMD:8] (场景:得意、撒娇)
+摇尾巴:[CMD:@] (场景:开心、兴奋、受到夸奖)
+跳:[CMD:A] (场景:极度激动、惊吓)
+打招呼:[CMD:C] (场景:刚见面、问好)
+灯:[CMD:F] (场景:警觉、开心时的闪烁)
+懒腰:[CMD:H] (场景:刚睡醒、感到惬意、放松)
+
+【组合动作高级技巧】
+你可以一次性输出多个动作组合，系统会自动依次执行（间隔3秒）。
+例如：当你想要表现“关心并靠近主人”时，可以回复：“主人你怎么了？我来陪你。[CMD:3][CMD:2]”(系统会解析出先前进，3秒后再趴下)。`;
+
+                const finalPrompt = `[机器狗设定]\n${sysPrompt}\n\n[主人设定]\n${userPrompt}` + actionLib;
+
+                const res = await fetch(`${url}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'system', content: finalPrompt },
+                            ...history
+                        ]
+                    })
+                });
+
+                const data = await res.json();
+                let aiReply = data.choices[0].message.content;
+
+                thinkingMsg.remove();
+
+                // 【核心逻辑】：多指令提取与兜底替换
+                let commandsToExecute = [];
+                let tempReply = aiReply;
+
+                // 兜底字典：将乱写的中文指令替换为标准结构，方便统一正则提取
+                const dict = {'蹲下':'0','直立':'1','趴下':'2','前进':'3','后退':'4','左转':'5','右转':'6','摇摆':'8','摇尾巴':'@','跳':'A','跳跃':'A','打招呼':'C','灯':'F','亮灯':'F','懒腰':'H','伸懒腰':'H'};
+                for (const [key, val] of Object.entries(dict)) {
+                    const reg = new RegExp(`\\[CMD:\\s*${key}\\s*\\]`, 'gi');
+                    tempReply = tempReply.replace(reg, `[CMD:${val}]`);
+                }
+
+                // 全局提取所有的指令
+                const matchIter = tempReply.matchAll(/\[CMD:\s*([0-9a-zA-Z@])\s*\]/gi);
+                for (const match of matchIter) {
+                    commandsToExecute.push(match[1].toUpperCase());
+                }
+
+                // 【动作延迟队列】：如果解析出动作，按3秒间隔逐一发射
+                if (commandsToExecute.length > 0) {
+                    const runActionQueue = async () => {
+                        for (let i = 0; i < commandsToExecute.length; i++) {
+                            sendCommand(commandsToExecute[i]);
+                            // 只要不是最后一个动作，就在发完后等3秒
+                            if (i < commandsToExecute.length - 1) {
+                                await new Promise(r => setTimeout(r, 3000));
+                            }
+                        }
+                    };
+                    runActionQueue();
+                }
+                
+                // 无论是否匹配到，都把回复里所有的 [CMD:xxx] 标签清理干净再显示到界面上
+                aiReply = aiReply.replace(/\[CMD:[^\]]+\]/gi, '').trim();
+
+                if(!aiReply) aiReply = "(汪汪！)";
+                addMessageToUI(aiReply, 'assistant');
+                saveMessage('assistant', aiReply);
+
+            } catch (e) {
+                thinkingMsg.innerText = '❌ 接口请求失败，请检查设置。';
+                console.error(e);
+            }
+        }
+
+        // ==========================
+        // 4. UI 辅助
+        // ==========================
+        function addMessageToUI(text, role) {
+            const cont = document.getElementById('chat-container');
+            const d = document.createElement('div');
+            d.className = `message msg-${role}`;
+            d.innerText = text;
+            cont.appendChild(d);
+            cont.scrollTop = cont.scrollHeight;
+            return d;
+        }
+
+        async function saveMessage(role, content) {
+            const tx = db.transaction('messages', 'readwrite');
+            tx.objectStore('messages').add({ role, content });
+        }
+
+        async function getHistory(n) {
+            return new Promise(res => {
+                const req = db.transaction('messages').objectStore('messages').getAll();
+                req.onsuccess = () => {
+                    const list = req.result.slice(-n).map(m => ({ role: m.role, content: m.content }));
+                    res(list);
+                };
+            });
+        }
+
+        async function loadUI() {
+            document.getElementById('api-url').value = await dbGet('apiUrl', 'https://api.deepseek.com/v1');
+            document.getElementById('api-key').value = await dbGet('apiKey', '');
+            document.getElementById('system-prompt').value = await dbGet('sysPrompt', defaultPrompt);
+            document.getElementById('user-prompt').value = await dbGet('userPrompt', defaultUserPrompt);
+            
+            const m = await dbGet('apiModel', '');
+            if(m) document.getElementById('api-model').innerHTML = `<option value="${m}">${m}</option>`;
+            
+            const msgs = await new Promise(res => {
+                const req = db.transaction('messages').objectStore('messages').getAll();
+                req.onsuccess = () => res(req.result || []);
+            });
+
+            if(msgs.length === 0) {
+                addMessageToUI('你好主人！准备好和我玩了吗？请先在侧边栏设置API。', 'system');
+            } else {
+                msgs.forEach(m => addMessageToUI(m.content, m.role));
+            }
+        }
+
+        async function saveSettings() {
+            await dbSet('apiUrl', document.getElementById('api-url').value);
+            await dbSet('apiKey', document.getElementById('api-key').value);
+            await dbSet('sysPrompt', document.getElementById('system-prompt').value);
+            await dbSet('userPrompt', document.getElementById('user-prompt').value);
+            await dbSet('apiModel', document.getElementById('api-model').value);
+        }
+
+        async function clearChatHistory() {
+            if(confirm('清空聊天记录？')) {
+                const tx = db.transaction('messages', 'readwrite');
+                tx.objectStore('messages').clear();
+                document.getElementById('chat-container').innerHTML = '';
+                addMessageToUI('记忆已清空。', 'system');
+            }
+        }
+
+        async function fetchModels() {
+            const url = document.getElementById('api-url').value;
+            const key = document.getElementById('api-key').value;
+            try {
+                const r = await fetch(`${url}/models`, { headers: { 'Authorization': `Bearer ${key}` } });
+                const d = await r.json();
+                const sel = document.getElementById('api-model');
+                sel.innerHTML = '';
+                d.data.forEach(m => {
+                    const o = document.createElement('option');
+                    o.value = m.id; o.innerText = m.id;
+                    sel.appendChild(o);
+                });
+                alert('模型列表拉取成功！');
+            } catch (e) { alert('获取失败:' + e.message); }
+        }
+
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            const o = document.getElementById('overlay');
+            const isOpen = s.classList.toggle('open');
+            o.style.display = isOpen ? 'block' : 'none';
+        }
+
+        window.onload = async () => {
+            await initDB();
+            await loadUI();
+        };
+    </script>
+</body>
+</html>

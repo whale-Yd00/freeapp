@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 【修改点】: 增加了 viewport-fit=cover 来启用边缘到边缘的显示模式 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AI聊天助手 - 支持上下文调节与群聊</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="capacitor.js"></script>
+    <script src="crypto-js.min.js"></script>
+    <!-- Capacitor Plugins -->
+    <script src="utils/notificationManager.js"></script>
+    
+    <!-- 【新增代码】: 添加安全区域适配样式 -->
+    <style>
+        /* 为顶部标题栏增加安全区域上边距，防止被状态栏遮挡 */
+        .wechat-header,
+        .chat-header,
+        .moments-header,
+        .weibo-header {
+            padding-top: env(safe-area-inset-top);
+        }
+
+        /* 为底部导航栏增加安全区域下边距，防止被手势指示器(小横条)遮挡 */
+        .bottom-nav {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-icon">🐋</div>
+            <div class="loading-text" id="loading-status-text">正在唤醒玄鲸...</div>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="loading-progress-bar"></div>
+            </div>
+        </div>
+    </div>
+    <!-- 页面主体内容保持不变 -->
+    <div class="main-container">
+        <div class="main-header">
+            <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+                <div class="main-header-title">Whale-LLT</div>
+                <span style="font-size: 12px; color: #999; font-weight: 400;">以下内容均为人工智能合成</span>
+                
+                <div id="usageStatsDisplay" class="usage-stats-inline" onclick="toggleUsageDetail()" style="display: none;">
+                    <span id="hitRateShort"></span>
+                </div>
+            </div>
+        </div>
+        <div class="contact-list-page active" id="contactListPage">
+            <div class="secondary-header">
+                <button id="hamburger-btn" class="hamburger-button">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 12H21" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M3 6H21" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M3 18H21" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="contactList"></div>
+        </div>
+
+        <div class="chat-page" id="chatPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>Whale-LLT</span>
+                </div>
+                <div class="chat-title" id="chatTitle">聊天</div>
+                <div class="chat-header-actions">
+                    <div class="memory-btn" onclick="toggleMemoryPanel()">
+                        <svg t="1689237694389" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="4338" width="24" height="24"><path d="M896 96H128C110.4 96 96 110.4 96 128v768c0 17.6 14.4 32 32 32h768c17.6 0 32-14.4 32-32V128c0-17.6-14.4-32-32-32zM384 832H192v-64h192v64z m0-192H192v-64h192v64z m0-192H192v-64h192v64z m448 384H448v-64h384v64z m0-192H448v-64h384v64z m0-192H448v-64h384v64z" p-id="4339" fill="#515151"></path></svg>
+                    </div>
+                    
+                    <div class="action-btn" id="startCallBtn" onclick="startPhoneCall()">📞</div>
+                    <div class="chat-more" onclick="toggleSettingsMenu()">⋯</div>
+                </div>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages"></div>
+            
+            <div class="chat-input-area">
+                <div class="feature-hint" id="featureHint">按Enter发送消息，点"发送"按钮获取AI回复</div>
+                <div class="input-actions">
+                    <div class="action-btn" onclick="toggleEmojiPanel()">😊</div>
+                    <div class="action-btn" onclick="showRedPacketModal()">🧧</div>
+                </div>
+                <textarea class="chat-input" id="chatInput" placeholder="输入消息" rows="1"></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
+                
+                <div class="emoji-panel" id="emojiPanel">
+                    <div class="emoji-grid" id="emojiGrid">
+                        <div class="add-emoji-btn" onclick="showAddEmojiModal()">+ 添加表情</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="context-indicator" id="contextIndicator">
+                <span>上下文: 10条</span>
+            </div>
+
+            <div class="memory-panel" id="memoryPanel">
+                <div class="memory-panel-header">
+                    <div class="memory-panel-tabs">
+                        <button id="tabMemoryTable" class="memory-tab active" onclick="switchMemoryTab('table')">记忆表格</button>
+                        <button id="tabWorldBook" class="memory-tab" onclick="switchMemoryTab('worldbook')">世界书</button>
+                    </div>
+                    <div class="memory-panel-actions">
+                         <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()">编辑</button>
+                         <button class="memory-panel-btn" onclick="toggleMemoryPanel()">关闭</button>
+                    </div>
+                </div>
+                <div class="memory-panel-content">
+                    <div id="memoryTableViewWrapper" style="height: 100%;">
+                        <div id="memoryTableView" class="memory-table-view"></div>
+                        <textarea id="memoryTextarea" class="memory-textarea" style="display: none;"></textarea>
+                    </div>
+
+                    <div id="worldBookViewWrapper" style="display: none; height: 100%; display: flex; flex-direction: column;">
+                        <div id="worldBookList" class="world-book-list">
+                            </div>
+                        <form id="worldBookForm" class="world-book-form" onsubmit="saveWorldBookEntry(event)">
+                            <input type="hidden" id="worldBookEntryIndex">
+                            <div class="form-group">
+                                <label class="form-label">关键词 (用中文逗号"，"隔开)</label>
+                                <input type="text" id="worldBookKeywords" class="form-input" placeholder="例如：艾莉亚，星辰之刃" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">条目内容</label>
+                                <textarea id="worldBookEntry" class="form-textarea" rows="3" placeholder="当上下文中出现关键词时，此条目内容会发送给AI" required></textarea>
+                            </div>
+                            <button type="submit" class="form-submit">保存条目</button>
+                            <button type="button" class="form-submit" style="background-color: #888; margin-top: 5px; display: none;" id="cancelEditWorldBookBtn">取消编辑</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="moments-page" id="momentsPage">
+            <div class="moments-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">朋友圈</div>
+                <div class="chat-more" onclick="showPublishMomentModal()">➕</div>
+            </div>
+            
+            <div class="moments-content" id="momentsContent">
+                <div class="moments-empty" id="momentsEmpty">
+                    <div class="moments-empty-icon">📝</div>
+                    <div class="moments-empty-text">还没有朋友圈动态</div>
+                    <button class="moments-empty-btn" onclick="showPublishMomentModal()">发布第一条动态</button>
+                </div>
+                
+                <div class="moments-list" id="momentsList" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div class="profile-page" id="profilePage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">个人信息</div>
+                <div style="width: 24px;"></div>
+            </div>
+            
+            <div class="profile-header">
+                <div class="profile-avatar" id="userAvatar">我</div>
+                <div class="profile-name" id="userName">我的昵称</div>
+                <div class="profile-id">id号：AI_User_001</div>
+            </div>
+            
+            <div class="profile-section">
+                <div class="profile-item" onclick="showEditProfileModal()">
+                    <div class="profile-item-label">编辑个人信息</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
+                <div class="profile-item" onclick="showWalletPage()">
+                    <div class="profile-item-label">我的钱包</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
+                <div class="profile-item" onclick="showPage('dataManagementPage')">
+                    <div class="profile-item-label">数据管理</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
+                <div class="profile-item" onclick="showDebugLogPage()">
+                    <div class="profile-item-label">查看调试日志</div>
+                    <div class="profile-item-arrow">›</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="weibo-page" id="weiboPage">
+            <div class="weibo-header">
+                <div class="back-btn" onclick="showPage('contactListPage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">论坛</div>
+                <div class="chat-more" onclick="showPostChoiceModal()">➕</div>
+            </div>
+            <div class="weibo-container" id="weiboContainer"></div>
+        </div>
+
+        <div class="interactive-page" id="interactivePage">
+            <iframe id="interactiveFrame" src="自选模型bug修复.html" style="width: 100%; height: 100%; border: none;"></iframe>
+        </div>
+
+        <div class="data-management-page" id="dataManagementPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">数据管理</div>
+                <div style="width: 24px;"></div>
+            </div>
+            
+            <div class="data-management-container">
+                <!-- 数据统计信息 -->
+                <div class="database-stats" style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">数据统计</h4>
+                    <div id="databaseStatsContent" style="font-size: 13px; color: #666;">
+                        <div>正在加载统计信息...</div>
+                    </div>
+                    <button type="button" class="refresh-stats-btn" onclick="refreshDatabaseStats()" 
+                            style="margin-top: 10px; padding: 5px 10px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        刷新统计
+                    </button>
+                </div>
+                
+                <!-- 导入导出操作 -->
+                <div class="import-export-actions" style="margin: 15px;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button type="button" class="form-submit" onclick="exportDatabase()" 
+                                style="flex: 1; background-color: #28a745;">
+                            📤 导出数据
+                        </button>
+                        <button type="button" class="form-submit" onclick="triggerFileSelect()" 
+                                style="flex: 1; background-color: #dc3545;">
+                            📥 导入数据
+                        </button>
+                    </div>
+                    
+                    <input type="file" id="importFileInput" accept=".json" style="position: absolute; opacity: 0; width: 1px; height: 1px; top: -100px;" onchange="handleFileSelect(event)">
+                    
+                    <!-- 导入说明 -->
+                    <div class="import-warning" style="margin-top: 10px; padding: 10px; background: #f8d7da; border-radius: 4px; border: 1px solid #f5c6cb;">
+                        <div style="font-size: 13px; color: #721c24; margin-bottom: 5px;">
+                            <strong>⚠️ 重要提醒</strong>
+                        </div>
+                        <div style="font-size: 12px; color: #721c24;">
+                            导入数据将完全覆盖现有的所有数据！请确保已备份重要信息！！
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="debug-log-page" id="debugLogPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>返回</span>
+                </div>
+                <div class="chat-title">调试日志</div>
+                <div class="header-actions">
+                    <button class="header-btn" onclick="clearDebugLogs()">清空</button>
+                    <button class="header-btn" onclick="copyDebugLogs()">复制</button>
+                </div>
+            </div>
+            
+            <div class="debug-log-container">
+                <div class="debug-log-info">
+                    <div class="debug-log-stats">
+                        总计 <span id="logCount">0</span> 条日志
+                    </div>
+                    <div class="debug-log-hint">
+                        显示浏览器控制台的实时日志，包括错误、警告和调试信息
+                    </div>
+                </div>
+                
+                <div class="debug-log-content" id="debugLogContent">
+                    <div class="debug-log-empty">
+                        暂无日志记录
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="wallet-page" id="walletPage">
+            <div class="chat-header">
+                <div class="back-btn" onclick="showPage('profilePage')">
+                    <span>‹</span>
+                    <span>我</span>
+                </div>
+                <div class="chat-title">我的钱包</div>
+                <div style="width: 24px;"></div>
+            </div>
+
+            <div class="wallet-container">
+                <div class="wallet-balance-card">
+                    <div class="wallet-balance-label">账户余额 (元)</div>
+                    <div class="wallet-balance-amount" id="walletBalance">¥ 0.00</div>
+                </div>
+
+                <div class="transaction-list-container">
+                    <h3 class="transaction-list-title">交易记录</h3>
+                    <div class="transaction-list" id="transactionList">
+                        <div class="transaction-empty">
+                            还没有任何交易记录
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="offlineModePage">
+            <iframe src="线下.html" style="width: 100%; height: 100%; border: none;"></iframe>
+        </div>
+        
+        <div class="settings-menu" id="settingsMenu">
+            <div class="menu-item" onclick="showEditContactModal()">编辑联系人</div>
+            <div class="menu-item" onclick="showBackgroundModal()">设置背景</div>
+            <div class="menu-item" onclick="handleRestoreDefaultBubble()">恢复默认气泡</div>
+            <div class="menu-item" onclick="clearMessages()">清空聊天</div>
+            <!-- 新增删除聊天对象选项 -->
+            <div class="menu-item delete-item" onclick="deleteCurrentContact()">删除聊天对象</div>
+            <!-- 调试功能 -->
+            <div class="menu-item" onclick="exportConsoleLogs()">导出调试日志</div>
+        </div>
+    </div>
+
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="showPage('contactListPage')">
+            <div class="nav-icon">💬</div>
+            <div class="nav-text">聊天</div>
+        </div>
+        <div class="nav-item" onclick="showPage('weiboPage')">
+            <div class="nav-icon">
+                <svg t="1721063385731" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="10099" width="24" height="24"><path d="M822.4 438.4c-3.2-16-16-28.8-32-32-12.8-3.2-25.6-3.2-38.4-3.2-108.8 0-204.8 48-275.2 128-22.4 25.6-41.6 51.2-57.6 80-96-44.8-192-115.2-265.6-204.8-19.2-25.6-48-35.2-76.8-22.4-28.8 12.8-44.8 44.8-35.2 73.6 3.2 9.6 9.6 19.2 16 28.8 48 64 108.8 118.4 179.2 163.2-83.2 16-156.8 64-211.2 131.2-19.2 25.6-16 64 9.6 83.2 25.6 19.2 64 16 83.2-9.6 44.8-54.4 105.6-92.8 172.8-112-6.4 35.2-9.6 70.4-9.6 105.6 0 163.2 102.4 304 249.6 358.4 19.2 6.4 38.4 0 51.2-16 12.8-16 12.8-38.4 0-54.4-115.2-124.8-115.2-300.8 0-425.6 64-70.4 144-112 233.6-121.6 16 0 32-3.2 44.8-9.6 16-9.6 22.4-25.6 19.2-41.6z" fill="#999999" p-id="10100"></path></svg>
+            </div>
+            <div class="nav-text">论坛</div>
+        </div>
+        <div class="nav-item" onclick="showPage('interactivePage')">
+            <div class="nav-icon">🎭</div>
+            <div class="nav-text">互动</div>
+        </div>
+        <div class="nav-item" onclick="showPage('momentsPage')">
+            <div class="nav-icon">🔍</div>
+            <div class="nav-text">发现</div>
+        </div>
+        <div class="nav-item" onclick="showPage('profilePage')">
+            <div class="nav-icon">👤</div>
+            <div class="nav-text">我</div>
+        </div>
+    </div>
+
+    <div class="modal" id="generatePostModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">生成论坛帖子</div>
+                <div class="modal-close" onclick="closeModal('generatePostModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleGeneratePost(event)">
+                    <div class="form-group">
+                        <label class="form-label">选择角色</label>
+                        <select class="form-input" id="postGenCharacterSelect" onchange="handleCharacterChange()" required>
+                            <option value="">请选择...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">话题</label>
+                        <input type="text" class="form-input" id="postGenHashtag" placeholder="例如：AB、BA、A & B、AB的日记 等" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">生成数量</label>
+                        <input type="number" class="form-input" id="postGenCount" value="1" min="1" max="5" required>
+                    </div>
+                    <button type="submit" class="form-submit">开始生成</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="publish-moment-modal" id="publishMomentModal">
+        <div class="publish-moment-content">
+            <div class="publish-moment-header">
+                <div class="publish-moment-title">生成朋友圈</div>
+                <div class="publish-moment-close" onclick="closePublishMomentModal()">取消</div>
+            </div>
+            <div class="publish-moment-body">
+                <div class="generate-moment-section">
+                    <button class="generate-moment-btn" onclick="generateMomentContent()">生成朋友圈</button>
+                    <div class="generate-moment-hint">
+                        点击上方按钮，AI将根据当前角色的人设和聊天记录自动生成朋友圈内容
+                    </div>
+                </div>
+                
+                <div class="moment-preview" id="momentPreview">
+                    <div class="moment-preview-title">预览</div>
+                    <div class="moment-preview-content" id="momentPreviewContent"></div>
+                    <img class="moment-preview-image" id="momentPreviewImage" style="display: none;">
+                </div>
+                
+                <div class="unsplash-key-section">
+                    <label class="unsplash-key-label">Unsplash API Key</label>
+                    <input type="text" class="unsplash-key-input" id="unsplashApiKey" placeholder="请输入你的Unsplash API Key">
+                </div>
+                
+                <button class="publish-moment-submit" id="publishMomentBtn" onclick="publishMoment()" disabled>发布</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addContactModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="contactModalTitle">添加AI助手</div>
+                <div class="modal-close" onclick="closeModal('addContactModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveContact(event)">
+                    <div class="form-group">
+                        <label class="form-label">助手名称</label>
+                        <input type="text" class="form-input" id="contactName" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">头像（可选）</label>
+                        <input type="url" class="form-input" id="contactAvatar" placeholder="可直接粘贴URL或上传本地图片">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="avatarUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('avatarUploadInput', 'contactAvatar', 'avatarUploadStatus')">
+                            <span id="avatarUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">人设描述</label>
+                        <textarea class="form-textarea" id="contactPersonality" required placeholder="描述AI的性格、背景、说话风格等"></textarea>
+                    </div>
+                    
+                    <!-- 【修改点 2】: 更新联系人设置中的语音ID提示 -->
+                    <div class="form-group">
+                        <label class="form-label">Minimax 语音ID（可选）</label>
+                        <input type="text" class="form-input" id="contactVoiceId" placeholder="可选 - 填写后角色会拥有语音能力">
+                        <div class="context-info" style="margin-top: 4px;">
+                            在 <a href="https://www.minimaxi.com/voice-clone" target="_blank" rel="noopener noreferrer">Minimax官网</a> 克隆或创建声音！
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">气泡样式（可选）</label>
+                        <select class="form-input" id="contactBubbleStyleSelect">
+                            <option value="">默认样式</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">DeepSeek 思考模式（可选）</label>
+                        <select class="form-input" id="contactThinkMode">
+                            <option value="default">默认模式 (自动选择)</option>
+                            <option value="inner_os">角色沉浸模式 (带有括号包裹的内心独白)</option>
+                            <option value="no_inner_os">纯分析模式 (纯逻辑分析，无内心戏)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="prompt-section">
+                        <div class="prompt-header">
+                            <div class="prompt-title">自定义提示词（可选）</div>
+                            <div class="prompt-actions">
+                                <button type="button" class="prompt-btn" onclick="document.getElementById('promptFile').click()">导入JSON</button>
+                                <input type="file" id="promptFile" class="file-input" accept=".json" onchange="importPrompts(event)">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <textarea class="form-textarea" id="customPrompts" placeholder="输入自定义提示词，或导入JSON文件"></textarea>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="form-submit">确定</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="createGroupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">创建群聊</div>
+                <div class="modal-close" onclick="closeModal('createGroupModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="createGroup(event)">
+                    <div class="form-group">
+                        <label class="form-label">群聊名称</label>
+                        <input type="text" class="form-input" id="groupName" required>
+                    </div>
+                    
+                    <div class="create-group-section">
+                        <label class="form-label">选择群成员</label>
+                        <div class="group-member-list" id="groupMemberList"></div>
+                    </div>
+                    
+                    <button type="submit" class="form-submit">创建群聊</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="editProfileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">编辑个人信息</div>
+                <div class="modal-close" onclick="closeModal('editProfileModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveProfile(event)">
+                    <div class="form-group">
+                        <label class="form-label">昵称</label>
+                        <input type="text" class="form-input" id="profileNameInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">头像（可选）</label>
+                        <input type="url" class="form-input" id="profileAvatarInput" placeholder="可直接粘贴URL或上传本地图片">
+                         <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="profileUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('profileUploadInput', 'profileAvatarInput', 'profileUploadStatus')">
+                            <span id="profileUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">我的人设描述</label>
+                        <textarea class="form-textarea" id="profilePersonality" placeholder="描述你的性格、背景、说话风格等，让AI更好地与你互动"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">我的气泡样式（可选）</label>
+                        <select class="form-input" id="profileBubbleStyleSelect">
+                            <option value="">默认样式</option>
+                            </select>
+                    </div>
+                    <button type="submit" class="form-submit">保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="apiSettingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">API设置</div>
+                <div class="modal-close" onclick="closeModal('apiSettingsModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveApiSettings(event)">
+                    <div class="form-group">
+                        <label class="form-label">API URL</label>
+                        <input type="url" class="form-input" id="apiUrl" required placeholder="例如: https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">API Key</label>
+                        <div class="api-key-row">
+                            <input type="password" class="form-input api-key-input" id="apiKey" required>
+                            <div class="timeout-group">
+                                <label class="timeout-label">超时</label>
+                                <input type="number" class="timeout-input" id="apiTimeout" min="5" max="300" value="60" placeholder="60">
+                                <span class="timeout-unit">秒</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 【修改点 1】: 替换 ElevenLabs 设置为 Minimax 设置 -->
+                    <div class="form-group">
+                        <label for="minimaxGroupId" class="form-label">Minimax Group ID</label>
+                        <input type="text" id="minimaxGroupId" class="form-input" placeholder="输入你的 Minimax Group ID...">
+                    </div>
+                    <div class="form-group">
+                        <label for="minimaxApiKey" class="form-label">Minimax API Key (for TTS)</label>
+                        <input type="password" id="minimaxApiKey" class="form-input" placeholder="输入你的 Minimax API Key...">
+                        <div class="context-info" style="margin-top: 4px;">
+                            用于语音克隆功能。在 <a href="https://www.minimaxi.com/" target="_blank" rel="noopener noreferrer">Minimax官网</a> 获取凭证。
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="glmApiKey" class="form-label">智谱 GLM API Key (语音识别)</label>
+                        <input type="password" id="glmApiKey" class="form-input" placeholder="输入用于语音识别的智谱API Key...">
+                        <div class="context-info" style="margin-top: 4px;">
+                            此Key用于电话通讯中的语音转文字功能。请在智谱AI开放平台获取。
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">缓存命中价格 (元/百万Token)</label>
+                        <input type="number" class="form-input" id="priceHit" min="0" step="0.0001" placeholder="例如：1.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">输入未命中价格 (元/百万Token)</label>
+                        <input type="number" class="form-input" id="priceMiss" min="0" step="0.0001" placeholder="例如：12.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">输出价格 (元/百万Token)</label>
+                        <input type="number" class="form-input" id="priceOut" min="0" step="0.0001" placeholder="例如：24.0">
+                    </div>
+
+                    <div class="context-control">
+                        <div class="context-header">
+                            <div class="context-title">上下文长度</div>
+                            <div class="context-value" id="contextValue">10条</div>
+                        </div>
+                        <input 
+                            type="range" 
+                            class="context-slider" 
+                            id="contextSlider" 
+                            min="1" 
+                            max="1000" 
+                            value="10"
+                            oninput="updateContextValue(this.value)"
+                        >
+                        <div class="context-info">
+                            控制AI可见的历史消息数量，较长的上下文有助于保持对话连贯性，但可能会增加API成本。
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 15px; display: flex; align-items: center; justify-content: space-between;">
+                        <label class="form-label" style="margin-bottom: 0;">显示实时统计（账单）</label>
+                        <label class="switch-container">
+                            <input type="checkbox" id="showUsageStatsToggle" checked>
+                            <span class="slider-round"></span>
+                        </label>
+                    </div>
+                    
+                    <button type="button" class="form-submit" onclick="testApiConnection()" style="margin-bottom: 10px;">测试连接</button>
+                    <div class="form-group">
+                        <label class="form-label">主要模型</label>
+                        <select class="form-input" id="primaryModelSelect">
+                            <option value="">请先测试连接</option>
+                        </select>
+                        <div class="context-info" style="margin-top: 4px;">生成对话、生成帖子等使用的模型。建议选择质量高的模型。</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">次要模型</label>
+                        <select class="form-input" id="secondaryModelSelect">
+                            <option value="sync_with_primary">与主模型保持一致</option>
+                        </select>
+                        <div class="context-info" style="margin-top: 4px;">用于总结、填写记忆表格等...</div>
+                    </div>
+
+                    <!-- ========== 在这里插入下面的新代码 ========== -->
+                    <div class="form-group">
+                        <label class="form-label">手动检查/添加模型</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" class="form-input" id="manualModelInput" placeholder="输入模型名称, 例如: glm-4.5" style="flex-grow: 1;">
+                            <button type="button" class="form-submit" id="checkModelBtn" style="width: auto; flex-shrink: 0; padding: 0 15px;">检查</button>
+                        </div>
+                        <div class="context-info" style="margin-top: 4px;">如果模型列表中没有您想用的模型，可在此处手动检查权限并添加。</div>
+                    </div>
+                    <!-- ========== 插入结束 ========== -->
+                    
+                    <button type="button" class="form-submit" onclick="syncDataToInteractivePage()" style="margin-bottom: 10px; background-color: #17a2b8;">同步数据到互动页</button>
+                    <button type="submit" class="form-submit">保存</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="backgroundModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">设置聊天背景</div>
+                <div class="modal-close" onclick="closeModal('backgroundModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="setBackground(event)">
+                    <div class="form-group">
+                        <label class="form-label">背景图片</label>
+                        <input type="url" class="form-input" id="backgroundUrl" placeholder="可直接粘贴URL或上传本地图片">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="bgUploadInput" accept="image/*" style="flex: 1;" onchange="handleFileUpload('bgUploadInput', 'backgroundUrl', 'bgUploadStatus')">
+                            <span id="bgUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <button type="submit" class="form-submit">确定</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="addEmojiModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">添加表情包</div>
+                <div class="modal-close" onclick="closeModal('addEmojiModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="addEmoji(event)">
+                    <div class="form-group">
+                        <label class="form-label">表情图片</label>
+                        <input type="url" class="form-input" id="emojiUrl" placeholder="可直接粘贴URL或上传本地图片">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                            <input type="file" id="emojiUploadInput" accept="image/*" style="flex: 1;" onchange="handleEmojiFileUpload(event)">
+                            <span id="emojiUploadStatus" style="font-size: 12px; color: #07c160;"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">表情含义（用于AI理解和调用）</label>
+                        <input type="text" class="form-input" id="emojiMeaning" required placeholder="例如：开心、大笑、哭泣等">
+                    </div>
+                    <button type="submit" class="form-submit">添加</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="redPacketModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发红包</div>
+                <div class="modal-close" onclick="closeModal('redPacketModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="sendRedPacket(event)">
+                    <div class="form-group">
+                        <label class="form-label">当前余额: <span id="redPacketBalance" style="color: #07c160; font-weight: bold;">¥ 0.00</span></label>
+                        <label class="form-label">金额</label>
+                        <input type="number" class="form-input" id="redPacketAmount" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">留言（可选）</label>
+                        <input type="text" class="form-input" id="redPacketMessage" placeholder="恭喜发财，大吉大利！">
+                    </div>
+                    <button type="submit" class="form-submit">塞钱进红包</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="musicModal" class="music-modal">
+        <div class="music-modal-content">
+            <span class="close-btn" id="closeMusicModal">&times;</span>
+            <h2>🎵 音乐播放器</h2>
+            
+            <div id="currentSongInfo" style="display: none;">
+                <h3>正在播放: <span id="currentSongName"></span></h3>
+                <div class="player-controls">
+                    <div class="progress-bar" id="progressBar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="time-display">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                    <div style="text-align: center; margin-top: 10px;">
+                        <button class="form-submit" onclick="togglePlay()">
+                            <span id="playPauseBtn">▶️ 播放</span>
+                        </button>
+                        <button class="form-submit" style="background-color: #888;" onclick="stopMusic()">⏹️ 停止</button>
+                    </div>
+                </div>
+            </div>
+
+            <h3>我的歌单</h3>
+            <div class="playlist-container" id="playlistContainer">
+                <p style="text-align: center; color: #999;">暂无歌曲</p>
+            </div>
+
+            <h3>添加新歌曲</h3>
+            <div id="addSongForm">
+                <div class="form-group">
+                    <label class="form-label">歌曲名称 (可选):</label>
+                    <input type="text" class="form-input" id="songName" placeholder="留空则使用文件名">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">选择音乐文件:</label>
+                    <input type="file" class="form-input" id="musicFileUpload" accept="audio/*,.mp3,.m4a,.wav,.flac">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LRC歌词文件 (可选):</label>
+                    <input type="file" class="form-input" id="lrcFile" accept=".lrc">
+                    <small style="color: #666;">请选择.lrc格式的歌词文件</small>
+                </div>
+                <button class="form-submit" onclick="saveSong()">保存歌曲</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <label>
+                    <input type="checkbox" id="showLyrics" onchange="toggleLyricsDisplay()">
+                    显示浮动歌词
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div id="floatingLyrics" class="floating-lyrics" style="display: none;">
+        <span id="currentLyric">等待歌词...</span>
+    </div>
+
+    <!-- 待办清单模态框 -->
+    <div class="modal" id="todoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">待办清单</div>
+                <div class="modal-close" onclick="closeModal('todoModal')">关闭</div>
+            </div>
+            <div class="modal-body">
+                <form id="addTodoForm" onsubmit="addTodo(event)">
+                    <div class="form-group">
+                        <label class="form-label">新任务</label>
+                        <input type="text" class="form-input" id="todoInput" placeholder="需要做什么？" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">提醒时间</label>
+                        <input type="datetime-local" class="form-input" id="todoDateInput" required>
+                    </div>
+                    <button type="submit" class="form-submit">添加</button>
+                </form>
+                <div class="todo-list-container" id="todoListContainer">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义气泡样式模态框 -->
+    <div class="modal" id="customBubbleModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">自定义气泡样式</div>
+                <div class="modal-close" onclick="closeModal('customBubbleModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="saveCustomBubbleStyle(event)">
+                    <div class="form-group">
+                        <label class="form-label">HTML 结构</label>
+                        <textarea class="form-textarea" id="customBubbleHtml" placeholder="请粘贴从气泡设计器生成的 HTML 代码" rows="6"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">CSS 样式</label>
+                        <textarea class="form-textarea" id="customBubbleCss" placeholder="请粘贴从气泡设计器生成的 CSS 代码" rows="6"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <button type="button" class="form-submit" style="background-color: #888; margin-right: 10px;" onclick="clearCustomBubbleStyle()">清除样式</button>
+                        <button type="submit" class="form-submit">保存样式</button>
+                    </div>
+                </form>
+                <div class="context-info" style="margin-top: 10px;">
+                    提示：点击右上角菜单中的"气泡设计器"图标，可打开设计器自定义气泡样式。将设计器中生成的代码粘贴到此处即可应用。
+                </div>
+                <div class="context-info" style="margin-top: 5px; color: #e74c3c;">
+                    注意：自定义气泡样式仅应用于普通文本消息，不会影响特殊消息（表情、红包等）。
+                </div>
+                <div class="context-info" style="margin-top: 5px;">
+                    使用以下占位符来确保内容正确显示：<br>
+                    {{message-content}} - 完整的消息内容（包含样式）<br>
+                    {{text-content}} - 纯文本内容<br>
+                    {{content}} - 原始消息内容<br>
+                    {{avatar}} - 头像内容
+                </div>
+                <div class="context-info" style="margin-top: 5px; color: #2980b9;">
+                    <strong>重要说明：</strong><br>
+                    1. 自定义气泡将自动保持与原有气泡相同的尺寸<br>
+                    2. 系统会自动将实际聊天内容替换设计器中的"<b>这里是你的气泡预览区</b>"文本<br>
+                    3. 颜色设置将自动优先应用，不会被系统默认样式覆盖
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    
+    <div class="top-notification" id="topNotification"></div>
+
+    <!-- Update Announcement Modal -->
+    <div class="modal" id="updateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">更新公告</div>
+            </div>
+            <div class="modal-body" id="updateModalBody">
+                <!-- Content will be injected by JS to handle markdown -->
+            </div>
+            <div class="modal-footer">
+                 <button class="form-submit" id="updateModalCloseBtn">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Post Choice Modal -->
+    <div class="modal" id="postChoiceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">创建论坛帖子</div>
+                <div class="modal-close" onclick="closeModal('postChoiceModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <div class="post-choice-container">
+                    <div class="choice-option" onclick="selectPostType('manual')">
+                        <div class="choice-icon">✍️</div>
+                        <div class="choice-title">自己发帖子</div>
+                        <div class="choice-description">手动输入帖子内容，系统会生成评论</div>
+                    </div>
+                    <div class="choice-option" onclick="selectPostType('generate')">
+                        <div class="choice-icon">✨</div>
+                        <div class="choice-title">生成帖子</div>
+                        <div class="choice-description">AI根据聊天记录自动生成帖子和评论</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Post Modal -->
+    <div class="modal" id="manualPostModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">发布帖子</div>
+                <div class="modal-close" onclick="closeModal('manualPostModal')">取消</div>
+            </div>
+            <div class="modal-body">
+                <form onsubmit="handleManualPost(event)">
+                    <div class="form-group">
+                        <label class="form-label">发帖人</label>
+                        <input type="text" class="form-input" id="manualPostAuthor" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">话题标签</label>
+                        <input type="text" class="form-input" id="manualPostTag" value="碎碎念" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">帖子内容</label>
+                        <textarea class="form-input" id="manualPostContent" placeholder="输入你的帖子内容..." rows="4" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">图片描述</label>
+                        <textarea class="form-input" id="manualPostImageDesc" placeholder="描述配图内容（可选）..." rows="2"></textarea>
+                    </div>
+                    <button type="submit" class="form-submit">发布并生成评论</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="marked.min.js"></script>
+    
+    <!-- 修正后的脚本加载顺序和路径 -->
+    <!-- 首先加载所有依赖的工具脚本 -->
+    <script src="utils/promptBuilder.js"></script>
+    <script src="utils/memoryTable.js"></script>
+    <script src="utils/dataMigrator.js"></script>
+    <script src="utils/announcementManager.js"></script>
+    
+    <!-- 最后加载主逻辑脚本 -->
+    <script src="script.js"></script>
+     <div class="modal" id="bubbleDesignerModal">
+        <div class="modal-content" id="bubbleDesignerModalContent">
+            <div class="modal-header">
+                <div class="modal-title">气泡样式设计器</div>
+                <div class="modal-close" onclick="closeModal('bubbleDesignerModal')">完成</div>
+            </div>
+            <div class="modal-body" style="padding: 0; height: calc(90vh - 50px);">
+                <iframe 
+                    src="气泡.html" 
+                    style="width: 100%; height: 100%; border: none;" 
+                    frameborder="0">
+                </iframe>
+            </div>
+        </div>
+    </div>
+
+    <script src="marked.min.js"></script>
+
+    <div class="phone-call-modal" id="phoneCallModal">
+        <div class="call-background"></div>
+        <div class="call-content">
+            <div class="contact-info-call">
+                <div class="contact-avatar-call" id="callAvatar"></div>
+                <div class="contact-name-call" id="callName"></div>
+            </div>
+            <div class="call-status" id="callStatus">正在连接...</div>
+            <div class="call-actions">
+                <button class="end-call-btn" onclick="endPhoneCall()">挂断</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal" id="bubbleManagerModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">气泡样式管理</div>
+                <div class="modal-close" onclick="closeModal('bubbleManagerModal')">完成</div>
+            </div>
+            <div class="modal-body">
+                <div class="bubble-manager-actions">
+                    <button class="form-submit" onclick="document.getElementById('importBubbleStyleInput').click()">
+                        📥 导入样式 (.json)
+                    </button>
+                    <input type="file" id="importBubbleStyleInput" accept=".json" style="display: none;" onchange="importBubbleStyles(event)">
+                </div>
+                
+                <h4 class="bubble-manager-list-title">我的样式库</h4>
+                
+                <div id="bubbleManagerList" class="bubble-manager-list">
+                    <div class="bubble-manager-empty">
+                        还没有自定义样式，快去"气泡设计器"创建一个吧！
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+<div id="sidebar-menu" class="sidebar-menu">
+    <div class="sidebar-header">
+        <h3>菜单</h3>
+    </div>
+    <div class="sidebar-content">
+        <a class="sidebar-item" onclick="handleSidebarClick(bindApiCheckButton)">
+            <span>⚙️</span> API 设置
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(() => showModal('bubbleDesignerModal'))">
+            <span>🎨</span> 气泡设计器
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(showBubbleManagerModal)">
+            <span>📦</span> 气泡管理
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(showAddContactModal)">
+            <span>➕</span> 添加联系人
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(showCreateGroupModal)">
+            <span>👥</span> 创建群聊
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(showMusicModal)">
+            <span>🎵</span> 音乐播放器
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(showTodoModal)">
+            <span>✅</span> 待办清单
+        </a>
+        <a class="sidebar-item" onclick="handleSidebarClick(() => showPage('offlineModePage'))">
+            <span>🔌</span> 线下模式
+        </a>
+    </div>
+</div>
+
+<div id="appBlockerOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 9998;"></div>
+
+    <div id="disclaimerModal" class="modal" style="display: none; z-index: 9999;">
+        <div class="modal-content" style="max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <div class="modal-title">免责声明 (Disclaimer)</div>
+            </div>
+            <div class="modal-body" id="disclaimer-body" style="flex-grow: 1; overflow-y: auto;">
+                <h3>前言与定义 (Preamble and Definitions)</h3>
+                <p><strong>重要须知：</strong> 在您（以下简称"用户"）下载、安装、启动、注册、登录或以任何方式使用本软件（以下简称"本应用"）之前，请务必仔细阅读并充分理解本《免责声明》（以下简称"本声明"）中的全部条款。本声明构成您与本应用开发者之间具有法律约束力的文件。</p>
+                <p><strong>本应用：</strong> 指由开发者创建和提供的、仅在用户设备本地运行的客户端软件/用户界面。</p>
+                <p><strong>第三方服务：</strong> 指由独立于本应用开发者的第三方实体所提供的人工智能（AI）模型、API接口及相关服务。</p>
+                <p><strong>用户内容：</strong> 指用户通过本应用调用第三方服务所输入、生成、处理或存储的任何数据，包括但不限于文本、代码、配置信息及聊天记录。</p>
+                <p>一旦您开始执行上述任何使用行为，即表示您已完全阅读、理解并无条件接受本声明的全部条款和条件。如果您不同意本声明中的任何内容，或无法准确理解任何条款的解释，请立即停止所有使用行为并彻底卸载本应用。</p>
+
+                <h3>第一条：软件性质与功能限制</h3>
+                <p><strong>1.1. 本地工具定位：</strong> 本应用的核心定位是一个本地化、非商业化、中立的技术工具。它本身不生成任何内容，不提供、不运营、也不接入任何特定的生成式AI模型或服务。本应用的所有功能实现均依赖于用户自行配置的第三方服务。</p>
+                <p><strong>1.2. 无控制权申明：</strong> 开发者对用户选择连接的第三方服务没有所有权或控制权。开发者无法保证第三方服务的可用性、安全性、响应速度、内容策略或其API接口的持续有效性。因第三方服务中断、关闭、调整或内容过滤策略而导致的任何功能受限或损失，本应用开发者概不负责。</p>
+
+                <p><strong>1.3. 虚拟资产申明：</strong> 本应用中包含的"钱包"、"余额"、"红包"等功能及其所显示的任何数值或单位，均为纯粹的虚拟积分或代币，仅为提升应用内的模拟互动体验而设计。这些虚拟资产不具有任何真实世界中的货币价值，不能也不得用于购买、兑换任何实体商品、服务或法定货币。严禁用户之间进行任何形式的虚拟资产与真实货币的场外交易。本应用不提供任何真实的支付、转账、理财或金融服务。</p>
+
+                <p><strong>1.4. 内容标识申明：</strong> 为响应相关法律法规（如中国《生成式人工智能服务管理暂行办法》）对内容透明度的要求，并帮助用户清晰辨别内容来源，本应用已在界面显著位置设置了全局性提示——"以下内容均为人工智能合成"。此标识旨在提醒用户，应用内展示的所有由AI生成的内容（包括但不限于对话、朋友圈、论坛帖子等）均为虚拟创作，并非真实事件或真人言论。用户在使用和分享这些内容时，应充分知晓其AI生成属性。</p>
+                <h3>第二条：用户责任与行为准则</h3>
+                <p><strong>2.1. 用户内容责任：</strong> 用户对所有"用户内容"负有完全的、排他的法律责任。本应用开发者不会也无法监控、审查、编辑或背书任何用户内容。用户内容的观点、立场、真实性、准确性、合法性及可能引发的任何后果，均与本应用开发者无关。</p>
+                <p><strong>2.2. API密钥与费用责任：</strong> 用户必须通过合法渠道获取并使用第三方服务的API密钥。用户有责任妥善保管其API密钥的安全，任何因密钥泄露、滥用所导致的损失（包括可能产生的API调用费用），均由用户自行承担。</p>
+                <p><strong>2.3. 合法及道德使用承诺：</strong> 用户承诺并保证，不得利用本应用及所连接的第三方服务从事以下（包括但不限于）任何违反法律法规、公共秩序、社会公德或侵犯他人权益的行为：</p>
+                <ul>
+                    <li>危害国家安全、泄露国家秘密、颠覆国家政权、破坏国家统一的；</li>
+                    <li>散布谣言、虚假信息，扰乱社会秩序，破坏社会稳定的；</li>
+                    <li>散布淫秽、色情、赌博、暴力、凶杀、恐怖或者教唆犯罪的；</li>
+                    <li>侮辱或者诽谤他人，侵害他人名誉、隐私、知识产权和其他合法权益的；</li>
+                    <li>生成、传播任何形式的仇恨言论、歧视性内容或骚扰信息。</li>
+                </ul>
+                <p><strong>2.4. 地区法律合规性义务：</strong> 用户有绝对责任和义务，确保其选择、配置、连接和使用第三方AI服务的全部行为，完全符合其所在国家或地区（特别是中国大陆地区）的所有现行法律、法规及政策要求。 这包括但不限于：</p>
+                <ul>
+                    <li>确保所选择并连接的AI服务在其所在地区是经过批准、备案、合法合规且允许公众使用的。</li>
+                    <li>严禁使用任何技术手段（包括但不限于代理服务器、VPN等）规避、绕过或突破网络访问管制，以连接任何在当地属于非法、未经批准或无法访问的境外服务。</li>
+                    <li>因用户违反其所在地区的法律法规而引发的任何形式的法律风险、行政处罚、数据安全审查或刑事责任，均由用户自行承担全部后果，本应用开发者对此不承担任何形式的责任。</li>
+                </ul>
+                <p><strong>2.5. <font color="red">使用年龄限制：</font></strong></p>
+                <ul>
+                    <li><font color="red">本应用面向并仅限于具备完全民事行为能力的成年人。您声明并保证您已达到您所在司法管辖区规定的法定成年年龄。</font></li>
+                    <li><font color="red">若您是未成年人，您必须在您的父母或法定监护人的明确指导、许可和监督下使用本应用。您的父母或法定监护人必须同意并完全接受本声明的全部条款，并对您在使用本应用过程中的一切行为及其后果承担全部责任。</font></li>
+                    <li><font color="red">开发者无意收集任何未成年人的信息，且在法律允许的最大范围内，不对未成年人在无有效监护的情况下使用本应用所产生的任何后果负责。</font></li>
+                </ul>
+                <li><strong>素材权属责任：</strong> 用户声明并保证，其在本应用中输入、配置或使用的所有内容，包括但不限于音频文件、语音合成模型参数、图片、角色设定（人设）及其他自定义素材，均拥有合法、完整且无争议的所有权，或已从原始权利人处获得必要的、充分的授权。因使用上述素材而引发的任何第三方知识产权（包括但不限于版权、商标权、肖像权）纠纷、索赔或诉讼，均由用户独立承担全部责任，本应用开发者对此不承担任何责任。</li>
+
+                <li><strong>内容虚构性认知与个人责任：</strong> 用户必须明确知晓并承认，通过本应用与第三方AI服务交互所生成的全部内容（包括但不限于对话、建议、分析等）均为人工智能合成，其本质是虚构的、非真实的。用户应对AI生成内容自行进行判断，若因用户轻信、采纳AI生成内容而导致任何自我伤害行为、精神困扰或经济损失，所有后果由用户本人承担，与本应用开发者无关。</li>
+
+                <li><strong>应用中立性与用户提示词责任：</strong> 本应用作为技术工具，保持绝对中立。应用本身未内置任何鼓动、引诱、教唆用户从事违法行为或自我伤害行为的提示词（Prompts）。我们不提供任何旨在越过第三方AI服务道德伦理限制的"越狱"提示词。若用户自行编写、导入或使用任何提示词，试图绕过AI模型的安全限制并因此获得不良、有害或违法内容，所引发的一切后果和法律责任均由用户自行承担。</li>
+
+                <li><strong>第三方服务主要责任：</strong> 用户需清晰认识到，AI生成内容的直接来源是用户自行配置并使用的第三方API服务，而非本应用。内容的质量、准确性、合法性、安全性及是否符合道德规范，主要取决于该第三方服务提供商的策略与能力。因第三方服务本身的技术缺陷、内容审查策略、服务中断或滥用API所造成的任何直接或间接损害，均与本应用开发者无关。</li>
+
+                <h3>第三条：隐私政策</h3>
+                <p><strong>3.1. 零数据收集承诺：</strong> 我们高度尊重并致力于保护您的隐私。本应用的设计原则是"零数据收集"。我们不以任何主动或被动的方式收集、上传、存储、分析或共享用户的任何个人信息或使用数据。</p>
+                <p><strong>3.2. 纯本地化存储：</strong> 您在使用本应用过程中产生的所有数据，包括但不限于API配置、聊天记录、角色设定等，均仅存储在您个人设备的本地存储空间中（如浏览器IndexedDB或应用私有目录）。 开发者及任何第三方均无法访问您的数据。因此，您对本地数据的安全、加密、备份和防止意外删除负有全部责任。</p>
+
+                <p><strong>3.3. 设备权限请求说明：</strong> 为了实现本应用的完整功能，在特定场景下，我们可能会向您请求以下设备权限：</p>
+                <ul>
+                    <li><strong>本地存储权限：</strong> 用于保存您的所有应用数据，如API配置、聊天记录、角色设定等。这是应用核心功能正常运行的基础。</li>
+                    <li><strong>麦克风权限：</strong> 仅用于"电话通讯"功能，以便捕捉您的语音输入并将其发送给您配置的语音识别服务。</li>
+                    <li><strong>后台通知/弹窗权限：</strong> 仅用于"待办清单"的到期提醒功能，以便在您设定的时间，即便应用未在前台运行时也能向您发送提醒。</li>
+                </ul>
+                <p>我们承诺仅在您使用对应功能时才请求相关权限。您可以选择授予或拒绝这些权限。拒绝授权将仅导致对应的特定功能（如语音通话或待办事项提醒）无法使用，本应用的其他核心功能仍可正常运行。本应用不会通过这些权限收集与核心功能无关的任何额外信息。</p>
+                <h3>第四条：免责与不保证条款</h3>
+                <p><strong>4.1. <font color="red">"按原样"提供与安全性申明：</font></strong></p>
+                <ul>
+                    <li><font color="red">开发者承诺，在发布本应用的每个版本前，均已采取行业内合理的安全措施进行检查，以确保应用本身在发布时不包含任何已知的恶意代码、病毒或木马程序。</font></li>
+                    <li><font color="red">尽管如此，本应用仍以"按原样"和"现有"的基础提供。这并不构成对绝对安全的完全保证。鉴于网络环境的复杂性和安全威胁的不断变化，开发者不保证本应用在任何时候均能免受第三方恶意攻击、黑客入侵或新型病毒的感染。</font></li>
+                    <li><font color="red">同时，本应用不对用户通过第三方AI服务生成或访问的任何外部链接、文件或内容之安全性、无毒性作任何保证。用户应对其通过本应用接收和打开的所有外部内容自行进行安全判断，并承担相应风险。</font></li>
+                </ul>
+                <p><strong>4.2. 无性能保证：</strong> 开发者不保证本应用将完全满足您的期望，也不保证其运行是持续、不间断、无错误或安全的。您承认使用本应用可能面临网络中断、软件缺陷及其他不可预见的风险。</p>
+                <p><strong>4.3. 内容无保证：</strong> 开发者不对通过本应用获取的用户内容的准确性、可靠性、完整性或时效性作任何保证。您基于用户内容作出的任何判断或行为，其风险由您自行承担。</p>
+                <p><strong>4.4. 未预见风险与开发者善意声明：</strong> 本应用的开发与发布基于善意原则，开发者无意也并未主动设计任何伤害他人的功能。对于任何开发者未预见到的、因软件漏洞、用户不当操作或与第三方服务不兼容等偶发情况，开发者不承担责任。</p>
+                <p><strong>4.5. 禁止非法与不当使用：</strong> 严禁用户利用本应用或其生成的任何内容从事欺诈、造谣、诽谤、操纵舆论、冒充他人或其他任何违反法律法规及社会公德的行为。用户应对其所有使用行为负全部法律责任。</p>
+
+                <h3>第五条：责任限制</h3>
+                <p><strong>5.1.</strong> 在任何适用法律允许的最大范围内，本应用的开发者在任何情况下均不对因您使用或无法使用本应用而导致的任何直接、间接、偶然、特殊、惩罚性或后果性的损害负责。这包括但不限于：数据丢失或损坏、利润损失、商誉损失、业务中断、设备损坏、因依赖用户内容造成的损失，或因第三方服务故障造成的损失。</p>
+                <p><strong>5.2. <font color="red">鉴于本应用是完全免费提供的软件，即便在某些司法管辖区不允许完全排除或限制损害赔偿责任的情况下，开发者在本协议下所承担的全部聚合责任，在任何情况下均不应超过壹美元（$1.00 USD）或当地法律允许的最低金额。</font></strong></p>
+
+                <h3>第六条：赔偿 (Indemnification)</h3>
+                <p>用户同意，若因您违反本声明的任何条款，或因您的用户内容，或因您使用本应用的行为而导致任何第三方提出索赔、诉讼、要求、损失、责任、损害、成本和费用（包括合理的律师费），您将对本应用开发者及其关联方进行赔偿，为其辩护，并使其免受损害。</p>
+
+                <h3>第七条：知识产权</h3>
+                <p>本应用本身及其所有相关的知识产权（包括但不限于软件著作权、商标、专利等）均归开发者所有。用户对通过本应用生成的用户内容可能拥有的任何知识产权，受限于用户与相应第三方服务提供商之间的协议。</p>
+
+                <h3>第八条：条款的修改与终止</h3>
+                <p>开发者保留随时修改本声明条款的权利，恕不另行通知。修改后的声明将在本应用内发布，并自发布之日起生效。您在条款修改后继续使用本应用，即表示您已接受并同意遵守修改后的声明。若您违反本声明的任何规定，开发者有权随时暂停或终止您使用本应用的授权。</p>
+
+                <h3><font color="red">第九条：绝对免责声明 (Absolute Disclaimer of Liability)</font></h3>
+                <p><strong><font color="red">为免除所有疑问，本条为最终且效力最高的免责条款。开发者在此以最明确的方式声明：对于任何与本应用直接或间接相关的一切事宜，开发者不承担任何形式、任何性质的任何责任。无论该等责任是如何产生的（包括但不限于合同、侵权、疏忽或其他方式），也无论开发者是否被告知可能发生损害。您下载、安装或使用本应用的行为，即构成您对本条款的无条件同意：您将自行承担使用本应用所产生的全部、所有及一切风险，并在此永久、不可撤销地放弃追究开发者任何责任的权利。</font></strong></p>
+
+                <h3>第十条：最终接受条款</h3>
+                <p>本声明是您与开发者之间关于使用本应用的完整协议。您再次确认，您下载、安装、复制或实际使用本应用的任何行为，均被视为您已完全知晓、理解并无条件同意受本免- 责声明全部条款的约束。</p>
+
+                <h3>第十一条：联系与反馈</h3>
+                <p>若您在使用本应用过程中遇到任何技术问题、发现潜在的安全漏洞，或对AI生成的内容存在严重疑虑，您可以通过以下小红书联系本应用开发者：</p>
+                <p style="text-align: center; font-size: 16px;">
+                    <strong>小红书：whale</strong><br>
+                    <strong>小红书号：42944921236</strong>
+                </p>
+                <p>开发者将在收到邮件后，在能力范围内尽快予以评估和回应。请在邮件中尽可能详细地描述您遇到的问题。</p>
+            </div>
+            <div class="modal-footer" style="display: flex; flex-direction: column; gap: 15px; border-top: 1px solid #eee; padding-top: 15px;">
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                    <input type="checkbox" id="disclaimerCheckbox" style="width: 18px; height: 18px;">
+                    <label for="disclaimerCheckbox" style="font-size: 14px; color: #333;">我已阅读并同意以上所有条款。</label>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="disclaimerDisagreeBtn" class="form-submit" style="background-color: #888; flex: 1;">不同意并退出</button>
+                    <button id="disclaimerAgreeBtn" class="form-submit" style="flex: 1;" disabled>同意并继续</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
