@@ -9,9 +9,8 @@
 ![JavaScript](https://img.shields.io/badge/JavaScript-Frontend-yellow)
 ![Capacitor](https://img.shields.io/badge/Capacitor-Android-blue)
 ![Local First](https://img.shields.io/badge/Local--first-Privacy--oriented-blue)
-
-**当前版本**：Release Beta (12-11)  
-**声明更新日期**：2025-09-17  
+  
+**声明更新日期**：2026-05-09  
 **项目性质**：本项目仅供技术学习、学术研究、产品形态探索与开源交流使用。  
 **For educational and research purposes only.**
 
