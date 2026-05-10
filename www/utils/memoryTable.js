@@ -153,43 +153,72 @@ class MemoryTableManager {
     // 新增：根据 JSON 数组修改 Markdown 文本（基础版实现）
     applyMemoryDiff(markdown, diffArray) {
         if (!Array.isArray(diffArray)) return markdown;
-        let newMarkdown = markdown;
+        let lines = markdown.split(/\r?\n/);
+        const escapeRegExp = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const isMarkdownHeadingLine = line => /^#{1,6}\s+\S/.test(String(line).trim());
 
         diffArray.forEach(op => {
             try {
-                const sectionHeader = `### 【${op.section}】`;
-                if (!newMarkdown.includes(sectionHeader)) return;
+                const sectionName = op.section != null ? String(op.section) : '';
+                if (!sectionName) return;
 
-                const sectionParts = newMarkdown.split(sectionHeader);
-                let beforeSection = sectionParts[0] + sectionHeader;
-                let afterSection = sectionParts[1];
-                
-                // 截取当前 section 到下一个 section（或结尾）的内容
-                const nextSectionIndex = afterSection.search(/### 【|$/);
-                let currentSectionContent = afterSection.substring(0, nextSectionIndex);
-                let restOfDoc = afterSection.substring(nextSectionIndex);
+                const primaryHeader = `### 【${sectionName}】`;
+                let startIndex = -1;
 
-                if (op.op === 'update') {
-                    // 替换 key 所在的行。例如：| 地点 | 旧地点 | -> | 地点 | 新地点 |
-                    const regex = new RegExp(`(\\|\\s*${op.key}\\s*\\|)(.*?)(\\|)`, 'g');
-                    currentSectionContent = currentSectionContent.replace(regex, `$1 ${op.value} $3`);
-                } else if (op.op === 'append') {
-                    // 确保结尾有换行符，然后追加
-                    if (!currentSectionContent.endsWith('\n')) currentSectionContent += '\n';
-                    currentSectionContent += `${op.line}\n`;
-                } else if (op.op === 'delete') {
-                    // 删除包含关键字的整行
-                    const lines = currentSectionContent.split('\n');
-                    currentSectionContent = lines.filter(line => !line.includes(op.keyword)).join('\n');
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes(primaryHeader)) {
+                        startIndex = i;
+                        break;
+                    }
+                }
+                if (startIndex === -1) {
+                    const fallbackRe = new RegExp(`^#\\s+${escapeRegExp(sectionName)}\\s*$`);
+                    for (let i = 0; i < lines.length; i++) {
+                        if (fallbackRe.test(lines[i].trim())) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
                 }
 
-                newMarkdown = beforeSection + currentSectionContent + restOfDoc;
+                if (startIndex === -1) return;
+
+                let endIndex = lines.length;
+                for (let j = startIndex + 1; j < lines.length; j++) {
+                    if (isMarkdownHeadingLine(lines[j])) {
+                        endIndex = j;
+                        break;
+                    }
+                }
+
+                if (op.op === 'update') {
+                    for (let i = startIndex; i < endIndex; i++) {
+                        if (lines[i].includes(`| ${op.key} |`)) {
+                            lines[i] = `| ${op.key} | ${op.value} |`;
+                            break;
+                        }
+                    }
+                } else if (op.op === 'append') {
+                    let insertIndex = endIndex;
+                    while (insertIndex > startIndex && lines[insertIndex - 1].trim() === '') {
+                        insertIndex--;
+                    }
+                    lines.splice(insertIndex, 0, String(op.line).trim());
+                } else if (op.op === 'delete') {
+                    for (let i = startIndex; i < endIndex; i++) {
+                        if (lines[i].includes(op.keyword)) {
+                            lines.splice(i, 1);
+                            i--;
+                            endIndex--;
+                        }
+                    }
+                }
             } catch (e) {
                 console.warn("应用 Diff 操作失败跳过:", op, e);
             }
         });
 
-        return newMarkdown;
+        return lines.join('\n');
     }
 
     // 切换记忆面板显示/隐藏

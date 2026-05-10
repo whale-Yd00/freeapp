@@ -119,7 +119,7 @@ class PromptBuilder {
     /**
      * 【已修复】构建发送给API的消息历史记录
      */
-    buildMessageHistory(currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext = [], includeRuntimeContext = true) {
+    buildMessageHistory(currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext = [], includeRuntimeContext = true, retrievedMemoryFacts = []) {
         const messages = [];
         // 1. 获取用户设置的基础上下文长度（例如 30）
         const baseCount = apiSettings.contextMessageCount;
@@ -256,7 +256,11 @@ class PromptBuilder {
             // 将记忆表格挪到动态上下文层，避免污染静态 System Prompt 前缀
             const memoryInfo = (currentContact.memoryTableContent || '').trim();
             const memoryContext = `\n\n--- [当前记忆状态] ---\n当前记忆状态如下（仅供参考，不要直接复制输出）：\n<current_memory>\n${memoryInfo}\n</current_memory>\n`;
-            const extraContext = `${memoryContext}${runtimeContextBlock}${thinkMarker}`.trim();
+            let relevantFactsSection = '';
+            if (Array.isArray(retrievedMemoryFacts) && retrievedMemoryFacts.length > 0 && typeof window.buildRelevantMemoryFactsBlock === 'function') {
+                relevantFactsSection = '\n\n' + window.buildRelevantMemoryFactsBlock(retrievedMemoryFacts);
+            }
+            const extraContext = `${memoryContext}${relevantFactsSection}${runtimeContextBlock}${thinkMarker}`.trim();
             if (extraContext) {
                 // 插入一条 assistant 消息作为隔离，再发送动态状态尾巴
                 messages.push({ role: 'assistant', content: '（系统环境检测正常，我已读取最新记忆与时间状态）' });
@@ -669,20 +673,57 @@ ${userReply}
      */
     buildMemoryUpdatePrompt(contact, userProfile) {
         return `你是一个后台记忆整理引擎。
-你的任务是冷酷、客观地分析用户(${userProfile.name})和角色(${contact.name})的最新的对话，并提取关键信息更新记忆表格。
+你的任务是冷酷、客观地分析用户(${userProfile.name})和角色(${contact.name})的最新对话，提取对长期对话有用的结构化事实，并（可选）输出兼容旧版的 Markdown 记忆表增量。
 
-你的唯一任务是输出 \`<memory_diff>\` 标签及内部的 JSON 数组来更新记忆。
-- 如果有新情报（如地点变化、新人物、新约定、新设定的物品），写明 JSON。
-- 如果没有任何新情报，必须严格输出：\`<memory_diff>[]</memory_diff>\`。
+【优先输出】你必须首先输出 \`<memory_ops>\`…\`</memory_ops>\`，内部为一个 JSON 对象（不要在外面套数组）。格式如下（字段必须齐全；无内容时用空数组）：
+<memory_ops>
+{
+  "entities": [
+    {
+      "name": "实体名",
+      "type": "person | place | item | event | concept | relationship | preference | promise | other",
+      "aliases": [],
+      "description": "简短说明"
+    }
+  ],
+  "facts_to_add": [
+    {
+      "subject": "主体实体名",
+      "predicate": "关系/属性名，例如 current_location, likes, promised, owns, relationship_with_user",
+      "object": "客体或属性值",
+      "factText": "自然语言事实描述",
+      "type": "profile | current_state | past_event | future_plan | relationship | item | preference | emotional_core | other",
+      "timeScope": "current | long_term | past | future | temporary",
+      "confidence": 0.85,
+      "importance": 0.6
+    }
+  ],
+  "facts_to_invalidate": [
+    {
+      "subject": "主体实体名",
+      "predicate": "需要失效的关系/属性名",
+      "reason": "为什么旧事实失效"
+    }
+  ]
+}
+</memory_ops>
 
-JSON 格式要求与支持的操作：
+记录原则：
+- 只记录对长期对话有用的事实；不要记录普通寒暄、一次性无意义动作。
+- 用户偏好、关系变化、约定、重要物品、地点状态、身份设定、情绪核心优先。
+- 若新事实明显替代旧事实，必须在 facts_to_invalidate 中写明被替代的 subject+predicate。
+- \`<memory_ops>\` 之外不要输出任何解释或对话。
+
+【兼容旧版】为保持 Markdown 记忆表更新，请在 \`<memory_ops>\` 之后（或最后一行）同时输出 \`<memory_diff>\`…\`</memory_diff>\`，内部为 JSON 数组（操作格式不变）。若无表格变更，必须输出：\`<memory_diff>[]</memory_diff>\`。
+
+memory_diff 支持的操作示例：
 [
   {"op": "update", "section": "现在", "key": "地点", "value": "新地点"},
   {"op": "append", "section": "过去", "line": "| 人物 | 事件 | 地点 | 时间 |"},
   {"op": "delete", "section": "现在", "keyword": "旧地点"}
 ]
 
-绝对只输出 <memory_diff> 数据块，不要包含任何对话、问候或额外解释。`;
+输出顺序要求：先完整的 \`<memory_ops>\` 块，再 \`<memory_diff>\` 块；不要颠倒。`;
     }
 
     _replaceBase64WithEmoji(raw, emojis) {

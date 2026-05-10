@@ -22,7 +22,7 @@
 class IndexedDBManager {
     constructor() {
         this.dbName = 'WhaleLLTDB';
-        this.dbVersion = 13; // 从 12 改为 13
+        this.dbVersion = 14; // 结构化记忆 memoryEpisodes / memoryFacts
         this.db = null;
         
         // 定义所有对象存储的结构
@@ -78,6 +78,22 @@ class IndexedDBManager {
                         const store = db.createObjectStore(storeName, config);
                     }
                 });
+
+                if (!db.objectStoreNames.contains('memoryEpisodes')) {
+                    const memoryEpisodesStore = db.createObjectStore('memoryEpisodes', { keyPath: 'id' });
+                    memoryEpisodesStore.createIndex('contactId', 'contactId', { unique: false });
+                    memoryEpisodesStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    memoryEpisodesStore.createIndex('type', 'type', { unique: false });
+                }
+                if (!db.objectStoreNames.contains('memoryFacts')) {
+                    const memoryFactsStore = db.createObjectStore('memoryFacts', { keyPath: 'id' });
+                    memoryFactsStore.createIndex('contactId', 'contactId', { unique: false });
+                    memoryFactsStore.createIndex('subject', 'subject', { unique: false });
+                    memoryFactsStore.createIndex('predicate', 'predicate', { unique: false });
+                    memoryFactsStore.createIndex('status', 'status', { unique: false });
+                    memoryFactsStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    memoryFactsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
             };
         });
     }

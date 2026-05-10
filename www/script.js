@@ -826,8 +826,8 @@ async function init() {
 // --- IndexedDB 核心函数 ---
 function openDB() {
     return new Promise((resolve, reject) => {
-        // 【重要】将数据库版本号从 12 改为 13，以确保 onupgradeneeded 再次触发
-        const request = indexedDB.open('WhaleLLTDB', 13); // 版本号增加到 13
+        // 【重要】升级版本号以触发 onupgradeneeded（当前含结构化记忆底座 v14）
+        const request = indexedDB.open('WhaleLLTDB', 14); // 结构化记忆底座 memoryEpisodes / memoryFacts
 
         // 【新增】处理数据库被阻塞的情况
         request.onblocked = event => {
@@ -891,6 +891,22 @@ function openDB() {
             }
             if (!db.objectStoreNames.contains('customModels')) {
                 db.createObjectStore('customModels', { keyPath: 'id' });
+            }
+            // 【结构化记忆底座】旁路存储 episodes / facts（不影响旧 Markdown 记忆表）
+            if (!db.objectStoreNames.contains('memoryEpisodes')) {
+                const memoryEpisodesStore = db.createObjectStore('memoryEpisodes', { keyPath: 'id' });
+                memoryEpisodesStore.createIndex('contactId', 'contactId', { unique: false });
+                memoryEpisodesStore.createIndex('createdAt', 'createdAt', { unique: false });
+                memoryEpisodesStore.createIndex('type', 'type', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('memoryFacts')) {
+                const memoryFactsStore = db.createObjectStore('memoryFacts', { keyPath: 'id' });
+                memoryFactsStore.createIndex('contactId', 'contactId', { unique: false });
+                memoryFactsStore.createIndex('subject', 'subject', { unique: false });
+                memoryFactsStore.createIndex('predicate', 'predicate', { unique: false });
+                memoryFactsStore.createIndex('status', 'status', { unique: false });
+                memoryFactsStore.createIndex('createdAt', 'createdAt', { unique: false });
+                memoryFactsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
             }
             // 【修正】删除重复的 customStyles 和 bubbleStickers 创建
         };
@@ -1756,6 +1772,559 @@ function promisifyTransaction(transaction) {
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
     });
+}
+
+// --- 结构化记忆底座（旁路 IndexedDB，不影响旧 Markdown 记忆表） ---
+function generateMemoryId(prefix) {
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function saveMemoryEpisode(episode) {
+    if (!isIndexedDBReady || !db || !episode || !episode.id) {
+        return false;
+    }
+    try {
+        if (!db.objectStoreNames.contains('memoryEpisodes')) {
+            console.error('[结构化记忆] memoryEpisodes 不存在，跳过写入');
+            return false;
+        }
+        const transaction = db.transaction(['memoryEpisodes'], 'readwrite');
+        const store = transaction.objectStore('memoryEpisodes');
+        await promisifyRequest(store.put(episode));
+        await promisifyTransaction(transaction);
+        return true;
+    } catch (error) {
+        console.error('[结构化记忆] memoryEpisodes 存储失败:', error);
+        return false;
+    }
+}
+
+async function saveMemoryFacts(facts) {
+    if (!facts || facts.length === 0) {
+        return true;
+    }
+    if (!isIndexedDBReady || !db) {
+        return false;
+    }
+    try {
+        if (!db.objectStoreNames.contains('memoryFacts')) {
+            console.error('[结构化记忆] memoryFacts 不存在，跳过写入');
+            return false;
+        }
+        const transaction = db.transaction(['memoryFacts'], 'readwrite');
+        const store = transaction.objectStore('memoryFacts');
+        for (let i = 0; i < facts.length; i++) {
+            store.put(facts[i]);
+        }
+        await promisifyTransaction(transaction);
+        return true;
+    } catch (error) {
+        console.error('[结构化记忆] memoryFacts 存储失败:', error);
+        return false;
+    }
+}
+
+async function saveMemoryFact(fact) {
+    if (!fact || !fact.id) {
+        return false;
+    }
+    if (!isIndexedDBReady || !db) {
+        return false;
+    }
+    try {
+        if (!db.objectStoreNames.contains('memoryFacts')) {
+            console.error('[结构化记忆] memoryFacts 不存在，跳过单条写入');
+            return false;
+        }
+        const transaction = db.transaction(['memoryFacts'], 'readwrite');
+        const store = transaction.objectStore('memoryFacts');
+        await promisifyRequest(store.put(fact));
+        await promisifyTransaction(transaction);
+        return true;
+    } catch (error) {
+        console.error('[结构化记忆] memoryFacts 单条更新失败:', error);
+        return false;
+    }
+}
+
+async function getMemoryFactsByContact(contactId, { activeOnly = true } = {}) {
+    if (!contactId || !isIndexedDBReady || !db) {
+        return [];
+    }
+    try {
+        if (!db.objectStoreNames.contains('memoryFacts')) {
+            return [];
+        }
+        const transaction = db.transaction(['memoryFacts'], 'readonly');
+        const store = transaction.objectStore('memoryFacts');
+        const index = store.index('contactId');
+        const list = await promisifyRequest(index.getAll(contactId));
+        await promisifyTransaction(transaction);
+        const raw = Array.isArray(list) ? list : [];
+        if (!activeOnly) {
+            return raw;
+        }
+        return raw.filter(f => f && f.status === 'active' && (f.validTo === null || f.validTo === undefined));
+    } catch (error) {
+        console.error('[结构化记忆] getMemoryFactsByContact 读取失败:', error);
+        return [];
+    }
+}
+
+/**
+ * memory_diff 中 delete（尤其 section「未来」）时，将匹配的 future/promise 类结构化事实失效，不误伤长期偏好。
+ * @param {Array} diffArray
+ * @param {object} contact
+ * @returns {Promise<Array>}
+ */
+async function invalidateFactsFromMemoryDiffDelete(diffArray, contact) {
+    const invalidatedFacts = [];
+    if (!Array.isArray(diffArray) || !contact?.id) {
+        return invalidatedFacts;
+    }
+
+    try {
+        const activeFacts = await getMemoryFactsByContact(contact.id, { activeOnly: true });
+        const now = Date.now();
+        const invalidatedIds = new Set();
+
+        const isFutureIshFact = f => {
+            const m = f.metadata || {};
+            if (m.timeScope === 'future') return true;
+            if (m.type === 'promise' || m.type === 'future_plan') return true;
+            const p = f.predicate != null ? String(f.predicate) : '';
+            return p === 'promise' || p === 'future_plan' || p === 'new_suggestion';
+        };
+
+        const entityMatchesKeyword = (entities, keyword) => {
+            if (!Array.isArray(entities) || keyword === undefined || keyword === null) return false;
+            const kt = String(keyword);
+            for (let i = 0; i < entities.length; i++) {
+                const e = entities[i];
+                if (!e || typeof e !== 'object') continue;
+                const name = e.name != null ? String(e.name) : '';
+                const desc = e.description != null ? String(e.description) : '';
+                if (name.includes(kt) || desc.includes(kt)) return true;
+            }
+            return false;
+        };
+
+        const factMatchesKeyword = (f, keyword) => {
+            if (keyword === undefined || keyword === null || String(keyword).trim() === '') return false;
+            const kt = String(keyword);
+            if (f.factText != null && String(f.factText).includes(kt)) return true;
+            if (f.object != null && String(f.object).includes(kt)) return true;
+            return entityMatchesKeyword(f.metadata && f.metadata.entities, keyword);
+        };
+
+        for (let oi = 0; oi < diffArray.length; oi++) {
+            const op = diffArray[oi];
+            if (!op || op.op !== 'delete') continue;
+            const section = op.section != null ? String(op.section).trim() : '';
+            if (section !== '未来') continue;
+
+            const keyword = op.keyword != null ? String(op.keyword) : '';
+            if (!keyword.trim()) continue;
+
+            for (let fi = 0; fi < activeFacts.length; fi++) {
+                const f = activeFacts[fi];
+                if (!f || invalidatedIds.has(f.id)) continue;
+                if (!isFutureIshFact(f)) continue;
+                if (!factMatchesKeyword(f, keyword)) continue;
+
+                const updated = {
+                    ...f,
+                    status: 'inactive',
+                    validTo: now,
+                    updatedAt: now,
+                    metadata: {
+                        ...(f.metadata || {}),
+                        invalidationReason: `memory_diff delete: ${keyword}`,
+                        invalidationSource: 'memory_diff_delete',
+                        invalidationSection: section,
+                        invalidationKeyword: keyword
+                    }
+                };
+                const ok = await saveMemoryFact(updated);
+                if (ok) {
+                    invalidatedIds.add(f.id);
+                    invalidatedFacts.push(updated);
+                }
+            }
+        }
+
+        console.log(`[结构化记忆] memory_diff delete 触发失效 facts: ${invalidatedFacts.length}`);
+    } catch (e) {
+        console.error('[结构化记忆] invalidateFactsFromMemoryDiffDelete 失败:', e);
+    }
+
+    return invalidatedFacts;
+}
+
+function normalizeText(text) {
+    return String(text ?? '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildFactSearchText(fact) {
+    if (!fact || typeof fact !== 'object') return '';
+    const parts = [];
+    if (fact.subject != null) parts.push(String(fact.subject));
+    if (fact.predicate != null) parts.push(String(fact.predicate));
+    if (fact.object != null) parts.push(String(fact.object));
+    if (fact.factText != null) parts.push(String(fact.factText));
+    const m = fact.metadata || {};
+    if (m.type != null) parts.push(String(m.type));
+    if (m.timeScope != null) parts.push(String(m.timeScope));
+    if (Array.isArray(m.entities)) {
+        m.entities.forEach(e => {
+            if (!e || typeof e !== 'object') return;
+            if (e.name != null) parts.push(String(e.name));
+            if (e.description != null) parts.push(String(e.description));
+        });
+    }
+    return parts.join(' ');
+}
+
+function scoreMemoryFact(fact, queryText) {
+    if (!fact || fact.status !== 'active') return -Infinity;
+    if (fact.validTo != null && fact.validTo !== undefined) return -Infinity;
+
+    const m = fact.metadata || {};
+    const searchBlob = normalizeText(buildFactSearchText(fact));
+    const qRaw = normalizeText(queryText);
+    let score = 0;
+
+    const imp = typeof fact.importance === 'number' && !Number.isNaN(fact.importance) ? fact.importance : 0.5;
+    const conf = typeof fact.confidence === 'number' && !Number.isNaN(fact.confidence) ? fact.confidence : 0.5;
+    score += imp * 10;
+    score += conf * 4;
+
+    if (m.timeScope === 'current') score += 6;
+    if (m.timeScope === 'future') score += 5;
+
+    const ty = m.type;
+    if (ty === 'emotional_core' || ty === 'relationship' || ty === 'promise' || ty === 'future_plan') score += 8;
+    if (ty === 'preference') score += 6;
+
+    if (m.timeScope === 'temporary' || ty === 'current_state') score -= 3;
+
+    if (qRaw.length >= 2) {
+        if (searchBlob.includes(qRaw)) {
+            score += 18;
+        }
+        const tokens = qRaw.split(/[\s\n\r,，。.!！?？、；;:：]+/).filter(t => t.length > 1);
+        const seen = new Set();
+        for (let i = 0; i < tokens.length; i++) {
+            const t = tokens[i];
+            if (seen.has(t)) continue;
+            seen.add(t);
+            if (searchBlob.includes(t)) {
+                score += 4 + Math.min(t.length * 0.15, 3);
+            }
+        }
+        const subj = fact.subject != null ? normalizeText(fact.subject) : '';
+        const pred = fact.predicate != null ? normalizeText(fact.predicate) : '';
+        const obj = fact.object != null ? normalizeText(String(fact.object)) : '';
+        const ft = fact.factText != null ? normalizeText(String(fact.factText)) : '';
+        tokens.forEach(t => {
+            if (subj.includes(t) || pred.includes(t) || obj.includes(t) || ft.includes(t)) {
+                score += 2;
+            }
+        });
+    }
+
+    return score;
+}
+
+async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
+    try {
+        const limit = Math.min(Math.max(options.limit != null ? options.limit : 10, 1), 12);
+        const minScore = options.minScore != null ? options.minScore : 5;
+
+        const facts = await getMemoryFactsByContact(contactId, { activeOnly: true });
+        const qPreview = String(queryText ?? '');
+        console.log('[记忆检索] query:', qPreview.length > 400 ? `${qPreview.slice(0, 400)}…` : qPreview);
+
+        const scored = facts
+            .map(f => ({ fact: f, score: scoreMemoryFact(f, queryText) }))
+            .filter(x => Number.isFinite(x.score))
+            .sort((a, b) => b.score - a.score);
+
+        let picked = scored.filter(x => x.score >= minScore).slice(0, limit);
+        if (picked.length === 0 && scored.length > 0 && scored[0].score > 0) {
+            picked = scored.slice(0, Math.min(limit, 8));
+        }
+
+        const resultFacts = picked.map(x => x.fact);
+        console.log('[记忆检索] 命中 facts 数量:', resultFacts.length);
+        if (picked.length > 0) {
+            console.table(picked.map(({ fact, score }) => ({
+                score: Math.round(score * 10) / 10,
+                subject: (fact.subject || '').slice(0, 24),
+                predicate: (fact.predicate || '').slice(0, 28),
+                factText: (fact.factText || '').slice(0, 48)
+            })));
+        }
+
+        return resultFacts;
+    } catch (e) {
+        console.warn('[记忆检索] retrieveRelevantMemoryFacts 失败:', e);
+        return [];
+    }
+}
+
+function buildRelevantMemoryFactsBlock(facts) {
+    if (!Array.isArray(facts) || facts.length === 0) {
+        return '';
+    }
+
+    let out = '--- [相关结构化长期记忆] ---\n';
+    out += '以下是从长期记忆库中检索到的、与当前对话最相关的事实。请自然参考，不要机械复述，不要暴露数据库字段。\n\n';
+    out += '<relevant_memory_facts>\n';
+
+    facts.forEach((fact, idx) => {
+        const m = fact.metadata || {};
+        const mainLine = fact.factText || fact.object || '(无描述)';
+        out += `${idx + 1}. ${mainLine}\n`;
+        if (m.type != null) out += `   - 类型: ${m.type}\n`;
+        if (m.timeScope != null) out += `   - 时间范围: ${m.timeScope}\n`;
+        if (typeof fact.confidence === 'number') out += `   - 可信度: ${fact.confidence}\n`;
+        if (typeof fact.importance === 'number') out += `   - 重要性: ${fact.importance}\n`;
+        out += '\n';
+    });
+
+    out += '</relevant_memory_facts>';
+    return out;
+}
+
+function buildMemoryRetrievalQuery(contact, userInput) {
+    const parts = [];
+    if (userInput != null) parts.push(String(userInput));
+    const msgs = contact && Array.isArray(contact.messages) ? contact.messages : [];
+    const tail = msgs.slice(-6);
+    for (let i = 0; i < tail.length; i++) {
+        const m = tail[i];
+        parts.push(m && m.content != null ? String(m.content) : '');
+    }
+    if (contact && contact.name != null) parts.push(String(contact.name));
+    return parts.join('\n');
+}
+
+window.retrieveRelevantMemoryFacts = retrieveRelevantMemoryFacts;
+window.buildRelevantMemoryFactsBlock = buildRelevantMemoryFactsBlock;
+window.buildMemoryRetrievalQuery = buildMemoryRetrievalQuery;
+
+async function debugMemoryStore(contactId) {
+    const facts = await getMemoryFactsByContact(contactId, { activeOnly: false });
+    let episodes = [];
+    try {
+        if (contactId && isIndexedDBReady && db && db.objectStoreNames.contains('memoryEpisodes')) {
+            const transaction = db.transaction(['memoryEpisodes'], 'readonly');
+            const store = transaction.objectStore('memoryEpisodes');
+            const index = store.index('contactId');
+            const epList = await promisifyRequest(index.getAll(contactId));
+            await promisifyTransaction(transaction);
+            episodes = Array.isArray(epList) ? epList : [];
+        }
+    } catch (error) {
+        console.error('[结构化记忆] debugMemoryStore 读取 episodes 失败:', error);
+    }
+    console.table(facts);
+    console.table(episodes);
+}
+
+window.debugMemoryStore = debugMemoryStore;
+
+/**
+ * 从副模型返回文本中提取 <memory_ops> JSON；失败返回 null，不抛错。
+ * @param {string} responseText
+ * @returns {object|null}
+ */
+function parseMemoryOps(responseText) {
+    if (!responseText || typeof responseText !== 'string') {
+        return null;
+    }
+    try {
+        const opsRegex = /<memory_ops>([\s\S]*?)<\/memory_ops>/;
+        const match = responseText.match(opsRegex);
+        if (!match) {
+            return null;
+        }
+        let jsonStr = match[1].trim();
+        jsonStr = jsonStr.replace(/^```json\s*/i, '');
+        jsonStr = jsonStr.replace(/^```\s*/, '');
+        jsonStr = jsonStr.replace(/```\s*$/, '');
+        jsonStr = jsonStr.trim();
+        const parsed = JSON.parse(jsonStr);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return null;
+        }
+        return parsed;
+    } catch (e) {
+        console.warn('[结构化记忆] memory_ops 解析失败:', e);
+        return null;
+    }
+}
+
+/**
+ * 将 memory_ops 应用到 IndexedDB：失效旧事实、写入新事实。
+ * @returns {Promise<{ addedFacts: Array, invalidatedFacts: Array }>}
+ */
+async function applyMemoryOps(contact, memoryOps, sourceEpisodeId) {
+    const addedFacts = [];
+    const invalidatedFacts = [];
+    if (!contact || !contact.id || !memoryOps || typeof memoryOps !== 'object') {
+        return { addedFacts, invalidatedFacts };
+    }
+
+    const now = Date.now();
+    const entitiesBlock = Array.isArray(memoryOps.entities) ? memoryOps.entities : [];
+
+    try {
+        const activeFacts = await getMemoryFactsByContact(contact.id, { activeOnly: true });
+        const invalidatedIds = new Set();
+
+        for (const inv of memoryOps.facts_to_invalidate || []) {
+            if (!inv || typeof inv !== 'object') continue;
+            const subj = inv.subject != null ? String(inv.subject) : '';
+            const pred = inv.predicate != null ? String(inv.predicate) : '';
+            const reason = inv.reason != null ? String(inv.reason) : '';
+
+            for (const f of activeFacts) {
+                if (!f || invalidatedIds.has(f.id)) continue;
+                if (f.subject === subj && f.predicate === pred) {
+                    const updated = {
+                        ...f,
+                        status: 'inactive',
+                        validTo: now,
+                        updatedAt: now,
+                        metadata: { ...(f.metadata || {}), invalidationReason: reason }
+                    };
+                    const ok = await saveMemoryFact(updated);
+                    if (ok) {
+                        invalidatedIds.add(f.id);
+                        invalidatedFacts.push(updated);
+                    }
+                }
+            }
+        }
+
+        for (const item of memoryOps.facts_to_add || []) {
+            if (!item || typeof item !== 'object') continue;
+            const confRaw = item.confidence;
+            const impRaw = item.importance;
+            const conf = typeof confRaw === 'number' && !Number.isNaN(confRaw)
+                ? Math.min(1, Math.max(0, confRaw))
+                : 0.7;
+            const imp = typeof impRaw === 'number' && !Number.isNaN(impRaw)
+                ? Math.min(1, Math.max(0, impRaw))
+                : 0.5;
+
+            addedFacts.push({
+                id: generateMemoryId('fact'),
+                contactId: contact.id,
+                subject: item.subject != null ? String(item.subject) : '',
+                predicate: item.predicate != null ? String(item.predicate) : '',
+                object: item.object != null ? String(item.object) : '',
+                factText: item.factText != null ? String(item.factText) : '',
+                sourceEpisodeId,
+                confidence: conf,
+                importance: imp,
+                status: 'active',
+                createdAt: now,
+                updatedAt: now,
+                validFrom: now,
+                validTo: null,
+                metadata: {
+                    type: item.type,
+                    timeScope: item.timeScope,
+                    entities: entitiesBlock,
+                    source: 'memory_ops'
+                }
+            });
+        }
+
+        if (addedFacts.length > 0) {
+            await saveMemoryFacts(addedFacts);
+        }
+    } catch (e) {
+        console.error('[结构化记忆] applyMemoryOps 异常:', e);
+    }
+
+    return { addedFacts, invalidatedFacts };
+}
+
+window.parseMemoryOps = parseMemoryOps;
+window.applyMemoryOps = applyMemoryOps;
+
+/**
+ * 将副模型输出的 memory_diff JSON 数组转为可入库的结构化事实（保守实现）。
+ * @param {Array} diffArray
+ * @param {object} contact
+ * @param {string} sourceEpisodeId
+ * @returns {Array<object>}
+ */
+function convertMemoryDiffToFacts(diffArray, contact, sourceEpisodeId) {
+    if (!Array.isArray(diffArray) || !contact) {
+        return [];
+    }
+    const contactId = contact.id;
+    const subjectName = contact.name != null ? String(contact.name) : '';
+    const facts = [];
+    const now = Date.now();
+
+    diffArray.forEach(op => {
+        if (!op || typeof op !== 'object') return;
+        const section = op.section != null ? String(op.section) : '';
+
+        if (op.op === 'update') {
+            const key = op.key != null ? String(op.key) : '';
+            const valueStr = op.value != null ? String(op.value) : '';
+            const pred = section ? `${section}.${key}` : key;
+            facts.push({
+                id: generateMemoryId('fact'),
+                contactId,
+                subject: subjectName,
+                predicate: pred,
+                object: valueStr,
+                factText: `【${section}】${key}：${valueStr}`,
+                sourceEpisodeId,
+                confidence: 0.7,
+                importance: 0.5,
+                status: 'active',
+                createdAt: now,
+                updatedAt: now,
+                validFrom: now,
+                validTo: null,
+                metadata: {}
+            });
+        } else if (op.op === 'append') {
+            const line = op.line != null ? String(op.line).trim() : '';
+            if (!line) return;
+            facts.push({
+                id: generateMemoryId('fact'),
+                contactId,
+                subject: subjectName,
+                predicate: section,
+                object: line,
+                factText: line,
+                sourceEpisodeId,
+                confidence: 0.7,
+                importance: 0.5,
+                status: 'active',
+                createdAt: now,
+                updatedAt: now,
+                validFrom: now,
+                validTo: null,
+                metadata: {}
+            });
+        }
+    });
+
+    return facts;
 }
 
 // --- 论坛功能 ---
@@ -4299,33 +4868,51 @@ const MemoryPatcher = {
     applyDiff: function(oldMarkdown, diffJson) {
         if (!oldMarkdown) return ""; 
 
-        let lines = oldMarkdown.split('\n');
+        let lines = oldMarkdown.split(/\r?\n/);
+        const escapeRegExp = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const isMarkdownHeadingLine = line => /^#{1,6}\s+\S/.test(String(line).trim());
         
         try {
             const operations = JSON.parse(diffJson);
             
             operations.forEach(op => {
-                // 1. 找到对应板块
-                const sectionHeader = `### 【${op.section}】`;
+                // 1. 找到对应板块：优先 ### 【section】，否则 # section（兼容默认模板里的一级标题）
+                const sectionName = op.section != null ? String(op.section) : '';
+                if (!sectionName) return;
+
+                const primaryHeader = `### 【${sectionName}】`;
                 let startIndex = -1;
-                let endIndex = -1;
-                
+                let headerHit = null;
+
                 for (let i = 0; i < lines.length; i++) {
-                    if (lines[i].includes(sectionHeader)) {
+                    if (lines[i].includes(primaryHeader)) {
                         startIndex = i;
-                        // 寻找板块结束点（下一个标题或文件末尾）
-                        for (let j = i + 1; j < lines.length; j++) {
-                            if (lines[j].trim().startsWith('###')) { // 优化：加 trim() 避免空格干扰
-                                endIndex = j;
-                                break;
-                            }
+                        headerHit = primaryHeader;
+                        break;
+                    }
+                }
+                if (startIndex === -1) {
+                    const fallbackRe = new RegExp(`^#\\s+${escapeRegExp(sectionName)}\\s*$`);
+                    for (let i = 0; i < lines.length; i++) {
+                        if (fallbackRe.test(lines[i].trim())) {
+                            startIndex = i;
+                            headerHit = lines[i].trim();
+                            break;
                         }
-                        if (endIndex === -1) endIndex = lines.length;
+                    }
+                }
+
+                if (startIndex === -1) return; // 没找到板块，跳过（不报错）
+
+                let endIndex = lines.length;
+                for (let j = startIndex + 1; j < lines.length; j++) {
+                    if (isMarkdownHeadingLine(lines[j])) {
+                        endIndex = j;
                         break;
                     }
                 }
 
-                if (startIndex === -1) return; // 没找到板块，跳过
+                console.log(`[记忆补丁] 命中 section: ${sectionName}, header: ${headerHit}`);
 
                 // 2. 执行操作
                 if (op.op === 'update') {
@@ -4379,6 +4966,22 @@ const MemoryPatcher = {
  */
 async function callAPI(contact, turnContext = []) {
     try {
+        let retrievedMemoryFacts = [];
+        try {
+            const msgs = contact.messages || [];
+            const lastMsg = msgs[msgs.length - 1];
+            const userInput = lastMsg && lastMsg.role === 'user' ? String(lastMsg.content || '') : '';
+            const queryText = buildMemoryRetrievalQuery(contact, userInput);
+            retrievedMemoryFacts = await retrieveRelevantMemoryFacts(contact.id, queryText, { limit: 10 });
+            if (retrievedMemoryFacts.length > 0) {
+                console.log('[记忆检索] 注入主模型 facts 数量:', retrievedMemoryFacts.length);
+            } else {
+                console.log('[记忆检索] 没有相关结构化记忆，本轮只使用旧记忆表');
+            }
+        } catch (retrievalErr) {
+            console.warn('[记忆检索] 检索失败，继续使用旧记忆表:', retrievalErr);
+        }
+
         // ==========================================
         // 阶段一：主模型生成对话
         // ==========================================
@@ -4386,7 +4989,7 @@ async function callAPI(contact, turnContext = []) {
             contact, userProfile, currentContact, apiSettings, emojis, window, turnContext
         );
         const messageHistory = window.promptBuilder.buildMessageHistory(
-            currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext, true
+            currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext, true, retrievedMemoryFacts
         );
 
         // 处理世界书
@@ -4472,7 +5075,7 @@ async function callAPI(contact, turnContext = []) {
                 { role: 'system', content: memorySystemPrompt },
                 { 
                   role: 'user', 
-                  content: `请分析以下对话记录，并提取情报更新记忆表格：\n\n${conversationText}\n\n请严格按照要求，只输出 <memory_diff> 标签及内部的 JSON 数组。\n\n【当前记忆状态】：\n<current_memory>\n${currentMemory}\n</current_memory>` 
+                  content: `请分析以下对话记录并提取情报。\n\n${conversationText}\n\n【输出要求】\n1. 严格按照系统提示：优先输出完整的 <memory_ops> … </memory_ops>（JSON 对象）。\n2. 为兼容旧版，请再输出 <memory_diff> … </memory_diff> 以更新下方 Markdown 记忆表；无表格变更时输出 <memory_diff>[]</memory_diff>。\n\n【当前记忆状态】：\n<current_memory>\n${currentMemory}\n</current_memory>` 
                 }
             ];
 
@@ -4491,6 +5094,44 @@ async function callAPI(contact, turnContext = []) {
             }
 
             const memoryResponseText = memoryData.choices?.[0]?.message?.content || '';
+
+            let memoryOpsApplied = false;
+            let memoryOps = null;
+            try {
+                memoryOps = parseMemoryOps(memoryResponseText);
+            } catch (opsParseErr) {
+                memoryOps = null;
+            }
+
+            if (memoryOps) {
+                console.log('[结构化记忆] 检测到 memory_ops');
+                try {
+                    const opsEpisode = {
+                        id: generateMemoryId('episode'),
+                        contactId: contact.id,
+                        type: 'memory_update',
+                        content: conversationText,
+                        source: 'secondary_model_memory_ops',
+                        createdAt: Date.now(),
+                        messageIds: [],
+                        metadata: {
+                            memoryOps,
+                            oldMemoryLength: currentMemory.length
+                        }
+                    };
+                    const opsEpSaved = await saveMemoryEpisode(opsEpisode);
+                    if (opsEpSaved) {
+                        console.log('[结构化记忆] memory_ops 已保存 episode:', opsEpisode.id);
+                        const opsResult = await applyMemoryOps(contact, memoryOps, opsEpisode.id);
+                        console.log('[结构化记忆] memory_ops 已应用:', opsResult);
+                        console.log('[结构化记忆] 新增 facts:', opsResult.addedFacts.length);
+                        console.log('[结构化记忆] 失效 facts:', opsResult.invalidatedFacts.length);
+                        memoryOpsApplied = true;
+                    }
+                } catch (opsFlowErr) {
+                    console.error('[结构化记忆] memory_ops 流程失败（不影响聊天）:', opsFlowErr);
+                }
+            }
             
             // 提取增量更新标签 (加上了上一次我们写的防弹衣正则清理)
             const diffRegex = /<memory_diff>([\s\S]*?)<\/memory_diff>/;
@@ -4505,8 +5146,62 @@ async function callAPI(contact, turnContext = []) {
                 diffJson = diffJson.trim();
                 
                 console.log(">>> [副模型] 清理后的干净 JSON:", diffJson);
+
+                let diffArray = null;
+                try {
+                    diffArray = JSON.parse(diffJson);
+                } catch (parseErr) {
+                    console.warn('[结构化记忆] diff JSON 解析失败，跳过结构化存储:', parseErr);
+                }
+
                 newMemoryTable = MemoryPatcher.applyDiff(currentMemory, diffJson);
-            } else {
+
+                if (memoryOpsApplied) {
+                    console.log('[结构化记忆] 已应用 memory_ops，本轮跳过 memory_diff 旁路 facts 保存');
+                }
+
+                if (Array.isArray(diffArray)) {
+                    try {
+                        await invalidateFactsFromMemoryDiffDelete(diffArray, contact);
+                    } catch (invErr) {
+                        console.error('[结构化记忆] memory_diff delete 失效流程异常（不影响聊天）:', invErr);
+                    }
+                }
+
+                if (!memoryOpsApplied && diffArray !== null) {
+                    if (!Array.isArray(diffArray)) {
+                        console.warn('[结构化记忆] diff 解析结果不是数组，跳过结构化存储');
+                    } else {
+                        const episode = {
+                            id: generateMemoryId('episode'),
+                            contactId: contact.id,
+                            type: 'memory_update',
+                            content: conversationText,
+                            source: 'secondary_model_memory_diff',
+                            createdAt: Date.now(),
+                            messageIds: [],
+                            metadata: {
+                                rawDiff: diffArray,
+                                oldMemoryLength: currentMemory.length,
+                                newMemoryLength: newMemoryTable != null ? newMemoryTable.length : 0
+                            }
+                        };
+                        try {
+                            const epSaved = await saveMemoryEpisode(episode);
+                            if (epSaved) {
+                                console.log('[结构化记忆] 已保存 episode:', episode.id);
+                                const facts = convertMemoryDiffToFacts(diffArray, contact, episode.id);
+                                const factsSaved = await saveMemoryFacts(facts);
+                                if (factsSaved) {
+                                    console.log('[结构化记忆] 已保存 facts 数量:', facts.length);
+                                }
+                            }
+                        } catch (structuredErr) {
+                            console.error('[结构化记忆] 旁路写入异常:', structuredErr);
+                        }
+                    }
+                }
+            } else if (!memoryOps) {
                 console.log(">>> [副模型] 未检测到合规的增量标签，原样输出为：", memoryResponseText);
             }
         } catch (memError) {
