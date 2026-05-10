@@ -106,6 +106,7 @@
                     <div class="memory-panel-tabs">
                         <button id="tabMemoryTable" class="memory-tab active" onclick="switchMemoryTab('table')">记忆表格</button>
                         <button id="tabWorldBook" class="memory-tab" onclick="switchMemoryTab('worldbook')">世界书</button>
+                        <button id="tabMemoryFacts" class="memory-tab" onclick="switchMemoryTab('facts')">记忆条目</button>
                     </div>
                     <div class="memory-panel-actions">
                          <button id="memoryEditBtn" class="memory-panel-btn" onclick="toggleMemoryEditMode()">编辑</button>
@@ -133,6 +134,69 @@
                             </div>
                             <button type="submit" class="form-submit">保存条目</button>
                             <button type="button" class="form-submit" style="background-color: #888; margin-top: 5px; display: none;" id="cancelEditWorldBookBtn">取消编辑</button>
+                        </form>
+                    </div>
+
+                    <div id="memoryFactsViewWrapper" style="display: none; height: 100%; flex-direction: column;">
+                        <div id="lastTriggeredFactsPanel" style="padding: 10px; border-bottom: 1px solid #eee; background: #fafafa;">
+                            <div style="font-weight: 600; margin-bottom: 6px;">本轮触发记忆</div>
+                            <div id="lastTriggeredFactsContent" style="font-size: 12px; color: #666;">
+                                暂无触发记录。发一条消息后，这里会显示本轮实际注入主模型的记忆条目。
+                            </div>
+                        </div>
+
+                        <div style="padding: 10px; border-bottom: 1px solid #eee;">
+                            <input
+                                type="text"
+                                id="memoryFactsSearchInput"
+                                class="form-input"
+                                placeholder="搜索结构化记忆，例如：猫咪娘、关系、地点、约定..."
+                                oninput="renderMemoryFactsUI()"
+                            >
+                            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                <button type="button" class="memory-panel-btn" onclick="renderMemoryFactsUI(false)">只看有效</button>
+                                <button type="button" class="memory-panel-btn" onclick="renderMemoryFactsUI(true)">包含已删除</button>
+                            </div>
+                        </div>
+
+                        <div id="memoryFactsList" class="world-book-list" style="flex: 1; overflow-y: auto;">
+                        </div>
+
+                        <form id="memoryFactEditForm" class="world-book-form" style="display: none;" onsubmit="saveMemoryFactFromUI(event)">
+                            <input type="hidden" id="memoryFactEditId">
+
+                            <div class="form-group">
+                                <label class="form-label">Subject 主体</label>
+                                <input type="text" id="memoryFactSubject" class="form-input">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Predicate 关系/字段</label>
+                                <input type="text" id="memoryFactPredicate" class="form-input">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Object 内容</label>
+                                <textarea id="memoryFactObject" class="form-textarea" rows="2"></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">FactText 展示文本</label>
+                                <textarea id="memoryFactText" class="form-textarea" rows="3"></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">重要性 importance，0-1</label>
+                                <input type="number" id="memoryFactImportance" class="form-input" min="0" max="1" step="0.1">
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">可信度 confidence，0-1</label>
+                                <input type="number" id="memoryFactConfidence" class="form-input" min="0" max="1" step="0.1">
+                            </div>
+
+                            <button type="submit" class="form-submit">保存记忆条目</button>
+                            <button type="button" class="form-submit" style="background-color:#888; margin-top:5px;" onclick="cancelMemoryFactEdit()">取消编辑</button>
                         </form>
                     </div>
                 </div>

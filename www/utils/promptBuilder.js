@@ -85,6 +85,7 @@ class PromptBuilder {
         systemPrompt += `--- [绝对核心指令：输出格式] ---\n`;
         systemPrompt += `你的唯一任务是扮演角色并生成特定格式的聊天文本。聊天内容中，**每一个气泡（每一句话）占一行**。绝对不能输出任何不符合此格式的文本。\n\n`;
         systemPrompt += this._buildOutputFormatInstructions();
+        systemPrompt += this._buildMultiBubbleChatInstructions();
 
         // 核心身份与记忆
         systemPrompt += `--- [核心身份与记忆] ---\n`;
@@ -119,7 +120,13 @@ class PromptBuilder {
     /**
      * 【已修复】构建发送给API的消息历史记录
      */
-    buildMessageHistory(currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext = [], includeRuntimeContext = true, retrievedMemoryFacts = []) {
+    buildMessageHistory(currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext = [], includeRuntimeContext = true, retrievedMemoryFacts = [], options = {}) {
+        const {
+            includeFullMemoryTableInMainPrompt = false,
+            memoryPreviewMaxChars = 0,
+            keepLatestUserMessageLast = true
+        } = options || {};
+
         const messages = [];
         // 1. 获取用户设置的基础上下文长度（例如 30）
         const baseCount = apiSettings.contextMessageCount;
@@ -253,18 +260,54 @@ class PromptBuilder {
                 thinkMarker = this.NO_INNER_OS_MARKER;
             }
 
-            // 将记忆表格挪到动态上下文层，避免污染静态 System Prompt 前缀
-            const memoryInfo = (currentContact.memoryTableContent || '').trim();
-            const memoryContext = `\n\n--- [当前记忆状态] ---\n当前记忆状态如下（仅供参考，不要直接复制输出）：\n<current_memory>\n${memoryInfo}\n</current_memory>\n`;
+            let memoryContext = '';
+            const memoryInfoRaw = (currentContact.memoryTableContent || '').trim();
+
+            if (includeFullMemoryTableInMainPrompt && memoryInfoRaw) {
+                let memoryInfo;
+                if (memoryPreviewMaxChars > 0) {
+                    if (memoryInfoRaw.length > memoryPreviewMaxChars) {
+                        const headLen = Math.floor(memoryPreviewMaxChars * 0.6);
+                        const tailLen = Math.floor(memoryPreviewMaxChars * 0.4);
+                        memoryInfo = memoryInfoRaw.slice(0, headLen) + '\n...\n' + memoryInfoRaw.slice(-tailLen);
+                    } else {
+                        memoryInfo = memoryInfoRaw;
+                    }
+                } else {
+                    memoryInfo = memoryInfoRaw;
+                }
+
+                memoryContext = `\n\n--- [当前记忆摘要] ---\n以下是当前记忆的精简视图，仅供参考，不要直接复制输出：\n<current_memory_summary>\n${memoryInfo}\n</current_memory_summary>\n`;
+            }
+
             let relevantFactsSection = '';
             if (Array.isArray(retrievedMemoryFacts) && retrievedMemoryFacts.length > 0 && typeof window.buildRelevantMemoryFactsBlock === 'function') {
                 relevantFactsSection = '\n\n' + window.buildRelevantMemoryFactsBlock(retrievedMemoryFacts);
             }
+
             const extraContext = `${memoryContext}${relevantFactsSection}${runtimeContextBlock}${thinkMarker}`.trim();
             if (extraContext) {
-                // 插入一条 assistant 消息作为隔离，再发送动态状态尾巴
-                messages.push({ role: 'assistant', content: '（系统环境检测正常，我已读取最新记忆与时间状态）' });
-                messages.push({ role: 'user', content: `[System Context / 系统实时状态]\n${extraContext}` });
+                const runtimeMessages = [
+                    { role: 'assistant', content: '（系统环境检测正常，我已读取最新记忆与时间状态）' },
+                    { role: 'user', content: `[System Context / 系统实时状态]\n${extraContext}` }
+                ];
+
+                if (keepLatestUserMessageLast) {
+                    let insertIndex = -1;
+                    for (let i = messages.length - 1; i >= 0; i--) {
+                        if (messages[i].role === 'user') {
+                            insertIndex = i;
+                            break;
+                        }
+                    }
+                    if (insertIndex >= 0) {
+                        messages.splice(insertIndex, 0, ...runtimeMessages);
+                    } else {
+                        messages.push(...runtimeMessages);
+                    }
+                } else {
+                    messages.push(...runtimeMessages);
+                }
             }
         }
 
@@ -277,8 +320,7 @@ class PromptBuilder {
         const month = (now.getMonth() + 1).toString().padStart(2, '0');
         const day = now.getDate().toString().padStart(2, '0');
         const hours = now.getHours();
-        const minutes = now.getMinutes().toString().padStart(2, '0');
-        const currentTimeString = `${year}年${month}月${day}日 ${hours.toString().padStart(2, '0')}:${minutes}`;
+        const currentTimeString = `${year}年${month}月${day}日 ${hours}点左右`;
 
         let timeOfDayDescription = '现在';
         if (hours >= 23 || hours < 5) timeOfDayDescription = '深夜';
@@ -666,6 +708,21 @@ ${userReply}
 聊天内容中，**每一个气泡（每一句话）占一行**。
 如果有特殊的内心独白或动作神态，请按照之前的【思考模式要求】使用括号标注。
 绝对不要输出任何无关的系统代码或标签！`;
+    }
+
+    _buildMultiBubbleChatInstructions() {
+        return `
+
+--- [多气泡日常聊天强制规则] ---
+1. 每次回复必须拆成至少 5 条聊天气泡，也就是至少 5 行有效输出。
+2. 每一行就是一个独立气泡；禁止把多条气泡写在同一行。
+3. 每条气泡以 10-25 个词为宜；中文可理解为 10-25 个自然词语/短语，尽量控制在 15-45 个汉字左右。
+4. 语气要像真实日常聊天：自然、口语化、有停顿感，可以接话、追问、吐槽、表达轻微情绪。
+5. 不要写成作文、旁白、总结、长段落；不要使用编号、项目符号、Markdown 标题或解释格式。
+6. <emoji>表情含义</emoji> 和 [red_packet:{...}] 必须单独占一行，可以算作一条气泡，但不要为了凑数滥用。
+7. 默认输出 5-8 行。除非系统另有更高优先级要求，否则不得少于 5 行。
+8. 输出中不要出现“气泡1”“第1条”“以下是回复”等元说明，只输出角色真正会发出的聊天内容。
+`;
     }
 
     /**

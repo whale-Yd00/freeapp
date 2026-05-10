@@ -2041,7 +2041,7 @@ function scoreMemoryFact(fact, queryText) {
 
 async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
     try {
-        const limit = Math.min(Math.max(options.limit != null ? options.limit : 10, 1), 12);
+        const limit = Math.min(Math.max(options.limit != null ? options.limit : 25, 1), 25);
         const minScore = options.minScore != null ? options.minScore : 5;
 
         const facts = await getMemoryFactsByContact(contactId, { activeOnly: true });
@@ -2058,7 +2058,10 @@ async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
             picked = scored.slice(0, Math.min(limit, 8));
         }
 
-        const resultFacts = picked.map(x => x.fact);
+        const resultFacts = picked.map(({ fact, score }) => ({
+            ...fact,
+            _retrievalScore: score
+        }));
         console.log('[记忆检索] 命中 facts 数量:', resultFacts.length);
         if (picked.length > 0) {
             console.table(picked.map(({ fact, score }) => ({
@@ -4964,6 +4967,56 @@ const MemoryPatcher = {
  * @param {array} turnContext Additional messages for group chat context.
  * @returns {object} The API response containing replies and the new memory table.
  */
+function estimatePromptChars(text) {
+    return String(text || '').length;
+}
+
+const MIN_AI_BUBBLE_COUNT = 5;
+
+function splitAIReplyIntoBubbleLines(text, minCount = MIN_AI_BUBBLE_COUNT) {
+    const rawText = String(text || '').trim();
+    if (!rawText) return [];
+
+    const rawLines = rawText
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (rawLines.length >= minCount) {
+        return rawLines;
+    }
+
+    // 表情和红包这类特殊格式不能乱按标点切，否则会破坏格式
+    const specialLineRegex = /^(<emoji>.*?<\/emoji>|\[red_packet:{.*}\])$/;
+    if (rawLines.some(line => specialLineRegex.test(line))) {
+        return rawLines;
+    }
+
+    // 第一轮：按句末标点拆
+    let sentenceParts = rawText
+        .replace(/([。！？!?；;…]+)\s*/g, '$1\n')
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (sentenceParts.length >= minCount) {
+        return sentenceParts;
+    }
+
+    // 第二轮：如果仍然太少，再允许按逗号拆，让一整段也能变成聊天节奏
+    sentenceParts = rawText
+        .replace(/([。！？!?；;…]+|，|,)\s*/g, '$1\n')
+        .split(/\n+/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (sentenceParts.length > rawLines.length) {
+        return sentenceParts;
+    }
+
+    return rawLines;
+}
+
 async function callAPI(contact, turnContext = []) {
     try {
         let retrievedMemoryFacts = [];
@@ -4972,7 +5025,8 @@ async function callAPI(contact, turnContext = []) {
             const lastMsg = msgs[msgs.length - 1];
             const userInput = lastMsg && lastMsg.role === 'user' ? String(lastMsg.content || '') : '';
             const queryText = buildMemoryRetrievalQuery(contact, userInput);
-            retrievedMemoryFacts = await retrieveRelevantMemoryFacts(contact.id, queryText, { limit: 10 });
+            retrievedMemoryFacts = await retrieveRelevantMemoryFacts(contact.id, queryText, { limit: 25 });
+            setLastTriggeredMemoryFactsDebug(contact, queryText, retrievedMemoryFacts);
             if (retrievedMemoryFacts.length > 0) {
                 console.log('[记忆检索] 注入主模型 facts 数量:', retrievedMemoryFacts.length);
             } else {
@@ -4980,6 +5034,7 @@ async function callAPI(contact, turnContext = []) {
             }
         } catch (retrievalErr) {
             console.warn('[记忆检索] 检索失败，继续使用旧记忆表:', retrievalErr);
+            setLastTriggeredMemoryFactsDebug(contact, '', []);
         }
 
         // ==========================================
@@ -4988,19 +5043,54 @@ async function callAPI(contact, turnContext = []) {
         const systemPrompt = window.promptBuilder.buildChatPrompt(
             contact, userProfile, currentContact, apiSettings, emojis, window, turnContext
         );
-        const messageHistory = window.promptBuilder.buildMessageHistory(
-            currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext, true, retrievedMemoryFacts
+        const cleanHistoryForWorldBook = window.promptBuilder.buildMessageHistory(
+            currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext, false, []
         );
 
-        // 处理世界书
-        const triggeredEntriesText = getTriggeredWorldBookEntries(contact, messageHistory);
-        
+        const triggeredEntriesText = getTriggeredWorldBookEntries(contact, cleanHistoryForWorldBook);
+
+        const messageHistory = window.promptBuilder.buildMessageHistory(
+            currentContact, apiSettings, userProfile, contacts, contact, emojis, turnContext, true, retrievedMemoryFacts,
+            {
+                includeFullMemoryTableInMainPrompt: false,
+                memoryPreviewMaxChars: 0,
+                keepLatestUserMessageLast: true
+            }
+        );
+
         // 【核心修改】：首条 System 消息永远保持纯静态，只放固定的人设和规则
         const messages = [{ role: 'system', content: systemPrompt }, ...messageHistory];
-        // 【核心修改】：将动态触发的世界书设定，追加到最后一条 system 消息里
+
         if (triggeredEntriesText) {
-             messages[messages.length - 1].content += `\n\n${triggeredEntriesText}`;
+            const systemContextIndex = messages.findIndex(m =>
+                m.role === 'user' &&
+                typeof m.content === 'string' &&
+                m.content.startsWith('[System Context / 系统实时状态]')
+            );
+
+            if (systemContextIndex >= 0) {
+                messages[systemContextIndex].content += `\n\n${triggeredEntriesText}`;
+            } else {
+                let insertIndex = messages.length;
+                for (let i = messages.length - 1; i >= 0; i--) {
+                    if (messages[i].role === 'user') {
+                        insertIndex = i;
+                        break;
+                    }
+                }
+                messages.splice(insertIndex, 0, {
+                    role: 'user',
+                    content: `[WorldBook / 世界书触发设定]\n${triggeredEntriesText}`
+                });
+            }
         }
+
+        console.table(messages.map((m, i) => ({
+            index: i,
+            role: m.role,
+            chars: estimatePromptChars(m.content),
+            preview: String(m.content || '').slice(0, 80).replace(/\n/g, ' ')
+        })));
 
         // 1. 调用主模型
         const chatData = await window.apiService.callOpenAIAPI(
@@ -5214,7 +5304,7 @@ async function callAPI(contact, turnContext = []) {
         // 清理一下可能被主模型意外带入的 memory 标签 (防漏)
         let cleanedResponse = fullResponseText.replace(/<memory_diff>[\s\S]*?<\/memory_diff>/g, '').replace(/<memory_table>[\s\S]*?<\/memory_table>/g, '').trim();
 
-        const replies = cleanedResponse.split('\n').map(line => line.trim()).filter(line => line);
+        const replies = splitAIReplyIntoBubbleLines(cleanedResponse, MIN_AI_BUBBLE_COUNT);
         const processedReplies = [];
         const normalizedReasoning = typeof reasoningContent === 'string' ? reasoningContent.trim() : '';
         
@@ -7388,30 +7478,85 @@ async function restoreDefaultBubbleStyle() {
 // 在主窗口上添加消息监听器
 window.addEventListener('message', handleBubbleDesignerMessages);
 
+let memoryFactsShowInactive = false;
+let memoryFactsCacheForUI = [];
+let lastTriggeredMemoryFactsDebug = {
+    contactId: null,
+    contactName: '',
+    queryText: '',
+    triggeredAt: null,
+    facts: []
+};
+
+window.lastTriggeredMemoryFactsDebug = lastTriggeredMemoryFactsDebug;
+
+function setLastTriggeredMemoryFactsDebug(contact, queryText, facts) {
+    lastTriggeredMemoryFactsDebug = {
+        contactId: contact?.id || null,
+        contactName: contact?.name || '',
+        queryText: String(queryText || ''),
+        triggeredAt: Date.now(),
+        facts: Array.isArray(facts) ? facts : []
+    };
+
+    window.lastTriggeredMemoryFactsDebug = lastTriggeredMemoryFactsDebug;
+
+    if (typeof renderLastTriggeredMemoryFactsPanel === 'function') {
+        renderLastTriggeredMemoryFactsPanel();
+    }
+}
+
 /**
- * 切换记忆面板中的标签页 (记忆表格 / 世界书)
- * @param {string} tabName - 'table' 或 'worldbook'
+ * 切换记忆面板中的标签页 (记忆表格 / 世界书 / 记忆条目)
+ * @param {string} tabName - 'table' | 'worldbook' | 'facts'
  */
 function switchMemoryTab(tabName) {
     const memoryView = document.getElementById('memoryTableViewWrapper');
     const worldBookView = document.getElementById('worldBookViewWrapper');
+    const memoryFactsView = document.getElementById('memoryFactsViewWrapper');
     const tabMemory = document.getElementById('tabMemoryTable');
     const tabWorldBook = document.getElementById('tabWorldBook');
+    const tabMemoryFacts = document.getElementById('tabMemoryFacts');
     const editBtn = document.getElementById('memoryEditBtn');
+
+    memoryView.style.display = 'none';
+    worldBookView.style.display = 'none';
+    if (memoryFactsView) {
+        memoryFactsView.style.display = 'none';
+    }
+
+    tabMemory.classList.remove('active');
+    tabWorldBook.classList.remove('active');
+    if (tabMemoryFacts) {
+        tabMemoryFacts.classList.remove('active');
+    }
 
     if (tabName === 'table') {
         memoryView.style.display = 'block';
-        worldBookView.style.display = 'none';
         tabMemory.classList.add('active');
-        tabWorldBook.classList.remove('active');
-        editBtn.style.display = 'block'; // 记忆表格有编辑按钮
-    } else {
-        memoryView.style.display = 'none';
-        worldBookView.style.display = 'flex'; // 使用flex因为它有内滚动
-        tabMemory.classList.remove('active');
+        editBtn.style.display = 'block';
+        return;
+    }
+
+    editBtn.style.display = 'none';
+
+    if (tabName === 'worldbook') {
+        worldBookView.style.display = 'flex';
         tabWorldBook.classList.add('active');
-        editBtn.style.display = 'none'; // 世界书不需要统一的编辑按钮
-        renderWorldBookUI(); // 切换到世界书时渲染内容
+        renderWorldBookUI();
+        return;
+    }
+
+    if (tabName === 'facts') {
+        if (memoryFactsView) {
+            memoryFactsView.style.display = 'flex';
+        }
+        if (tabMemoryFacts) {
+            tabMemoryFacts.classList.add('active');
+        }
+        renderMemoryFactsUI(false);
+        renderLastTriggeredMemoryFactsPanel();
+        return;
     }
 }
 
@@ -7526,6 +7671,281 @@ function deleteWorldBookEntry(index) {
         showToast('条目已删除');
     });
 }
+
+function formatMemoryFactTime(timestamp) {
+    if (!timestamp) return '未知时间';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '未知时间';
+    return date.toLocaleString('zh-CN');
+}
+
+function renderLastTriggeredMemoryFactsPanel() {
+    const container = document.getElementById('lastTriggeredFactsContent');
+    if (!container) return;
+
+    const debug = window.lastTriggeredMemoryFactsDebug || lastTriggeredMemoryFactsDebug;
+
+    if (!debug || !debug.triggeredAt || !Array.isArray(debug.facts)) {
+        container.innerHTML = '暂无触发记录。';
+        return;
+    }
+
+    if (currentContact && debug.contactId && currentContact.id !== debug.contactId) {
+        container.innerHTML = `当前显示的是其他角色的触发记录：${escapeHtml(debug.contactName || '未知角色')}`;
+        return;
+    }
+
+    const timeText = new Date(debug.triggeredAt).toLocaleString();
+
+    if (debug.facts.length === 0) {
+        container.innerHTML = `
+            <div>时间：${escapeHtml(timeText)}</div>
+            <div style="margin-top:4px;">本轮没有命中结构化记忆。</div>
+            <details style="margin-top:6px;">
+                <summary>查看本轮检索 query</summary>
+                <pre style="white-space:pre-wrap; font-size:11px;">${escapeHtml(debug.queryText || '')}</pre>
+            </details>
+        `;
+        return;
+    }
+
+    const factsHtml = debug.facts.map((fact, index) => {
+        const m = fact.metadata || {};
+        const score = typeof fact._retrievalScore === 'number'
+            ? Math.round(fact._retrievalScore * 10) / 10
+            : '未知';
+
+        return `
+            <div style="padding:8px; margin-top:8px; border:1px solid #eee; border-radius:6px; background:white;">
+                <div style="font-weight:600;">${index + 1}. ${escapeHtml(fact.factText || fact.object || '(空记忆)')}</div>
+                <div style="margin-top:4px;">score：${escapeHtml(String(score))}</div>
+                <div>subject：${escapeHtml(fact.subject || '')}</div>
+                <div>predicate：${escapeHtml(fact.predicate || '')}</div>
+                <div>type：${escapeHtml(String(m.type || '未知'))} ｜ timeScope：${escapeHtml(String(m.timeScope || '未知'))}</div>
+                <div>importance：${escapeHtml(String(fact.importance ?? '未知'))} ｜ confidence：${escapeHtml(String(fact.confidence ?? '未知'))}</div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div>时间：${escapeHtml(timeText)}</div>
+        <div>角色：${escapeHtml(debug.contactName || '')}</div>
+        <div>命中数量：${debug.facts.length}</div>
+
+        <details style="margin-top:6px;">
+            <summary>查看本轮检索 query</summary>
+            <pre style="white-space:pre-wrap; font-size:11px;">${escapeHtml(debug.queryText || '')}</pre>
+        </details>
+
+        ${factsHtml}
+    `;
+}
+
+async function renderMemoryFactsUI(showInactive = memoryFactsShowInactive) {
+    if (!currentContact) return;
+
+    memoryFactsShowInactive = !!showInactive;
+
+    const listEl = document.getElementById('memoryFactsList');
+    const searchInputEl = document.getElementById('memoryFactsSearchInput');
+    if (!listEl) return;
+
+    const searchTerm = String(searchInputEl?.value || '').trim().toLowerCase();
+    const facts = await getMemoryFactsByContact(currentContact.id, {
+        activeOnly: !memoryFactsShowInactive
+    });
+    memoryFactsCacheForUI = Array.isArray(facts) ? facts.slice() : [];
+
+    const filtered = memoryFactsCacheForUI
+        .filter(fact => {
+            if (!searchTerm) return true;
+            const metadata = fact && fact.metadata ? fact.metadata : {};
+            const fields = [
+                fact?.subject,
+                fact?.predicate,
+                fact?.object,
+                fact?.factText,
+                metadata?.type,
+                metadata?.timeScope
+            ];
+            return fields.some(v => String(v || '').toLowerCase().includes(searchTerm));
+        })
+        .sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = '<p style="text-align:center; color:#999; padding:20px;">没有匹配的结构化记忆条目。</p>';
+        return;
+    }
+
+    listEl.innerHTML = '';
+    filtered.forEach(fact => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'world-book-item';
+
+        const isActive = fact.status === 'active' && (fact.validTo === null || fact.validTo === undefined);
+        const statusText = isActive ? '有效' : '已删除';
+        const statusColor = isActive ? '#07c160' : '#999';
+        const importance = typeof fact.importance === 'number' ? fact.importance : '-';
+        const confidence = typeof fact.confidence === 'number' ? fact.confidence : '-';
+        itemEl.innerHTML = `
+            <div class="world-book-item-header">
+                <div class="world-book-item-keywords">${escapeHtml(String(fact.subject || '(空主体)'))} · ${escapeHtml(String(fact.predicate || '(空字段)'))}</div>
+                <div class="world-book-item-actions">
+                    <button onclick="editMemoryFactFromUI('${String(fact.id).replace(/'/g, "\\'")}')">编辑</button>
+                    ${
+                        isActive
+                            ? `<button class="delete" onclick="softDeleteMemoryFactFromUI('${String(fact.id).replace(/'/g, "\\'")}')">软删除</button>`
+                            : `<button onclick="restoreMemoryFactFromUI('${String(fact.id).replace(/'/g, "\\'")}')">恢复</button>`
+                    }
+                </div>
+            </div>
+            <div class="world-book-item-entry">
+                <div><strong>内容:</strong> ${escapeHtml(String(fact.factText || fact.object || ''))}</div>
+                <div style="margin-top: 4px;"><strong>主体/关系:</strong> ${escapeHtml(String(fact.subject || ''))} / ${escapeHtml(String(fact.predicate || ''))}</div>
+                <div style="margin-top: 6px; font-size: 12px; color: #888;">
+                    类型/时间域: ${escapeHtml(String(fact?.metadata?.type || '-'))} / ${escapeHtml(String(fact?.metadata?.timeScope || '-'))}
+                </div>
+                <div style="margin-top: 2px; font-size: 12px; color: #888;">
+                    · importance: ${importance}
+                    · confidence: ${confidence}
+                    · status: <span style="color:${statusColor};">${statusText}</span>
+                </div>
+                <div style="margin-top: 2px; font-size: 12px; color: #aaa;">
+                    创建: ${escapeHtml(formatMemoryFactTime(fact.createdAt))}
+                    · 更新: ${escapeHtml(formatMemoryFactTime(fact.updatedAt || fact.createdAt))}
+                </div>
+            </div>
+        `;
+        listEl.appendChild(itemEl);
+    });
+}
+
+function editMemoryFactFromUI(factId) {
+    const target = memoryFactsCacheForUI.find(f => f && f.id === factId);
+    if (!target) {
+        showToast('未找到该记忆条目');
+        return;
+    }
+
+    document.getElementById('memoryFactEditId').value = target.id || '';
+    document.getElementById('memoryFactSubject').value = target.subject || '';
+    document.getElementById('memoryFactPredicate').value = target.predicate || '';
+    document.getElementById('memoryFactObject').value = target.object || '';
+    document.getElementById('memoryFactText').value = target.factText || '';
+    document.getElementById('memoryFactImportance').value = typeof target.importance === 'number' ? target.importance : 0.5;
+    document.getElementById('memoryFactConfidence').value = typeof target.confidence === 'number' ? target.confidence : 0.7;
+
+    const formEl = document.getElementById('memoryFactEditForm');
+    formEl.style.display = 'block';
+    formEl.scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelMemoryFactEdit() {
+    const formEl = document.getElementById('memoryFactEditForm');
+    if (formEl) {
+        formEl.reset();
+        formEl.style.display = 'none';
+    }
+    const idEl = document.getElementById('memoryFactEditId');
+    if (idEl) idEl.value = '';
+}
+
+async function saveMemoryFactFromUI(event) {
+    event.preventDefault();
+    if (!currentContact) return;
+
+    const id = document.getElementById('memoryFactEditId').value.trim();
+    if (!id) {
+        showToast('缺少条目ID，无法保存');
+        return;
+    }
+
+    const oldFact = memoryFactsCacheForUI.find(f => f && f.id === id);
+    if (!oldFact) {
+        showToast('条目不存在或已更新，请刷新后重试');
+        return;
+    }
+
+    const importanceRaw = Number(document.getElementById('memoryFactImportance').value);
+    const confidenceRaw = Number(document.getElementById('memoryFactConfidence').value);
+    const clamp01 = (n, fallback) => Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : fallback;
+
+    const updatedFact = {
+        ...oldFact,
+        subject: document.getElementById('memoryFactSubject').value.trim(),
+        predicate: document.getElementById('memoryFactPredicate').value.trim(),
+        object: document.getElementById('memoryFactObject').value.trim(),
+        factText: document.getElementById('memoryFactText').value.trim(),
+        importance: clamp01(importanceRaw, typeof oldFact.importance === 'number' ? oldFact.importance : 0.5),
+        confidence: clamp01(confidenceRaw, typeof oldFact.confidence === 'number' ? oldFact.confidence : 0.7),
+        updatedAt: Date.now()
+    };
+
+    const ok = await saveMemoryFact(updatedFact);
+    if (!ok) {
+        showToast('保存失败');
+        return;
+    }
+
+    showToast('记忆条目已保存');
+    cancelMemoryFactEdit();
+    await renderMemoryFactsUI(memoryFactsShowInactive);
+}
+
+async function softDeleteMemoryFactFromUI(factId) {
+    const target = memoryFactsCacheForUI.find(f => f && f.id === factId);
+    if (!target) {
+        showToast('未找到该记忆条目');
+        return;
+    }
+
+    showConfirmDialog('软删除确认', '确定将该结构化记忆标记为已删除吗？', async () => {
+        const updated = {
+            ...target,
+            status: 'inactive',
+            validTo: Date.now(),
+            updatedAt: Date.now(),
+            metadata: {
+                ...(target.metadata || {}),
+                invalidationSource: 'manual_ui',
+                invalidationReason: '用户在记忆条目面板手动删除'
+            }
+        };
+        const ok = await saveMemoryFact(updated);
+        if (!ok) {
+            showToast('软删除失败');
+            return;
+        }
+        showToast('已软删除');
+        await renderMemoryFactsUI(memoryFactsShowInactive);
+    });
+}
+
+async function restoreMemoryFactFromUI(factId) {
+    const target = memoryFactsCacheForUI.find(f => f && f.id === factId);
+    if (!target) {
+        showToast('未找到该记忆条目');
+        return;
+    }
+
+    const updated = {
+        ...target,
+        status: 'active',
+        validTo: null,
+        updatedAt: Date.now()
+    };
+    const ok = await saveMemoryFact(updated);
+    if (!ok) {
+        showToast('恢复失败');
+        return;
+    }
+    showToast('已恢复为有效记忆');
+    await renderMemoryFactsUI(memoryFactsShowInactive);
+}
+
+window.getLastTriggeredMemoryFacts = function() {
+    return window.lastTriggeredMemoryFactsDebug;
+};
 
 /**
  * 根据聊天记录，找出触发了哪些世界书条目

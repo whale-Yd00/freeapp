@@ -548,15 +548,26 @@
     <script>
 // --- IndexedDB Helper ---
 const DB_NAME = 'SillyTavernOfflineDB';
-const DB_VERSION = 3; // <-- 版本号+1，这是触发 onupgradeneeded 的关键
+const DB_VERSION = 4; // <-- 版本号+1，这是触发 onupgradeneeded 的关键
 
 // 定义我们要创建的"表"
 const STORES = {
-    characters: 'characters',       // 存储角色卡
-    chatHistories: 'chatHistories', // 存储聊天记录
-    summaries: 'summaries',         // 存储对话总结
-    characterStates: 'characterStates', // <--- 【新增】存储角色状态表
-    miscData: 'miscData'            // 存储其他零散数据
+    characters: 'characters',
+    chatHistories: 'chatHistories',
+    summaries: 'summaries',
+    characterStates: 'characterStates',
+    miscData: 'miscData',
+
+    // Narrative Engine v1
+    narrativeStories: 'narrativeStories',
+    narrativePassages: 'narrativePassages',
+    narrativeSceneStates: 'narrativeSceneStates',
+    narrativeStoryCharacters: 'narrativeStoryCharacters',
+    narrativeUserControl: 'narrativeUserControl',
+    narrativeHooks: 'narrativeHooks',
+    narrativeTimelineEvents: 'narrativeTimelineEvents',
+    narrativeArcPlans: 'narrativeArcPlans',
+    narrativeDirectorNotes: 'narrativeDirectorNotes'
 };
 
     /**
@@ -602,6 +613,87 @@ const STORES = {
                 // 我们将使用 'characterId' 作为主键，方便直接根据角色ID查找
                 if (!db.objectStoreNames.contains(STORES.characterStates)) {
                     db.createObjectStore(STORES.characterStates, { keyPath: 'characterId' });
+                }
+
+                // ====================== Narrative Engine v1 stores ======================
+
+                if (!db.objectStoreNames.contains(STORES.narrativeStories)) {
+                    const store = db.createObjectStore(STORES.narrativeStories, { keyPath: 'id' });
+                    store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    store.createIndex('status', 'status', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativePassages)) {
+                    const store = db.createObjectStore(STORES.narrativePassages, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('chapterId', 'chapterId', { unique: false });
+                    store.createIndex('sceneId', 'sceneId', { unique: false });
+                    store.createIndex('role', 'role', { unique: false });
+                    store.createIndex('orderIndex', 'orderIndex', { unique: false });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                    store.createIndex('canonLevel', 'canonLevel', { unique: false });
+                    store.createIndex('keywords', 'keywords', { unique: false, multiEntry: true });
+                    store.createIndex('entities', 'entities', { unique: false, multiEntry: true });
+                    store.createIndex('hookIds', 'hookIds', { unique: false, multiEntry: true });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeSceneStates)) {
+                    const store = db.createObjectStore(STORES.narrativeSceneStates, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('chapterId', 'chapterId', { unique: false });
+                    store.createIndex('status', 'status', { unique: false });
+                    store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeStoryCharacters)) {
+                    const store = db.createObjectStore(STORES.narrativeStoryCharacters, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('role', 'role', { unique: false });
+                    store.createIndex('name', 'name', { unique: false });
+                    store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeUserControl)) {
+                    const store = db.createObjectStore(STORES.narrativeUserControl, { keyPath: 'storyId' });
+                    store.createIndex('characterId', 'characterId', { unique: false });
+                    store.createIndex('controlMode', 'controlMode', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeHooks)) {
+                    const store = db.createObjectStore(STORES.narrativeHooks, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('status', 'status', { unique: false });
+                    store.createIndex('name', 'name', { unique: false });
+                    store.createIndex('importance', 'importance', { unique: false });
+                    store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeTimelineEvents)) {
+                    const store = db.createObjectStore(STORES.narrativeTimelineEvents, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('chapterId', 'chapterId', { unique: false });
+                    store.createIndex('sceneId', 'sceneId', { unique: false });
+                    store.createIndex('orderIndex', 'orderIndex', { unique: false });
+                    store.createIndex('importance', 'importance', { unique: false });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
+                    store.createIndex('characters', 'characters', { unique: false, multiEntry: true });
+                    store.createIndex('objects', 'objects', { unique: false, multiEntry: true });
+                    store.createIndex('hooks', 'hooks', { unique: false, multiEntry: true });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeArcPlans)) {
+                    const store = db.createObjectStore(STORES.narrativeArcPlans, { keyPath: 'storyId' });
+                    store.createIndex('currentPhase', 'currentPhase', { unique: false });
+                    store.createIndex('updatedAt', 'updatedAt', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains(STORES.narrativeDirectorNotes)) {
+                    const store = db.createObjectStore(STORES.narrativeDirectorNotes, { keyPath: 'id' });
+                    store.createIndex('storyId', 'storyId', { unique: false });
+                    store.createIndex('passageId', 'passageId', { unique: false });
+                    store.createIndex('scope', 'scope', { unique: false });
+                    store.createIndex('parsedType', 'parsedType', { unique: false });
+                    store.createIndex('createdAt', 'createdAt', { unique: false });
                 }
             };
 
