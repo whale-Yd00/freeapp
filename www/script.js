@@ -966,6 +966,7 @@ async function loadContactsForList() {
             personality: contact.personality,
             customPrompts: contact.customPrompts,
             voiceId: contact.voiceId,
+            thinkMode: contact.thinkMode || 'default',
             bubbleStyleId: contact.bubbleStyleId,
             members: contact.members,
             memoryTableContent: contact.memoryTableContent,
@@ -1070,6 +1071,7 @@ async function loadContactsForList() {
             personality: contact.personality,
             customPrompts: contact.customPrompts,
             voiceId: contact.voiceId,
+            thinkMode: contact.thinkMode || 'default',
             bubbleStyleId: contact.bubbleStyleId,
             members: contact.members,
             memoryTableContent: contact.memoryTableContent
@@ -3998,6 +4000,14 @@ function bindApiCheckButton() {
     document.getElementById('minimaxGroupId').value = apiSettings.minimaxGroupId;
     document.getElementById('minimaxApiKey').value = apiSettings.minimaxApiKey;
     document.getElementById('glmApiKey').value = apiSettings.glmApiKey || '';
+
+    // 计费标准回显（元/百万Token）
+    const priceHitEl = document.getElementById('priceHit');
+    const priceMissEl = document.getElementById('priceMiss');
+    const priceOutEl = document.getElementById('priceOut');
+    if (priceHitEl) priceHitEl.value = apiSettings.priceHit ?? 1.0;
+    if (priceMissEl) priceMissEl.value = apiSettings.priceMiss ?? 12.0;
+    if (priceOutEl) priceOutEl.value = apiSettings.priceOut ?? 24.0;
 
     const primarySelect = document.getElementById('primaryModelSelect');
     const secondarySelect = document.getElementById('secondaryModelSelect');
