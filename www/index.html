@@ -398,6 +398,7 @@
             <div class="menu-item delete-item" onclick="deleteCurrentContact()">删除聊天对象</div>
             <!-- 调试功能 -->
             <div class="menu-item" onclick="exportConsoleLogs()">导出调试日志</div>
+            <div class="menu-item" onclick="showWordAssistantModal()">Word 文档助手（测试）</div>
         </div>
     </div>
 
@@ -1015,6 +1016,7 @@
     <script src="utils/memoryTable.js"></script>
     <script src="utils/dataMigrator.js"></script>
     <script src="utils/announcementManager.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     
     <!-- 最后加载主逻辑脚本 -->
     <script src="script.js"></script>
@@ -1035,6 +1037,39 @@
     </div>
 
     <script src="marked.min.js"></script>
+
+    
+
+    <div class="modal" id="wordAssistantModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Word 文档助手（Beta）</div>
+                <div class="modal-close" onclick="closeModal('wordAssistantModal')">关闭</div>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">上传 .docx 文件</label>
+                    <input type="file" class="form-input" id="wordFileInput" accept=".docx" onchange="handleWordFileSelect(event)">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">修改要求</label>
+                    <textarea class="form-textarea" id="wordEditInstruction" rows="3" placeholder="例如：保持原意，语气更专业，精简 20%"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提取文本预览（前2000字）</label>
+                    <textarea class="form-textarea" id="wordExtractPreview" rows="6" readonly></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">AI 修改结果（可下载 .txt）</label>
+                    <textarea class="form-textarea" id="wordResultText" rows="8" readonly></textarea>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="form-submit" type="button" onclick="runWordRewrite()">开始改写</button>
+                    <button class="form-submit" type="button" style="background:#666;" onclick="downloadWordResultTxt()">下载结果TXT</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="phone-call-modal" id="phoneCallModal">
         <div class="call-background"></div>
