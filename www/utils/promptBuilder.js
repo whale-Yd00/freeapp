@@ -85,6 +85,7 @@ class PromptBuilder {
         systemPrompt += `--- [绝对核心指令：输出格式] ---\n`;
         systemPrompt += `你的唯一任务是扮演角色并生成特定格式的聊天文本。聊天内容中，**每一个气泡（每一句话）占一行**。绝对不能输出任何不符合此格式的文本。\n\n`;
         systemPrompt += this._buildOutputFormatInstructions();
+        systemPrompt += this._buildCurrentTurnPriorityInstructions();
         systemPrompt += this._buildMultiBubbleChatInstructions();
 
         // 核心身份与记忆
@@ -708,6 +709,21 @@ ${userReply}
 聊天内容中，**每一个气泡（每一句话）占一行**。
 如果有特殊的内心独白或动作神态，请按照之前的【思考模式要求】使用括号标注。
 绝对不要输出任何无关的系统代码或标签！`;
+    }
+
+    _buildCurrentTurnPriorityInstructions() {
+        return `
+
+--- [当前对话优先级规则] ---
+1. 你的回复必须首先回应用户最新一条消息的内容、情绪和意图。
+2. 长期记忆、结构化记忆、世界书和历史设定只能作为辅助背景，不能替代对当前消息的回应。
+3. 如果用户正在问一个当下问题、表达当下情绪、提出当下请求，你必须先接住这个当下内容。
+4. 只有当相关记忆能自然帮助理解当前消息时，才可以使用记忆。
+5. 禁止因为检索到某条长期记忆，就突然转移话题。
+6. 如果记忆和当前用户消息关系不强，请忽略它，不要主动提起。
+7. 你可以把记忆当作“潜台词”，但不要机械复述记忆条目。
+8. 回复顺序应当是：先回应当前消息，再自然结合相关记忆，最后推动对话。
+`;
     }
 
     _buildMultiBubbleChatInstructions() {

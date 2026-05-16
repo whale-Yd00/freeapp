@@ -1970,6 +1970,80 @@ function normalizeText(text) {
         .trim();
 }
 
+const MEMORY_QUERY_STOP_WORDS = new Set([
+    '用户', '角色', '今天', '现在', '感觉', '觉得', '这个', '那个',
+    '什么', '就是', '可以', '不是', '没有', '真的', '好像', '一下',
+    '有点', '还是', '然后', '但是', '因为', '所以', '我们', '你们',
+    '他们', '自己', '东西', '事情', '问题'
+]);
+
+/** @param {string} normalizedQuery */
+function buildUsefulTokensFromNormalized(normalizedQuery) {
+    const tokens = String(normalizedQuery || '')
+        .split(/[\s\n\r,，。.!！?？、；;:："'“”‘’（）()【】\[\]<>《》]+/)
+        .map(t => t.trim())
+        .filter(t => t.length >= 2);
+
+    const seen = new Set();
+    const usefulTokens = [];
+    for (const t of tokens) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        if (MEMORY_QUERY_STOP_WORDS.has(t)) continue;
+        usefulTokens.push(t);
+    }
+    return usefulTokens;
+}
+
+function deriveFreshUserMessageText(lastUserMessage, queryText) {
+    if (lastUserMessage != null && String(lastUserMessage).trim() !== '') {
+        return String(lastUserMessage);
+    }
+    const lines = String(queryText ?? '').split(/\n/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line && line.trim()) return line;
+    }
+    return '';
+}
+
+function factAgeDaysApprox(fact) {
+    const t = fact.updatedAt != null ? fact.updatedAt
+        : fact.createdAt != null ? fact.createdAt
+            : fact.validFrom;
+    if (t == null) return 0;
+    let ms;
+    if (typeof t === 'number' && !Number.isNaN(t)) {
+        ms = t;
+    } else if (typeof t === 'string') {
+        const parsed = Date.parse(t);
+        ms = Number.isNaN(parsed) ? NaN : parsed;
+    } else {
+        return 0;
+    }
+    if (!Number.isFinite(ms)) return 0;
+    return Math.max(0, (Date.now() - ms) / 86400000);
+}
+
+/** 中文连续片段 2~4 字 n-gram，用于即时短语命中（量可控） */
+function collectCjkNGrams(text, minLen, maxLen, maxCount) {
+    const norm = normalizeText(text);
+    const runs = norm.match(/[\u4e00-\u9fff]+/g) || [];
+    const out = new Set();
+    outer: for (let r = 0; r < runs.length; r++) {
+        const run = runs[r];
+        const L = run.length;
+        if (!L) continue;
+        for (let len = minLen; len <= Math.min(maxLen, L); len++) {
+            for (let i = 0; i + len <= L; i++) {
+                out.add(run.slice(i, i + len));
+                if (out.size >= maxCount) break outer;
+            }
+        }
+    }
+    return out;
+}
+
 function buildFactSearchText(fact) {
     if (!fact || typeof fact !== 'object') return '';
     const parts = [];
@@ -1990,52 +2064,119 @@ function buildFactSearchText(fact) {
     return parts.join(' ');
 }
 
-function scoreMemoryFact(fact, queryText) {
+/**
+ * @param {object} fact
+ * @param {string} queryText 检索串（通常含本轮用户消息 + 近期上下文）
+ * @param {string} [lastUserMessage] 本轮用户纯文本；若省略则从 queryText 首行回退
+ */
+function scoreMemoryFact(fact, queryText, lastUserMessage) {
     if (!fact || fact.status !== 'active') return -Infinity;
     if (fact.validTo != null && fact.validTo !== undefined) return -Infinity;
 
     const m = fact.metadata || {};
     const searchBlob = normalizeText(buildFactSearchText(fact));
     const qRaw = normalizeText(queryText);
-    let score = 0;
-
-    const imp = typeof fact.importance === 'number' && !Number.isNaN(fact.importance) ? fact.importance : 0.5;
-    const conf = typeof fact.confidence === 'number' && !Number.isNaN(fact.confidence) ? fact.confidence : 0.5;
-    score += imp * 10;
-    score += conf * 4;
-
-    if (m.timeScope === 'current') score += 6;
-    if (m.timeScope === 'future') score += 5;
-
     const ty = m.type;
-    if (ty === 'emotional_core' || ty === 'relationship' || ty === 'promise' || ty === 'future_plan') score += 8;
-    if (ty === 'preference') score += 6;
+    const timeScope = m.timeScope;
 
-    if (m.timeScope === 'temporary' || ty === 'current_state') score -= 3;
+    const imp = typeof fact.importance === 'number' && !Number.isNaN(fact.importance)
+        ? Math.min(1, Math.max(0, fact.importance))
+        : 0.5;
 
-    if (qRaw.length >= 2) {
-        if (searchBlob.includes(qRaw)) {
-            score += 18;
+    const conf = typeof fact.confidence === 'number' && !Number.isNaN(fact.confidence)
+        ? Math.min(1, Math.max(0, fact.confidence))
+        : 0.5;
+
+    // baseScore：importance / confidence / type / timeScope 等结构化偏置
+    let baseScore = 0;
+    baseScore += imp * 4;
+    baseScore += conf * 2;
+
+    if (timeScope === 'current') baseScore += 4;
+    if (ty === 'emotional_core') baseScore += 5;
+    if (ty === 'relationship') baseScore += 5;
+    if (ty === 'preference') baseScore += 3;
+    if (timeScope === 'long_term') baseScore += 2;
+
+    const futureIntentRegex = /(约定|答应|说好|说过|计划|安排|以后|之后|下次|明天|今晚|今天晚上|周末|未来|记得|别忘|提醒|要不要|什么时候|一起|见面|去哪|去哪里|做什么|到时候|回头|改天)/;
+    const hasFutureIntent = futureIntentRegex.test(qRaw);
+
+    if (ty === 'promise' || ty === 'future_plan' || timeScope === 'future') {
+        baseScore += 2;
+        if (hasFutureIntent) {
+            baseScore += 8;
         }
-        const tokens = qRaw.split(/[\s\n\r,，。.!！?？、；;:：]+/).filter(t => t.length > 1);
-        const seen = new Set();
-        for (let i = 0; i < tokens.length; i++) {
-            const t = tokens[i];
-            if (seen.has(t)) continue;
-            seen.add(t);
-            if (searchBlob.includes(t)) {
-                score += 4 + Math.min(t.length * 0.15, 3);
-            }
+    }
+
+    if (timeScope === 'temporary' || ty === 'current_state') {
+        baseScore -= 3;
+    }
+
+    // lexicalScore：全 query 切词命中（含上下文字面）
+    let lexicalScore = 0;
+    const usefulTokens = buildUsefulTokensFromNormalized(qRaw);
+
+    if (qRaw.length >= 4 && searchBlob.includes(qRaw)) {
+        lexicalScore += 30;
+    }
+
+    const subj = fact.subject != null ? normalizeText(fact.subject) : '';
+    const pred = fact.predicate != null ? normalizeText(fact.predicate) : '';
+    const obj = fact.object != null ? normalizeText(String(fact.object)) : '';
+    const ft = fact.factText != null ? normalizeText(String(fact.factText)) : '';
+
+    for (const t of usefulTokens) {
+        if (!t || t.length < 2) continue;
+
+        if (searchBlob.includes(t)) {
+            lexicalScore += 5 + Math.min(t.length * 0.5, 5);
         }
-        const subj = fact.subject != null ? normalizeText(fact.subject) : '';
-        const pred = fact.predicate != null ? normalizeText(fact.predicate) : '';
-        const obj = fact.object != null ? normalizeText(String(fact.object)) : '';
-        const ft = fact.factText != null ? normalizeText(String(fact.factText)) : '';
-        tokens.forEach(t => {
-            if (subj.includes(t) || pred.includes(t) || obj.includes(t) || ft.includes(t)) {
-                score += 2;
-            }
-        });
+
+        if (obj.includes(t)) lexicalScore += 8;
+        if (ft.includes(t)) lexicalScore += 8;
+        if (pred.includes(t)) lexicalScore += 3;
+        if (subj.includes(t)) lexicalScore += 1;
+    }
+
+    // freshQueryBoost：仅「本轮用户消息」的关键词 + 2~4 字短语（factText）
+    const freshPlain = deriveFreshUserMessageText(lastUserMessage, queryText);
+    const freshTokens = buildUsefulTokensFromNormalized(normalizeText(freshPlain));
+
+    let freshHitCount = 0;
+    for (let fi = 0; fi < freshTokens.length; fi++) {
+        const t = freshTokens[fi];
+        if (!t || t.length < 2) continue;
+        if (searchBlob.includes(t)) freshHitCount++;
+    }
+
+    let freshKeywordBoost = 0;
+    if (freshHitCount >= 1) {
+        freshKeywordBoost = Math.min(15, 6 + (freshHitCount - 1) * 3);
+    }
+
+    let phraseBoost = 0;
+    const gramSet = collectCjkNGrams(freshPlain, 2, 4, 72);
+    gramSet.forEach(g => {
+        if (!g || g.length < 2 || g.length > 4) return;
+        if (ft.includes(g)) phraseBoost += 4;
+    });
+    phraseBoost = Math.min(12, phraseBoost);
+
+    const freshQueryBoost = freshKeywordBoost + phraseBoost;
+
+    // 老记忆轻微衰减；与本轮高度相关时再补偿（抵消霸榜）
+    const stalePenalty = Math.min(5, factAgeDaysApprox(fact) * 0.1);
+    const highFreshRelevance = freshHitCount >= 2 || phraseBoost >= 8;
+    let relevanceCompensation = 0;
+    if (highFreshRelevance) {
+        relevanceCompensation = Math.min(15, 8 + freshHitCount * 2 + Math.floor(phraseBoost / 4));
+    }
+
+    let score = baseScore + lexicalScore + freshQueryBoost - stalePenalty + relevanceCompensation;
+
+    const hadObviousTextHit = lexicalScore > 0 || freshHitCount > 0 || phraseBoost > 0;
+    if (!hadObviousTextHit) {
+        score -= 4;
     }
 
     return score;
@@ -2051,7 +2192,10 @@ async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
         console.log('[记忆检索] query:', qPreview.length > 400 ? `${qPreview.slice(0, 400)}…` : qPreview);
 
         const scored = facts
-            .map(f => ({ fact: f, score: scoreMemoryFact(f, queryText) }))
+            .map(f => ({
+                fact: f,
+                score: scoreMemoryFact(f, queryText, options.lastUserMessage)
+            }))
             .filter(x => Number.isFinite(x.score))
             .sort((a, b) => b.score - a.score);
 
@@ -2109,12 +2253,13 @@ function buildMemoryRetrievalQuery(contact, userInput) {
     const parts = [];
     if (userInput != null) parts.push(String(userInput));
     const msgs = contact && Array.isArray(contact.messages) ? contact.messages : [];
-    const tail = msgs.slice(-6);
+    const tail = msgs.slice(-4);
     for (let i = 0; i < tail.length; i++) {
         const m = tail[i];
         parts.push(m && m.content != null ? String(m.content) : '');
     }
-    if (contact && contact.name != null) parts.push(String(contact.name));
+    // 不再追加 contact.name，避免所有 subject=角色名 的 facts 被误判为相关
+    // if (contact && contact.name != null) parts.push(String(contact.name));
     return parts.join('\n');
 }
 
@@ -5035,7 +5180,11 @@ async function callAPI(contact, turnContext = []) {
             const lastMsg = msgs[msgs.length - 1];
             const userInput = lastMsg && lastMsg.role === 'user' ? String(lastMsg.content || '') : '';
             const queryText = buildMemoryRetrievalQuery(contact, userInput);
-            retrievedMemoryFacts = await retrieveRelevantMemoryFacts(contact.id, queryText, { limit: 25 });
+            retrievedMemoryFacts = await retrieveRelevantMemoryFacts(contact.id, queryText, {
+                limit: 10,
+                minScore: 7,
+                lastUserMessage: userInput
+            });
             setLastTriggeredMemoryFactsDebug(contact, queryText, retrievedMemoryFacts);
             if (retrievedMemoryFacts.length > 0) {
                 console.log('[记忆检索] 注入主模型 facts 数量:', retrievedMemoryFacts.length);
