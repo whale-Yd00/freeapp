@@ -2182,6 +2182,150 @@ function scoreMemoryFact(fact, queryText, lastUserMessage) {
     return score;
 }
 
+/** 精确去重键：S/P/O 有任一非空则拼三重，否则退回 factText */
+function canonicalForExactKey(str) {
+    return String(str ?? '')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[\u200b\ufeff]/g, '')
+        .replace(/[，,。．\.!！?？、；;:\-—_·…'"“”‘’（）()\[\]【】<>《》]/g, '')
+        .trim();
+}
+
+function buildExactDedupeKey(fact) {
+    if (!fact || typeof fact !== 'object') return '';
+    const s = canonicalForExactKey(fact.subject);
+    const p = canonicalForExactKey(fact.predicate);
+    const o = canonicalForExactKey(fact.object);
+    if (s || p || o) {
+        return `spo:${s}|${p}|${o}`;
+    }
+    return `ft:${canonicalForExactKey(fact.factText)}`;
+}
+
+/**
+ * 供 Jaccard 用的 token 集合：仅 factText、subject、object（见需求）
+ * 中英文混合：分词 + 汉字 2-gram，避免中文无空格时交集为空
+ */
+function tokenSetForFactDedup(fact) {
+    const blob = normalizeText(
+        [fact.factText, fact.subject, fact.object].map(x => String(x ?? '')).join(' ')
+    );
+    const set = new Set();
+    if (blob.length > 0 && blob.length < 2) {
+        set.add(blob);
+        return set;
+    }
+    const parts = blob.split(/[\s\n\r,，。.!！?？、；;:："'“”‘’（）()【】\[\]<>《》]+/);
+    for (let pi = 0; pi < parts.length; pi++) {
+        const p = parts[pi].trim();
+        if (p.length >= 2) set.add(p);
+        const runs = p.match(/[\u4e00-\u9fff]+/g) || [];
+        for (let r = 0; r < runs.length; r++) {
+            const run = runs[r];
+            const L = run.length;
+            if (L < 2) continue;
+            let capped = 0;
+            for (let i = 0; i + 2 <= L && capped < 64; i++) {
+                set.add(run.slice(i, i + 2));
+                capped++;
+            }
+        }
+    }
+    if (set.size === 0 && blob.length >= 2) {
+        set.add(blob.slice(0, 64));
+    }
+    return set;
+}
+
+function jaccardTokenSimilarity(setA, setB) {
+    if (!(setA instanceof Set) || !(setB instanceof Set)) return 0;
+    if (setA.size === 0 && setB.size === 0) return 1;
+    if (setA.size === 0 || setB.size === 0) return 0;
+    let inter = 0;
+    if (setA.size <= setB.size) {
+        setA.forEach(t => {
+            if (setB.has(t)) inter++;
+        });
+    } else {
+        setB.forEach(t => {
+            if (setA.has(t)) inter++;
+        });
+    }
+    const union = setA.size + setB.size - inter;
+    return union > 0 ? inter / union : 0;
+}
+
+function jaccardThresholdForPair(fa, fb, base) {
+    const ma = fa && fa.metadata ? fa.metadata : {};
+    const mb = fb && fb.metadata ? fb.metadata : {};
+    const ta = ma.type;
+    const tb = mb.type;
+    const tsA = ma.timeScope;
+    const tsB = mb.timeScope;
+    if (ta === 'current_state' || tb === 'current_state'
+        || tsA === 'temporary' || tsB === 'temporary') {
+        return Math.min(base, 0.72);
+    }
+    if (ta === 'preference' || ta === 'relationship'
+        || tb === 'preference' || tb === 'relationship') {
+        return Math.max(base, 0.80);
+    }
+    return base;
+}
+
+function exceedPredicateQuota(fact, kept, maxPerPredicate) {
+    if (!maxPerPredicate || maxPerPredicate <= 0) return false;
+    const key = canonicalForExactKey(fact.predicate);
+    if (!key) return false;
+    let n = 0;
+    for (let i = 0; i < kept.length; i++) {
+        if (canonicalForExactKey(kept[i].fact.predicate) === key) n++;
+    }
+    return n >= maxPerPredicate;
+}
+
+/**
+ * 检索结果去重：精确键 + Jaccard + 每 predicate 上限；scoredItems 须已按 score 降序
+ * @param {{ fact: object, score: number }[]} scoredItems
+ * @param {{ simThreshold?: number, maxPerPredicate?: number }} [opts]
+ */
+function dedupeSimilarFacts(scoredItems, opts) {
+    const simThreshold = opts && opts.simThreshold != null ? opts.simThreshold : 0.78;
+    const maxPerPredicate = opts && opts.maxPerPredicate != null ? opts.maxPerPredicate : 2;
+    const list = Array.isArray(scoredItems) ? scoredItems : [];
+    const kept = [];
+    const seenExact = new Set();
+
+    for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        if (!item || !item.fact) continue;
+        const f = item.fact;
+
+        const exactKey = buildExactDedupeKey(f);
+        if (exactKey && seenExact.has(exactKey)) continue;
+
+        let tooSimilar = false;
+        const tokensF = tokenSetForFactDedup(f);
+        for (let k = 0; k < kept.length; k++) {
+            const other = kept[k].fact;
+            const th = jaccardThresholdForPair(f, other, simThreshold);
+            const sim = jaccardTokenSimilarity(tokensF, tokenSetForFactDedup(other));
+            if (sim >= th) {
+                tooSimilar = true;
+                break;
+            }
+        }
+        if (tooSimilar) continue;
+
+        if (exceedPredicateQuota(f, kept, maxPerPredicate)) continue;
+
+        kept.push(item);
+        if (exactKey) seenExact.add(exactKey);
+    }
+    return kept;
+}
+
 async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
     try {
         const limit = Math.min(Math.max(options.limit != null ? options.limit : 25, 1), 25);
@@ -2203,6 +2347,13 @@ async function retrieveRelevantMemoryFacts(contactId, queryText, options = {}) {
         if (picked.length === 0 && scored.length > 0 && scored[0].score > 0) {
             picked = scored.slice(0, Math.min(limit, 8));
         }
+
+        const dedupeSimThreshold = options.dedupeSimThreshold != null ? options.dedupeSimThreshold : 0.78;
+        const maxPerPredicate = options.maxPerPredicate != null ? options.maxPerPredicate : 2;
+        picked = dedupeSimilarFacts(picked, {
+            simThreshold: dedupeSimThreshold,
+            maxPerPredicate
+        }).slice(0, limit);
 
         const resultFacts = picked.map(({ fact, score }) => ({
             ...fact,
