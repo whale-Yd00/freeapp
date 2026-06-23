@@ -5,7 +5,7 @@
 
 ![GitHub Repo stars](https://img.shields.io/github/stars/whale-Yd00/freeapp?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/whale-Yd00/freeapp?style=social)
-![License](https://img.shields.io/github/license/whale-Yd00/freeapp)
+![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue)
 ![JavaScript](https://img.shields.io/badge/JavaScript-Frontend-yellow)
 ![Capacitor](https://img.shields.io/badge/Capacitor-Android-blue)
 ![Local First](https://img.shields.io/badge/Local--first-Privacy--oriented-blue)
