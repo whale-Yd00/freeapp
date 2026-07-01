@@ -545,6 +545,96 @@ let showDetailedStats = false; // 是否展开显示
 // let customBubbleStyle = null; // 删掉或者注释掉这一行
 let bubbleStyles = {}; // 新增：用于存储所有自定义气泡样式，格式为 { 'styleId': { name: '样式名', html: '...', css: '...' } }
 let selectedEmojiFile = null; // 【新增】用于临时存储待上传的表情文件
+
+
+// --- Word 文档助手（Beta） ---
+let extractedWordText = '';
+
+function showWordAssistantModal() {
+    const previewEl = document.getElementById('wordExtractPreview');
+    const resultEl = document.getElementById('wordResultText');
+    if (previewEl) previewEl.value = '';
+    if (resultEl) resultEl.value = '';
+    showModal('wordAssistantModal');
+    toggleSettingsMenu();
+}
+
+async function handleWordFileSelect(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+        showToast('目前仅支持 .docx 文件');
+        return;
+    }
+    if (!window.mammoth) {
+        showToast('文档解析器未加载，请检查网络后重试');
+        return;
+    }
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
+        extractedWordText = (result.value || '').trim();
+        const previewEl = document.getElementById('wordExtractPreview');
+        if (previewEl) previewEl.value = extractedWordText.slice(0, 2000);
+        showToast('Word 文本提取成功');
+    } catch (error) {
+        console.error('Word 文件解析失败:', error);
+        showToast('Word 文件解析失败');
+    }
+}
+
+async function runWordRewrite() {
+    if (!extractedWordText) {
+        showToast('请先上传并解析 Word 文件');
+        return;
+    }
+    if (!apiSettings.url || !apiSettings.key || !apiSettings.model) {
+        showToast('请先完成 API 设置');
+        return;
+    }
+
+    const instruction = document.getElementById('wordEditInstruction')?.value?.trim() || '请润色文本，保持原意与结构';
+    const maxInput = 16000;
+    const sourceText = extractedWordText.slice(0, maxInput);
+
+    try {
+        showToast('正在生成修改结果...');
+        const messages = [
+            { role: 'system', content: '你是专业中文编辑。只返回修改后的正文，不要解释。' },
+            { role: 'user', content: `修改要求：${instruction}\n\n原文：\n${sourceText}` }
+        ];
+        const data = await window.apiService.callOpenAIAPI(
+            apiSettings.url,
+            apiSettings.key,
+            apiSettings.model,
+            messages,
+            {},
+            (apiSettings.timeout || 60) * 1000
+        );
+        const text = data?.choices?.[0]?.message?.content?.trim() || '';
+        document.getElementById('wordResultText').value = text;
+        showToast('改写完成，可下载 TXT');
+    } catch (error) {
+        console.error('Word 改写失败:', error);
+        showToast('改写失败：' + (error.message || '未知错误'));
+    }
+}
+
+function downloadWordResultTxt() {
+    const text = document.getElementById('wordResultText')?.value || '';
+    if (!text.trim()) {
+        showToast('没有可下载的结果');
+        return;
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `word_ai_result_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
 let customModelsByUrl = {};
 let todoItems = []; // 新增：存储待办事项列表
 
